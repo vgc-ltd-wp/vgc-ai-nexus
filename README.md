@@ -14,7 +14,7 @@ Connect Claude, ChatGPT, or any MCP-compatible AI agent to your WordPress site a
 |---|---|
 | WordPress | 6.0+ |
 | PHP | 8.0+ |
-| [MCP Adapter](https://wordpress.org/plugins/mcp-server/) | Latest |
+| [MCP Adapter](https://github.com/WordPress/mcp-adapter) | Latest |
 
 ## Installation
 
