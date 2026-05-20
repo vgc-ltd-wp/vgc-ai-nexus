@@ -129,7 +129,8 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | Tool | Description |
 |---|---|
 | `get_custom_code` | Retrieve current custom CSS and JS snippets |
-| `inject_css` | Write a CSS snippet to the site (uses WordPress Additional CSS) |
+| `inject_css` | Append, replace, or find-and-replace within the site's custom CSS |
+| `clear_css` | Wipe all custom CSS |
 | `inject_js` | Write a JavaScript snippet to the site header or footer |
 
 ### Theme Management
