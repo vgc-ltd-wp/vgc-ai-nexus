@@ -100,8 +100,23 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 ### Menu Management
 | Tool | Description |
 |---|---|
-| `list_menus` | List all registered navigation menus |
+| `list_menus` | List all registered navigation menus and their theme locations |
 | `get_menu_items` | Retrieve the items in a specific menu |
+| `create_menu` | Create a new navigation menu |
+| `delete_menu` | Delete a navigation menu and all its items |
+| `add_menu_item` | Add a custom URL, post/page, or taxonomy term item to a menu |
+| `update_menu_item` | Update an existing menu item's title, URL, order or parent |
+| `delete_menu_item` | Remove an item from a menu |
+| `assign_menu_location` | Assign or unassign a menu to a theme location |
+
+### Widget Management
+| Tool | Description |
+|---|---|
+| `list_widget_areas` | List all registered widget areas (sidebars) and widget counts |
+| `list_widgets` | List all widgets in a specific widget area with their settings |
+| `add_widget` | Add a widget to a widget area |
+| `update_widget` | Update the settings of an existing widget instance |
+| `remove_widget` | Remove a widget from a widget area |
 
 ### Options Management
 | Tool | Description |
