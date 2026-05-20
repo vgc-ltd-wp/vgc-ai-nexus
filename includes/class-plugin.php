@@ -45,11 +45,15 @@ final class Plugin {
             'class-registry.php',
             'class-ability-group.php',
             'class-ability.php',
+            'class-custom-code.php',
             'admin/class-settings-page.php',
         ];
         foreach ( $files as $file ) {
             require_once MCP_ABILITIES_DIR . 'includes/' . $file;
         }
+
+        // Register frontend CSS/JS output hooks as early as possible.
+        Custom_Code::init();
     }
 
     private function load_textdomain(): void {

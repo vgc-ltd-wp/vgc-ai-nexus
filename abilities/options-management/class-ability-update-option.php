@@ -30,6 +30,9 @@ class Update_Option_Ability extends Ability {
 
         // Cron manipulation
         'cron', 'doing_cron',
+
+        // Custom code — must be managed via inject_css / inject_js abilities
+        'mcp_custom_js_head', 'mcp_custom_js_footer',
     ];
 
     protected function define_meta(): void {

@@ -125,6 +125,13 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `get_option` | Read a WordPress option by key (protected keys blocked) |
 | `update_option` | Update a WordPress option (protected keys blocked) |
 
+### Custom CSS & JS
+| Tool | Description |
+|---|---|
+| `get_custom_code` | Retrieve current custom CSS and JS snippets |
+| `inject_css` | Write a CSS snippet to the site (uses WordPress Additional CSS) |
+| `inject_js` | Write a JavaScript snippet to the site header or footer |
+
 ### Theme Management
 | Tool | Description |
 |---|---|
