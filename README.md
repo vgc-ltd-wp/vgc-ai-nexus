@@ -133,6 +133,18 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `clear_css` | Wipe all custom CSS |
 | `inject_js` | Write a JavaScript snippet to the site header or footer |
 
+### Template Management *(block themes only)*
+| Tool | Description |
+|---|---|
+| `list_templates` | List all FSE page templates with their IDs, source and status |
+| `get_template` | Retrieve the full block markup of a page template |
+| `update_template` | Write new block markup to a template (creates a DB override for theme-file templates) |
+| `create_template` | Create a new custom page template |
+| `list_template_parts` | List all template parts (header, footer, sidebar, etc.) |
+| `get_template_part` | Retrieve the full block markup of a template part |
+| `update_template_part` | Write new block markup to a template part |
+| `create_template_part` | Create a new custom template part |
+
 ### Theme Management
 | Tool | Description |
 |---|---|
