@@ -579,6 +579,245 @@
     font-size: 13px;
 }
 
+/* ── Connections: Stats grid ────────────────────────────────────────────── */
+
+.mcp-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.mcp-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    padding: 16px 18px;
+    box-shadow: var(--mcp-shadow);
+}
+
+.mcp-stat-card__icon {
+    font-size: 22px;
+    color: var(--mcp-primary);
+    background: rgba(108,99,255,.1);
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.mcp-stat-card__body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mcp-stat-card__value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--mcp-text);
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mcp-stat-card__value--tool {
+    font-size: 13px;
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--mcp-primary);
+}
+
+.mcp-stat-card__label {
+    font-size: 12px;
+    color: var(--mcp-muted);
+    margin-top: 2px;
+}
+
+/* ── Connections: Filter bar ─────────────────────────────────────────────── */
+
+.mcp-filter-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    box-shadow: var(--mcp-shadow);
+}
+
+.mcp-filter-select,
+.mcp-filter-date {
+    padding: 7px 10px;
+    border: 1px solid var(--mcp-border);
+    border-radius: 7px;
+    font-size: 13px;
+    background: var(--mcp-bg);
+    color: var(--mcp-text);
+    height: 34px;
+}
+
+.mcp-filter-date { width: 140px; }
+
+.mcp-filter-sep {
+    color: var(--mcp-muted);
+    font-size: 13px;
+}
+
+.mcp-filter-count {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--mcp-muted);
+}
+
+/* ── Connections: Log table ──────────────────────────────────────────────── */
+
+.mcp-log-wrap {
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.mcp-log-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.mcp-log-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--mcp-muted);
+    background: var(--mcp-bg);
+    border-bottom: 1px solid var(--mcp-border);
+    white-space: nowrap;
+}
+
+.mcp-log-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--mcp-border);
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+.mcp-log-table tbody tr:last-child td { border-bottom: none; }
+.mcp-log-table tbody tr:hover td { background: rgba(108,99,255,.03); }
+
+.mcp-log-row--error td { background: rgba(239,68,68,.03); }
+.mcp-log-row--error:hover td { background: rgba(239,68,68,.06) !important; }
+
+.mcp-col-when   { width: 80px;  white-space: nowrap; color: var(--mcp-muted); }
+.mcp-col-tool   { width: 180px; }
+.mcp-col-user   { width: 160px; }
+.mcp-col-pass   { width: 180px; }
+.mcp-col-client { width: 160px; }
+.mcp-col-ip     { width: 130px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; color: var(--mcp-muted); }
+.mcp-col-status { width: 90px;  white-space: nowrap; }
+
+/* User cell */
+.mcp-user-link {
+    display: block;
+    font-weight: 500;
+    color: var(--mcp-text);
+    text-decoration: none;
+}
+.mcp-user-link:hover { color: var(--mcp-primary); }
+.mcp-user-role {
+    display: block;
+    font-size: 11px;
+    color: var(--mcp-muted);
+    margin-top: 1px;
+}
+
+/* App password cell */
+.mcp-pass-name {
+    display: inline;
+    font-size: 13px;
+    font-weight: 500;
+}
+.mcp-pass-link {
+    color: var(--mcp-muted);
+    text-decoration: none;
+    vertical-align: middle;
+    margin-left: 3px;
+}
+.mcp-pass-link:hover { color: var(--mcp-primary); }
+.mcp-pass-link .dashicons { font-size: 14px; width: 14px; height: 14px; }
+
+/* Client cell */
+.mcp-client-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+}
+.mcp-client-version {
+    display: inline-block;
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    background: var(--mcp-bg);
+    border: 1px solid var(--mcp-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--mcp-muted);
+    margin-top: 2px;
+}
+
+/* Status badge */
+.mcp-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 20px;
+}
+.mcp-status .dashicons { font-size: 14px; width: 14px; height: 14px; }
+.mcp-status--success { background: rgba(16,185,129,.12); color: #065f46; }
+.mcp-status--error   { background: rgba(239,68,68,.12);  color: #991b1b; cursor: help; }
+
+.mcp-muted { color: var(--mcp-muted); }
+.mcp-ip { font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+
+/* ── Connections: Pagination ─────────────────────────────────────────────── */
+
+.mcp-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px;
+    border-top: 1px solid var(--mcp-border);
+    background: var(--mcp-bg);
+}
+
+.mcp-pagination__info { font-size: 13px; color: var(--mcp-muted); }
+.mcp-pagination__btn  { padding: 6px 10px; }
+.mcp-pagination__btn .dashicons { font-size: 16px; width: 16px; height: 16px; }
+
+/* ── Connections: Retention note ─────────────────────────────────────────── */
+
+.mcp-log-retention-note {
+    font-size: 12px;
+    color: var(--mcp-muted);
+    margin: 0 0 24px;
+}
+
 /* ── Empty state ────────────────────────────────────────────────────────── */
 
 .mcp-empty-state {

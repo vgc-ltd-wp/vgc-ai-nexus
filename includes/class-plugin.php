@@ -34,6 +34,9 @@ final class Plugin {
         if ( is_admin() ) {
             $admin = new Admin\Settings_Page( $this->registry );
             $admin->init();
+
+            $connections = new Admin\Connections_Page();
+            $connections->init();
         }
 
         do_action( 'mcp_abilities_loaded', $this );
@@ -42,11 +45,13 @@ final class Plugin {
     private function load_dependencies(): void {
         $files = [
             'class-installer.php',
+            'class-logger.php',
             'class-registry.php',
             'class-ability-group.php',
             'class-ability.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
+            'admin/class-connections-page.php',
         ];
         foreach ( $files as $file ) {
             require_once MCP_ABILITIES_DIR . 'includes/' . $file;
@@ -54,6 +59,9 @@ final class Plugin {
 
         // Register frontend CSS/JS output hooks as early as possible.
         Custom_Code::init();
+
+        // Start the activity logger (hooks app-password capture + cron pruning).
+        Logger::init();
     }
 
     private function load_textdomain(): void {
@@ -117,10 +125,7 @@ final class Plugin {
                             return $ability->current_user_can();
                         },
                         'execute_callback'    => function( $params = [] ) use ( $ability, $group ) {
-                            if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
-                                return $this->disabled_tool_response( $ability );
-                            }
-                            return $ability->execute( (array) $params );
+                            return $this->run_ability( $ability, $group, (array) $params );
                         },
                         'meta'                => [
                             'mcp' => [ 'public' => true ],
@@ -162,10 +167,7 @@ final class Plugin {
             'description' => $ability->get_description(),
             'inputSchema' => $ability->get_input_schema(),
             'handler'     => function( $params = [] ) use ( $ability, $group ) {
-                if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
-                    return $this->disabled_tool_response( $ability );
-                }
-                return $ability->execute( (array) $params );
+                return $this->run_ability( $ability, $group, (array) $params );
             },
             'permission'  => function() use ( $ability, $group ) {
                 if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
@@ -176,6 +178,18 @@ final class Plugin {
         ] );
 
         return $tool instanceof \WP_Error ? null : $tool;
+    }
+
+    /**
+     * Execute an ability and log the call to the activity log.
+     */
+    private function run_ability( Ability $ability, Ability_Group $group, array $params ): array {
+        if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
+            return $this->disabled_tool_response( $ability );
+        }
+        $result = $ability->execute( $params );
+        Logger::log( $ability->get_key(), $result );
+        return $result;
     }
 
     /**
