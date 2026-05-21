@@ -75,7 +75,7 @@ class Get_Template_Part_Ability extends Ability {
     }
 
     public function execute( array $params ): array {
-        $id = $this->resolve_id( $params );
+        $id = mcp_resolve_template_id( $params );
         if ( is_wp_error( $id ) ) {
             return $this->error( $id->get_error_message() );
         }
@@ -90,16 +90,6 @@ class Get_Template_Part_Ability extends Ability {
 
         return $this->json_result( $data );
     }
-
-    private function resolve_id( array $params ): string|\WP_Error {
-        if ( ! empty( $params['id'] ) ) {
-            return sanitize_text_field( $params['id'] );
-        }
-        if ( ! empty( $params['slug'] ) ) {
-            return get_stylesheet() . '//' . sanitize_title( $params['slug'] );
-        }
-        return new \WP_Error( 'missing_param', 'Provide "id" (e.g. "twentytwentyfive//header") or "slug" (e.g. "header").' );
-    }
 }
 
 // ── Update Template Part ───────────────────────────────────────────────────────
@@ -109,7 +99,7 @@ class Update_Template_Part_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'update_template_part';
         $this->label        = __( 'Update Template Part', 'mcp-abilities' );
-        $this->description  = 'Write new block markup to a template part (header, footer, sidebar, etc.). If the part is theme-file-backed (source: "theme"), WordPress creates a custom DB override — the theme file is not modified. Use get_template_part first to read the current content.';
+        $this->description  = 'Write new block markup to a template part (header, footer, sidebar, etc.). If the part is theme-file-backed (source: "theme"), WordPress creates a custom DB override — the theme file is not modified. Provide "area" to ensure the part is correctly categorised (required when setting a header or footer). Use get_template_part first to read the current content.';
         $this->required_cap = 'edit_theme_options';
         $this->input_schema = [
             'type'       => 'object',
@@ -117,6 +107,11 @@ class Update_Template_Part_Ability extends Ability {
                 'id'      => [ 'type' => 'string', 'description' => 'Template part ID in "{theme}//{slug}" format (from list_template_parts).' ],
                 'content' => [ 'type' => 'string', 'description' => 'New block markup for the template part.' ],
                 'title'   => [ 'type' => 'string', 'description' => 'Optional new title for the template part.' ],
+                'area'    => [
+                    'type'        => 'string',
+                    'enum'        => [ 'header', 'footer', 'sidebar', 'uncategorized' ],
+                    'description' => 'Functional area. Provide this when setting a header or footer part so WordPress registers it correctly in the Site Editor.',
+                ],
             ],
             'required' => [ 'id', 'content' ],
         ];
@@ -126,12 +121,14 @@ class Update_Template_Part_Ability extends Ability {
         $id      = sanitize_text_field( $params['id'] );
         $content = $params['content'];
         $title   = isset( $params['title'] ) ? sanitize_text_field( $params['title'] ) : null;
+        $area    = isset( $params['area'] ) ? sanitize_key( $params['area'] ) : null;
 
         if ( '' === trim( $content ) ) {
             return $this->error( 'Template part content cannot be empty.' );
         }
 
-        $result = mcp_upsert_template( $id, $content, $title, 'wp_template_part' );
+        // Pass area to the upsert so it sets wp_template_part_area taxonomy.
+        $result = mcp_upsert_template( $id, $content, $title, 'wp_template_part', $area );
 
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
@@ -185,7 +182,6 @@ class Create_Template_Part_Ability extends Ability {
             return $this->error( 'Invalid area. Use: ' . implode( ', ', self::VALID_AREAS ) . '.' );
         }
 
-        // Check for slug collision.
         $existing_id = get_stylesheet() . '//' . $slug;
         if ( get_block_template( $existing_id, 'wp_template_part' ) ) {
             return $this->error( "A template part with slug \"{$slug}\" already exists. Use update_template_part to edit it." );
@@ -213,4 +209,107 @@ class Create_Template_Part_Ability extends Ability {
             'area'  => $area,
         ] );
     }
+}
+
+// ── Delete Template Part ───────────────────────────────────────────────────────
+
+class Delete_Template_Part_Ability extends Ability {
+
+    protected function define_meta(): void {
+        $this->key          = 'delete_template_part';
+        $this->label        = __( 'Delete Template Part', 'mcp-abilities' );
+        $this->description  = 'Delete a custom template part override and revert to the theme default. Only works on parts with a DB override (wp_id is not null). Use list_template_parts to check which parts have overrides.';
+        $this->required_cap = 'edit_theme_options';
+        $this->input_schema = [
+            'type'       => 'object',
+            'properties' => [
+                'id' => [ 'type' => 'string', 'description' => 'Template part ID in "{theme}//{slug}" format (from list_template_parts).' ],
+            ],
+            'required' => [ 'id' ],
+        ];
+    }
+
+    public function execute( array $params ): array {
+        $id       = sanitize_text_field( $params['id'] );
+        $template = get_block_template( $id, 'wp_template_part' );
+
+        if ( ! $template ) {
+            return $this->error( "Template part \"{$id}\" not found." );
+        }
+
+        if ( empty( $template->wp_id ) ) {
+            return $this->error( "Template part \"{$id}\" is a theme-file part with no custom override. There is nothing to delete — it is already the theme default." );
+        }
+
+        $result = wp_delete_post( $template->wp_id, true );
+
+        if ( ! $result ) {
+            return $this->error( "Failed to delete template part override for \"{$id}\"." );
+        }
+
+        return $this->success( "Template part override for \"{$id}\" deleted. The theme default is now restored." );
+    }
+}
+
+// ── Set Template Part Area ─────────────────────────────────────────────────────
+
+class Set_Template_Part_Area_Ability extends Ability {
+
+    private const VALID_AREAS = [ 'header', 'footer', 'sidebar', 'uncategorized' ];
+
+    protected function define_meta(): void {
+        $this->key          = 'set_template_part_area';
+        $this->label        = __( 'Set Template Part Area', 'mcp-abilities' );
+        $this->description  = 'Assign or correct the area taxonomy (header/footer/sidebar/uncategorized) on an existing template part. Use this to fix a part that was saved with the wrong area, or to reclassify a part without changing its content.';
+        $this->required_cap = 'edit_theme_options';
+        $this->input_schema = [
+            'type'       => 'object',
+            'properties' => [
+                'id'   => [ 'type' => 'string', 'description' => 'Template part ID in "{theme}//{slug}" format.' ],
+                'area' => [
+                    'type'        => 'string',
+                    'enum'        => self::VALID_AREAS,
+                    'description' => 'The area to assign: "header", "footer", "sidebar", or "uncategorized".',
+                ],
+            ],
+            'required' => [ 'id', 'area' ],
+        ];
+    }
+
+    public function execute( array $params ): array {
+        $id   = sanitize_text_field( $params['id'] );
+        $area = sanitize_key( $params['area'] );
+
+        if ( ! in_array( $area, self::VALID_AREAS, true ) ) {
+            return $this->error( 'Invalid area. Use: ' . implode( ', ', self::VALID_AREAS ) . '.' );
+        }
+
+        $template = get_block_template( $id, 'wp_template_part' );
+        if ( ! $template ) {
+            return $this->error( "Template part \"{$id}\" not found." );
+        }
+
+        if ( empty( $template->wp_id ) ) {
+            return $this->error( "Template part \"{$id}\" is theme-file-backed with no DB override. Call update_template_part (with the area param) first to create an override." );
+        }
+
+        wp_set_object_terms( $template->wp_id, $area, 'wp_template_part_area' );
+
+        return $this->success( "Template part \"{$id}\" area set to \"{$area}\"." );
+    }
+}
+
+// ── Shared helper ──────────────────────────────────────────────────────────────
+
+/**
+ * Resolve a template/part ID from params that may supply either 'id' or 'slug'.
+ */
+function mcp_resolve_template_id( array $params ): string|\WP_Error {
+    if ( ! empty( $params['id'] ) ) {
+        return sanitize_text_field( $params['id'] );
+    }
+    if ( ! empty( $params['slug'] ) ) {
+        return get_stylesheet() . '//' . sanitize_title( $params['slug'] );
+    }
+    return new \WP_Error( 'missing_param', 'Provide "id" (e.g. "twentytwentyfive//header") or "slug" (e.g. "header").' );
 }

@@ -37,11 +37,21 @@ function mcp_template_to_array( \WP_Block_Template $t, bool $include_content = f
  *
  * @return int|\WP_Error  Post ID on success.
  */
+/**
+ * @param string      $id        Template compound ID "{theme}//{slug}".
+ * @param string      $content   New block markup.
+ * @param string|null $title     Optional new title.
+ * @param string      $post_type 'wp_template' or 'wp_template_part'.
+ * @param string|null $area      Template part area (header/footer/sidebar/uncategorized).
+ *                               Applies to wp_template_part only.
+ * @return int|\WP_Error  Post ID on success.
+ */
 function mcp_upsert_template(
     string $id,
     string $content,
     ?string $title,
-    string $post_type
+    string $post_type,
+    ?string $area = null
 ) {
     $template = get_block_template( $id, $post_type );
     if ( ! $template ) {
@@ -56,7 +66,15 @@ function mcp_upsert_template(
     if ( ! empty( $template->wp_id ) ) {
         // Already has a DB record — update in place.
         $post_data['ID'] = $template->wp_id;
-        return wp_update_post( $post_data, true );
+        $result          = wp_update_post( $post_data, true );
+
+        // BUG FIX: always (re)set the area taxonomy on template parts.
+        if ( ! is_wp_error( $result ) && 'wp_template_part' === $post_type ) {
+            $area_to_set = $area ?? ( $template->area ?? 'uncategorized' );
+            wp_set_object_terms( $template->wp_id, $area_to_set, 'wp_template_part_area' );
+        }
+
+        return $result;
     }
 
     // Theme-file-backed template: create a custom override post.
@@ -74,6 +92,12 @@ function mcp_upsert_template(
 
     // Tag with the active theme so WP knows which theme this override belongs to.
     wp_set_object_terms( $post_id, get_stylesheet(), 'wp_theme' );
+
+    // BUG FIX: always set the area taxonomy for template parts.
+    if ( 'wp_template_part' === $post_type ) {
+        $area_to_set = $area ?? ( $template->area ?? 'uncategorized' );
+        wp_set_object_terms( $post_id, $area_to_set, 'wp_template_part_area' );
+    }
 
     return $post_id;
 }
@@ -266,5 +290,45 @@ class Create_Template_Ability extends Ability {
             'wp_id'   => $post_id,
             'slug'    => $slug,
         ] );
+    }
+}
+
+// ── Delete Template ────────────────────────────────────────────────────────────
+
+class Delete_Template_Ability extends Ability {
+
+    protected function define_meta(): void {
+        $this->key          = 'delete_template';
+        $this->label        = __( 'Delete Template', 'mcp-abilities' );
+        $this->description  = 'Delete a custom template override and revert to the theme default. Only works on templates with a DB override (wp_id is not null). Theme-file-backed templates with no override cannot be deleted — they are the theme default.';
+        $this->required_cap = 'edit_theme_options';
+        $this->input_schema = [
+            'type'       => 'object',
+            'properties' => [
+                'id' => [ 'type' => 'string', 'description' => 'Template ID in "{theme}//{slug}" format (from list_templates).' ],
+            ],
+            'required' => [ 'id' ],
+        ];
+    }
+
+    public function execute( array $params ): array {
+        $id       = sanitize_text_field( $params['id'] );
+        $template = get_block_template( $id, 'wp_template' );
+
+        if ( ! $template ) {
+            return $this->error( "Template \"{$id}\" not found." );
+        }
+
+        if ( empty( $template->wp_id ) ) {
+            return $this->error( "Template \"{$id}\" is a theme-file template with no custom override. There is nothing to delete — it is already the theme default." );
+        }
+
+        $result = wp_delete_post( $template->wp_id, true );
+
+        if ( ! $result ) {
+            return $this->error( "Failed to delete template override for \"{$id}\"." );
+        }
+
+        return $this->success( "Template override for \"{$id}\" deleted. The theme default is now restored." );
     }
 }

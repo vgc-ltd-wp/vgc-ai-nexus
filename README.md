@@ -57,7 +57,7 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 |---|---|
 | `list_posts` | List posts with filters for status, author, category, date and search |
 | `get_post` | Retrieve full post content and metadata |
-| `create_post` | Create a new post (draft or published) |
+| `create_post` | Create a new post of any registered post type (use `post_type` param; defaults to `post`). Supports `slug` and `parent_id` for hierarchical types. |
 | `update_post` | Update title, content, status, categories or tags |
 | `delete_post` | Trash or permanently delete a post |
 | `list_revisions` | List all saved revisions for a post |
@@ -108,6 +108,9 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `update_menu_item` | Update an existing menu item's title, URL, order or parent |
 | `delete_menu_item` | Remove an item from a menu |
 | `assign_menu_location` | Assign or unassign a menu to a theme location |
+| `list_navigations` | List all block-based `wp_navigation` menus (FSE / block themes) |
+| `get_navigation` | Retrieve the full block markup of a `wp_navigation` post |
+| `update_navigation` | Write new block markup to a `wp_navigation` post |
 
 ### Widget Management
 | Tool | Description |
@@ -124,6 +127,8 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `get_site_info` | Retrieve site name, URL, timezone and language |
 | `get_option` | Read a WordPress option by key (protected keys blocked) |
 | `update_option` | Update a WordPress option (protected keys blocked) |
+| `list_post_types` | List all registered post types with their capabilities, feature support and REST base |
+| `flush_rewrite_rules` | Regenerate WordPress permalink/rewrite rules (equivalent to saving Settings → Permalinks) |
 
 ### Custom CSS & JS
 | Tool | Description |
@@ -140,10 +145,16 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `get_template` | Retrieve the full block markup of a page template |
 | `update_template` | Write new block markup to a template (creates a DB override for theme-file templates) |
 | `create_template` | Create a new custom page template |
+| `delete_template` | Delete a customised template (DB override). Theme-file templates revert to their defaults. |
 | `list_template_parts` | List all template parts (header, footer, sidebar, etc.) |
 | `get_template_part` | Retrieve the full block markup of a template part |
-| `update_template_part` | Write new block markup to a template part |
+| `update_template_part` | Write new block markup to a template part, with optional `area` assignment |
 | `create_template_part` | Create a new custom template part |
+| `delete_template_part` | Delete a customised template part (DB override only; reverts to theme default) |
+| `set_template_part_area` | Change the area (header/footer/sidebar/uncategorized) of an existing template part override |
+| `get_global_styles` | Retrieve the active theme's global styles settings and styles (theme defaults + user overrides) |
+| `update_global_styles` | Deep-merge new settings or styles into the site's global styles (creates or updates the user override) |
+| `list_block_patterns` | List all registered block patterns, with optional category and keyword filters |
 
 ### Theme Management
 | Tool | Description |
