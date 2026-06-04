@@ -22,8 +22,17 @@ abstract class Ability_Group {
     protected bool   $default_enabled   = true;
     protected string $security_warning  = '';
 
+    /**
+     * Whether this group may be collapsed into a single dispatcher tool when
+     * consolidation is enabled site-wide. Groups can opt out by setting false.
+     */
+    protected bool   $consolidate    = true;
+
     /** @var Ability[] */
     protected array $abilities = [];
+
+    /** @var Ability[]|null Cached MCP-facing view (individuals or [dispatcher]). */
+    private ?array $mcp_abilities = null;
 
     public function __construct() {
         $this->define_meta();
@@ -103,4 +112,41 @@ abstract class Ability_Group {
 
     /** @return Ability[] */
     public function get_abilities(): array    { return $this->abilities; }
+
+    public function get_consolidate(): bool   { return $this->consolidate; }
+
+    /**
+     * The abilities as exposed to MCP.
+     *
+     * When consolidation is enabled site-wide (option `mcp_abilities_consolidate`,
+     * default on) and this group allows it and has more than one ability, the
+     * whole group is returned as a SINGLE Crud_Ability dispatcher tool. Otherwise
+     * the individual abilities are returned unchanged.
+     *
+     * The dispatcher wraps the live individual ability instances, so per-ability
+     * enable states (set on the admin page) are honoured at call time.
+     *
+     * @return Ability[]
+     */
+    public function get_mcp_abilities(): array {
+        if ( null !== $this->mcp_abilities ) {
+            return $this->mcp_abilities;
+        }
+
+        $on = (bool) apply_filters(
+            'mcp_abilities_consolidate',
+            (bool) get_option( 'mcp_abilities_consolidate', true ),
+            $this
+        );
+
+        if ( $on && $this->consolidate && count( $this->abilities ) > 1 ) {
+            $this->mcp_abilities = [
+                new Crud_Ability( $this->slug, $this->label, $this->description, $this->abilities ),
+            ];
+        } else {
+            $this->mcp_abilities = array_values( $this->abilities );
+        }
+
+        return $this->mcp_abilities;
+    }
 }

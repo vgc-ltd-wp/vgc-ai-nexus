@@ -849,3 +849,82 @@
     font-size: 14px;
     color: var(--mcp-muted);
 }
+
+/* ── Tool budget summary + consolidation control ───────────────────────────── */
+.mcp-budget {
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    padding: 16px 18px;
+    margin: 0 0 18px;
+}
+
+.mcp-budget__counter {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mcp-budget__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    align-self: center;
+    flex: 0 0 auto;
+}
+.mcp-budget__dot.is-green { background: var(--mcp-green); }
+.mcp-budget__dot.is-amber { background: var(--mcp-amber); }
+.mcp-budget__dot.is-red   { background: var(--mcp-red); }
+
+.mcp-budget__num {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--mcp-text);
+    line-height: 1;
+}
+
+.mcp-budget__label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--mcp-text);
+}
+
+.mcp-budget__detail {
+    font-size: 13px;
+    color: var(--mcp-muted);
+}
+
+.mcp-budget__consolidate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--mcp-text);
+    cursor: pointer;
+}
+
+.mcp-budget__help {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--mcp-muted);
+    max-width: 760px;
+}
+
+.mcp-budget__hint {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: var(--mcp-amber);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mcp-badge--consolidated {
+    background: rgba(108, 99, 255, .12);
+    color: var(--mcp-primary-d);
+    border: 1px solid rgba(108, 99, 255, .3);
+}

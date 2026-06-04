@@ -139,6 +139,12 @@ class Settings_Page {
             ? (array) json_decode( stripslashes( $_POST['settings'] ), true )
             : [];
         $this->registry->save_settings( $raw );
+
+        // Site-wide consolidation toggle (collapse each group into one tool).
+        if ( isset( $_POST['consolidate'] ) ) {
+            update_option( 'mcp_abilities_consolidate', '1' === (string) $_POST['consolidate'] );
+        }
+
         wp_send_json_success( [ 'message' => __( 'Settings saved.', 'mcp-abilities' ) ] );
     }
 

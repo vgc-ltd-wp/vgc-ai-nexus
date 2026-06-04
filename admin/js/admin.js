@@ -66,13 +66,20 @@
     // ── Save (main abilities page) ───────────────────────────────────────────
 
     $( '#mcp-save-btn' ).on( 'click', function () {
-        const settings = collectAllGroupSettings( $( '#mcp-groups-container' ) );
+        const settings    = collectAllGroupSettings( $( '#mcp-groups-container' ) );
+        const consolidate = $( '#mcp-consolidate-toggle' ).is( ':checked' ) ? 1 : 0;
         ajaxSave(
             'mcp_save_settings',
-            { settings: JSON.stringify( settings ) },
+            { settings: JSON.stringify( settings ), consolidate: consolidate },
             $( this ),
             $( '#mcp-save-status' )
         );
+    } );
+
+    // Consolidation toggle marks the form dirty (counts refresh on reload).
+    $( document ).on( 'change', '#mcp-consolidate-toggle', function () {
+        markDirty();
+        $( '#mcp-consolidate-hint' ).toggle( true );
     } );
 
     // ── Save (extensions page) ───────────────────────────────────────────────

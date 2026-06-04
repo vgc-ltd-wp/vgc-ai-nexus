@@ -7,6 +7,22 @@
  */
 
 defined( 'ABSPATH' ) || exit;
+
+$mcp_consolidate = (bool) get_option( 'mcp_abilities_consolidate', true );
+
+// Tally tools exposed to the MCP server vs. the underlying abilities.
+$mcp_tool_total    = 0;
+$mcp_ability_total = 0;
+foreach ( $groups as $g ) {
+    $mcp_tool_total    += count( $g->get_mcp_abilities() );
+    $mcp_ability_total += count( $g->get_abilities() );
+}
+// Claude also always sees the adapter's 3 meta-tools (discover / get-info / execute).
+$mcp_meta_tools  = 3;
+$mcp_grand_total = $mcp_tool_total + $mcp_meta_tools;
+
+// Traffic-light against Claude's practical per-connector tool budget.
+$mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 40 ? 'is-amber' : 'is-red' );
 ?>
 <div class="mcp-wrap">
 
@@ -46,6 +62,39 @@ defined( 'ABSPATH' ) || exit;
             </div>
         </div>
 
+        <!-- Tool budget summary + consolidation control -->
+        <div class="mcp-budget">
+            <div class="mcp-budget__counter">
+                <span class="mcp-budget__dot <?php echo esc_attr( $mcp_budget_class ); ?>"></span>
+                <span class="mcp-budget__num"><?php echo (int) $mcp_grand_total; ?></span>
+                <span class="mcp-budget__label">
+                    <?php esc_html_e( 'tools exposed to Claude', 'mcp-abilities' ); ?>
+                </span>
+                <span class="mcp-budget__detail">
+                    <?php
+                    printf(
+                        /* translators: 1: AI Nexus tool count, 2: meta-tool count, 3: underlying ability count */
+                        esc_html__( '(%1$d from AI Nexus + %2$d adapter meta-tools, backed by %3$d abilities)', 'mcp-abilities' ),
+                        (int) $mcp_tool_total,
+                        (int) $mcp_meta_tools,
+                        (int) $mcp_ability_total
+                    );
+                    ?>
+                </span>
+            </div>
+            <label class="mcp-budget__consolidate">
+                <input type="checkbox" id="mcp-consolidate-toggle" <?php checked( $mcp_consolidate ); ?>>
+                <span><?php esc_html_e( 'Consolidate each group into a single tool (recommended)', 'mcp-abilities' ); ?></span>
+            </label>
+            <p class="mcp-budget__help">
+                <?php esc_html_e( 'When on, each group is exposed as ONE tool with an "action" parameter (list, create, update, delete…) instead of one tool per operation. Every ability still works and per-ability/permission settings are preserved — this just keeps the tool count under Claude\'s budget so the connector loads reliably.', 'mcp-abilities' ); ?>
+            </p>
+            <p id="mcp-consolidate-hint" class="mcp-budget__hint" style="display:none;">
+                <span class="dashicons dashicons-info"></span>
+                <?php esc_html_e( 'Save, then reload this page to see the updated tool count.', 'mcp-abilities' ); ?>
+            </p>
+        </div>
+
         <div class="mcp-groups" id="mcp-groups-container">
         <?php foreach ( $groups as $group ) : ?>
             <div class="mcp-group" data-slug="<?php echo esc_attr( $group->get_slug() ); ?>">
@@ -65,7 +114,24 @@ defined( 'ABSPATH' ) || exit;
                         <p class="mcp-group__desc"><?php echo esc_html( $group->get_description() ); ?></p>
                     </div>
                     <div class="mcp-group__controls">
-                        <span class="mcp-badge"><?php echo count( $group->get_abilities() ); ?> <?php esc_html_e( 'tools', 'mcp-abilities' ); ?></span>
+                        <?php
+                        $g_abilities = count( $group->get_abilities() );
+                        $g_tools     = count( $group->get_mcp_abilities() );
+                        ?>
+                        <?php if ( $g_tools < $g_abilities ) : ?>
+                            <span class="mcp-badge mcp-badge--consolidated" title="<?php esc_attr_e( 'Exposed as a single tool with an action parameter', 'mcp-abilities' ); ?>">
+                                <?php
+                                printf(
+                                    /* translators: 1: number of abilities, 2: number of exposed tools */
+                                    esc_html__( '%1$d abilities → %2$d tool', 'mcp-abilities' ),
+                                    (int) $g_abilities,
+                                    (int) $g_tools
+                                );
+                                ?>
+                            </span>
+                        <?php else : ?>
+                            <span class="mcp-badge"><?php echo (int) $g_abilities; ?> <?php esc_html_e( 'tools', 'mcp-abilities' ); ?></span>
+                        <?php endif; ?>
                         <label class="mcp-toggle" title="<?php esc_attr_e( 'Enable/disable entire group', 'mcp-abilities' ); ?>">
                             <input type="checkbox"
                                 class="mcp-group-toggle"

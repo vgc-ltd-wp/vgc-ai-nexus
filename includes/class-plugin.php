@@ -49,6 +49,7 @@ final class Plugin {
             'class-registry.php',
             'class-ability-group.php',
             'class-ability.php',
+            'class-crud-ability.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
             'admin/class-connections-page.php',
@@ -96,7 +97,7 @@ final class Plugin {
 
     public function register_wp_abilities(): void {
         foreach ( $this->registry->get_groups() as $group ) {
-            foreach ( $group->get_abilities() as $ability ) {
+            foreach ( $group->get_mcp_abilities() as $ability ) {
                 // WP 6.9 ability names only allow [a-z0-9-/] — convert underscores to dashes.
                 $name = 'mcp-abilities/' . str_replace( '_', '-', $ability->get_key() );
 
@@ -143,7 +144,7 @@ final class Plugin {
      */
     public function add_tools_to_default_server( array $config ): array {
         foreach ( $this->registry->get_groups() as $group ) {
-            foreach ( $group->get_abilities() as $ability ) {
+            foreach ( $group->get_mcp_abilities() as $ability ) {
                 $tool = $this->make_mcp_tool( $ability, $group );
                 if ( null !== $tool ) {
                     $config['tools'][] = $tool;
