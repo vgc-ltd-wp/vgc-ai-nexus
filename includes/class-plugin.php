@@ -50,6 +50,8 @@ final class Plugin {
             'class-ability-group.php',
             'class-ability.php',
             'class-crud-ability.php',
+            'class-wpml-support.php',
+            'class-query-support.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
             'admin/class-connections-page.php',
