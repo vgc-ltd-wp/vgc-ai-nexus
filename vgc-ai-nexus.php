@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name:       VGC AI Nexus
- * Plugin URI:        https://vgc.com/ai-nexus
+ * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. Exposes your site's content, users, settings and menus as MCP (Model Context Protocol) tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface. Requires the MCP Adapter plugin to be installed and active. Extend capabilities with VGC AI Nexus add-ons for WooCommerce and more.
- * Version:           2.7.0
+ * Version:           2.7.1
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
- * Author URI:        https://vgc.com
+ * Author URI:        https://tools.vgc-ltd.com
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       mcp-abilities
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.7.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.7.1' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
