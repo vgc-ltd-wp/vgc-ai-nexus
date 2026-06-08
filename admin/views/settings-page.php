@@ -117,8 +117,14 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
                         <?php
                         $g_abilities = count( $group->get_abilities() );
                         $g_tools     = count( $group->get_mcp_abilities() );
+                        $g_locked    = method_exists( $group, 'is_locked' ) && $group->is_locked();
                         ?>
-                        <?php if ( $g_tools < $g_abilities ) : ?>
+                        <?php if ( $g_locked ) : ?>
+                            <span class="mcp-badge mcp-badge--locked" title="<?php esc_attr_e( 'Disabled in wp-config.php (MCP_ABILITIES_DISABLE_CUSTOM_CODE)', 'mcp-abilities' ); ?>">
+                                <span class="dashicons dashicons-lock" style="font-size:14px;width:14px;height:14px;"></span>
+                                <?php esc_html_e( 'Locked by config', 'mcp-abilities' ); ?>
+                            </span>
+                        <?php elseif ( $g_tools < $g_abilities ) : ?>
                             <span class="mcp-badge mcp-badge--consolidated" title="<?php esc_attr_e( 'Exposed as a single tool with an action parameter', 'mcp-abilities' ); ?>">
                                 <?php
                                 printf(
@@ -132,11 +138,12 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
                         <?php else : ?>
                             <span class="mcp-badge"><?php echo (int) $g_abilities; ?> <?php esc_html_e( 'tools', 'mcp-abilities' ); ?></span>
                         <?php endif; ?>
-                        <label class="mcp-toggle" title="<?php esc_attr_e( 'Enable/disable entire group', 'mcp-abilities' ); ?>">
+                        <label class="mcp-toggle" title="<?php echo $g_locked ? esc_attr__( 'Disabled in wp-config.php; cannot be enabled here.', 'mcp-abilities' ) : esc_attr__( 'Enable/disable entire group', 'mcp-abilities' ); ?>">
                             <input type="checkbox"
                                 class="mcp-group-toggle"
                                 data-group="<?php echo esc_attr( $group->get_slug() ); ?>"
-                                <?php checked( $group->is_enabled() ); ?>>
+                                <?php checked( $group->is_enabled() ); ?>
+                                <?php disabled( $g_locked ); ?>>
                             <span class="mcp-toggle__slider"></span>
                         </label>
                         <button class="mcp-group__expand" aria-expanded="false">
