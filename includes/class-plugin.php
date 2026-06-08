@@ -31,6 +31,9 @@ final class Plugin {
 
         $this->register_with_adapter();
 
+        // Attribute + tag WordPress revisions created by ability updates.
+        Revision_Support::init();
+
         if ( is_admin() ) {
             $admin = new Admin\Settings_Page( $this->registry );
             $admin->init();
@@ -52,6 +55,7 @@ final class Plugin {
             'class-crud-ability.php',
             'class-wpml-support.php',
             'class-query-support.php',
+            'class-revision-support.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
             'admin/class-connections-page.php',
