@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. Exposes your site's content, users, settings and menus as MCP (Model Context Protocol) tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface. Requires the MCP Adapter plugin to be installed and active. Extend capabilities with VGC AI Nexus add-ons for WooCommerce and more.
- * Version:           2.11.1
+ * Version:           2.11.2
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.11.1' );
+define( 'MCP_ABILITIES_VERSION',     '2.11.2' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -48,6 +48,37 @@ new \MCP_Abilities\VGC_Plugin_Updater(
     MCP_ABILITIES_VERSION,
     'https://raw.githubusercontent.com/vgc-ltd-wp/vgc-plugin-updates/main/plugins.json'
 );
+
+// Enrich this plugin's "View details" modal with a live summary of its abilities.
+add_filter( 'vgc_plugin_updater_sections', function ( array $sections, string $slug ): array {
+    if ( 'vgc-ai-nexus' !== $slug || ! function_exists( 'mcp_abilities' ) ) {
+        return $sections;
+    }
+    $groups = mcp_abilities()->registry->get_groups();
+    if ( empty( $groups ) ) {
+        return $sections;
+    }
+    $total = 0;
+    $items = '';
+    foreach ( $groups as $group ) {
+        $count  = count( $group->get_abilities() );
+        $total += $count;
+        $items .= '<li><strong>' . esc_html( $group->get_label() ) . '</strong> — '
+            . sprintf( /* translators: %d: ability count */ esc_html( _n( '%d ability', '%d abilities', $count, 'mcp-abilities' ) ), (int) $count )
+            . '</li>';
+    }
+    $summary = '<p><strong>'
+        . sprintf(
+            /* translators: 1: total abilities, 2: group count */
+            esc_html__( 'This plugin currently provides %1$d abilities across %2$d groups:', 'mcp-abilities' ),
+            (int) $total,
+            count( $groups )
+        )
+        . '</strong></p><ul style="list-style:disc;padding-left:20px;">' . $items . '</ul><hr />';
+
+    $sections['description'] = $summary . ( $sections['description'] ?? '' );
+    return $sections;
+}, 10, 2 );
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 require_once MCP_ABILITIES_DIR . 'includes/class-plugin.php';

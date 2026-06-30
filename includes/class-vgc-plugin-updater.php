@@ -127,6 +127,15 @@ class VGC_Plugin_Updater {
         if ( empty( $info ) ) {
             return $result;
         }
+        $sections = (array) ( $info['sections'] ?? [ 'description' => '' ] );
+
+        /**
+         * Let the plugin enrich its own "View details" modal — e.g. inject a
+         * live summary of what it currently provides. Receives the manifest
+         * sections, the plugin slug and the full manifest entry.
+         */
+        $sections = (array) apply_filters( 'vgc_plugin_updater_sections', $sections, $this->slug, $info );
+
         return (object) [
             'name'          => $info['name'] ?? $this->slug,
             'slug'          => $this->slug,
@@ -137,7 +146,7 @@ class VGC_Plugin_Updater {
             'requires_php'  => $info['requires_php'] ?? '',
             'tested'        => $info['tested'] ?? '',
             'last_updated'  => $info['last_updated'] ?? '',
-            'sections'      => (array) ( $info['sections'] ?? [ 'description' => '' ] ),
+            'sections'      => $sections,
             'download_link' => esc_url_raw( $info['download_url'] ?? '' ),
         ];
     }
