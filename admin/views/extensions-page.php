@@ -1,9 +1,12 @@
 <?php
 /**
- * Admin Extensions Page View
+ * Admin Extensions Overview
+ *
+ * Lists each installed extension as a card linking to its own subpage, where the
+ * user finds the usage guide + ability toggles.
  *
  * Variables available:
- *   $extensions – array[]  (each has: id, label, description, icon, groups, option_key)
+ *   $extensions – array[]  (each: id, label, description, icon, groups, option_key)
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -20,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
             </svg>
             <div>
                 <h1><?php esc_html_e( 'VGC AI Nexus – Extensions', 'mcp-abilities' ); ?></h1>
-                <p><?php esc_html_e( 'Enable or disable tools provided by installed add-ons.', 'mcp-abilities' ); ?></p>
+                <p><?php esc_html_e( 'Each installed add-on has its own page with a usage guide and per-tool toggles.', 'mcp-abilities' ); ?></p>
             </div>
         </div>
     </div>
@@ -35,120 +38,35 @@ defined( 'ABSPATH' ) || exit;
 
     <?php else : ?>
 
-    <div class="mcp-extensions" id="mcp-extensions-container">
+    <div class="mcp-ext-cards">
     <?php foreach ( $extensions as $extension ) :
-        $ext_id     = esc_attr( $extension['id'] );
-        $option_key = esc_attr( $extension['option_key'] ?? $ext_id );
+        $ext_id     = sanitize_key( $extension['id'] );
         $ext_groups = $extension['groups'] ?? [];
+        $tool_total = 0;
+        $ab_total   = 0;
+        foreach ( $ext_groups as $g ) {
+            $tool_total += count( $g->get_mcp_abilities() );
+            $ab_total   += count( $g->get_abilities() );
+        }
+        $url = \MCP_Abilities\Admin\Settings_Page::subpage_url( $ext_id );
     ?>
-
-        <div class="mcp-extension" data-extension-id="<?php echo $ext_id; ?>" data-option-key="<?php echo $option_key; ?>">
-
-            <!-- Extension header -->
-            <div class="mcp-extension__header">
-                <span class="mcp-extension__icon dashicons <?php echo esc_attr( $extension['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
-                <div class="mcp-extension__meta">
-                    <h2 class="mcp-extension__label"><?php echo esc_html( $extension['label'] ); ?></h2>
-                    <p class="mcp-extension__desc"><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
-                </div>
-                <div class="mcp-extension__actions">
-                    <span id="mcp-ext-status-<?php echo $ext_id; ?>" class="mcp-save-status"></span>
-                    <button class="mcp-btn mcp-btn--primary mcp-ext-save-btn"
-                            data-extension="<?php echo $ext_id; ?>">
-                        <span class="dashicons dashicons-saved"></span>
-                        <?php esc_html_e( 'Save', 'mcp-abilities' ); ?>
-                    </button>
+        <a class="mcp-ext-card" href="<?php echo esc_url( $url ); ?>">
+            <span class="mcp-ext-card__icon dashicons <?php echo esc_attr( $extension['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
+            <div class="mcp-ext-card__body">
+                <h2 class="mcp-ext-card__label"><?php echo esc_html( $extension['label'] ); ?></h2>
+                <p class="mcp-ext-card__desc"><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
+                <div class="mcp-ext-card__meta">
+                    <span class="mcp-badge"><?php echo (int) count( $ext_groups ); ?> <?php esc_html_e( 'groups', 'mcp-abilities' ); ?></span>
+                    <span class="mcp-badge"><?php echo (int) $ab_total; ?> <?php esc_html_e( 'abilities', 'mcp-abilities' ); ?></span>
                 </div>
             </div>
-
-            <!-- Groups (same structure as the main abilities page) -->
-            <?php if ( empty( $ext_groups ) ) : ?>
-            <p class="mcp-extension__no-groups">
-                <?php esc_html_e( 'No ability groups found in this extension.', 'mcp-abilities' ); ?>
-            </p>
-            <?php else : ?>
-            <div class="mcp-groups mcp-extension__groups">
-            <?php foreach ( $ext_groups as $group ) : ?>
-
-                <div class="mcp-group" data-slug="<?php echo esc_attr( $group->get_slug() ); ?>">
-
-                    <?php if ( $group->get_security_warning() ) : ?>
-                    <div class="mcp-group__warning<?php echo $group->is_enabled() ? '' : ' mcp-group__warning--hidden'; ?>"
-                         data-group="<?php echo esc_attr( $group->get_slug() ); ?>">
-                        <span class="dashicons dashicons-warning"></span>
-                        <?php echo esc_html( $group->get_security_warning() ); ?>
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="mcp-group__header">
-                        <span class="mcp-group__icon dashicons <?php echo esc_attr( $group->get_icon() ); ?>"></span>
-                        <div class="mcp-group__meta">
-                            <h3 class="mcp-group__label"><?php echo esc_html( $group->get_label() ); ?></h3>
-                            <p class="mcp-group__desc"><?php echo esc_html( $group->get_description() ); ?></p>
-                        </div>
-                        <div class="mcp-group__controls">
-                            <span class="mcp-badge">
-                                <?php echo count( $group->get_abilities() ); ?>
-                                <?php esc_html_e( 'tools', 'mcp-abilities' ); ?>
-                            </span>
-                            <label class="mcp-toggle" title="<?php esc_attr_e( 'Enable/disable entire group', 'mcp-abilities' ); ?>">
-                                <input type="checkbox"
-                                    class="mcp-group-toggle"
-                                    data-group="<?php echo esc_attr( $group->get_slug() ); ?>"
-                                    <?php checked( $group->is_enabled() ); ?>>
-                                <span class="mcp-toggle__slider"></span>
-                            </label>
-                            <button class="mcp-group__expand" aria-expanded="false">
-                                <span class="dashicons dashicons-arrow-down-alt2"></span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="mcp-group__body <?php echo $group->is_enabled() ? '' : 'mcp-group__body--disabled'; ?>">
-                        <table class="mcp-abilities-table">
-                            <thead>
-                                <tr>
-                                    <th><?php esc_html_e( 'Tool Name', 'mcp-abilities' ); ?></th>
-                                    <th><?php esc_html_e( 'Description', 'mcp-abilities' ); ?></th>
-                                    <th><?php esc_html_e( 'Capability', 'mcp-abilities' ); ?></th>
-                                    <th class="mcp-col-toggle"><?php esc_html_e( 'Enabled', 'mcp-abilities' ); ?></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            <?php foreach ( $group->get_abilities() as $ability ) : ?>
-                                <tr class="mcp-ability-row" data-key="<?php echo esc_attr( $ability->get_key() ); ?>">
-                                    <td>
-                                        <code class="mcp-tool-key"><?php echo esc_html( $ability->get_key() ); ?></code>
-                                        <span class="mcp-tool-label"><?php echo esc_html( $ability->get_label() ); ?></span>
-                                    </td>
-                                    <td class="mcp-tool-desc"><?php echo esc_html( $ability->get_description() ); ?></td>
-                                    <td><code class="mcp-cap"><?php echo esc_html( $ability->get_required_cap() ); ?></code></td>
-                                    <td class="mcp-col-toggle">
-                                        <label class="mcp-toggle mcp-toggle--sm">
-                                            <input type="checkbox"
-                                                class="mcp-ability-toggle"
-                                                data-group="<?php echo esc_attr( $group->get_slug() ); ?>"
-                                                data-key="<?php echo esc_attr( $ability->get_key() ); ?>"
-                                                <?php checked( $ability->is_enabled() ); ?>>
-                                            <span class="mcp-toggle__slider"></span>
-                                        </label>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                </div>
-
-            <?php endforeach; ?>
-            </div><!-- /.mcp-groups -->
-            <?php endif; ?>
-
-        </div><!-- /.mcp-extension -->
-
+            <span class="mcp-ext-card__go">
+                <?php esc_html_e( 'Open guide & settings', 'mcp-abilities' ); ?>
+                <span class="dashicons dashicons-arrow-right-alt2"></span>
+            </span>
+        </a>
     <?php endforeach; ?>
-    </div><!-- /#mcp-extensions-container -->
+    </div>
 
     <?php endif; ?>
 

@@ -12,6 +12,12 @@ class Theme_Management_Group extends Ability_Group {
         $this->label       = __( 'Theme Management', 'mcp-abilities' );
         $this->description = __( 'Read and update active theme customizer (theme_mods) settings.', 'mcp-abilities' );
         $this->icon        = 'dashicons-admin-appearance';
+        $this->guide       = __( "Read and tweak the active theme's Customizer settings (theme mods) - logo, colours and other options exposed through the Customizer.", 'mcp-abilities' );
+        $this->examples    = [
+            __( "What theme mods are currently set?", 'mcp-abilities' ),
+            __( "Update the custom logo setting", 'mcp-abilities' ),
+            __( "Show the current header background colour", 'mcp-abilities' ),
+        ];
     }
 
     protected function register_abilities(): void {

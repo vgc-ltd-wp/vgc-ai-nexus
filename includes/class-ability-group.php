@@ -23,6 +23,21 @@ abstract class Ability_Group {
     protected string $security_warning  = '';
 
     /**
+     * Human-readable "What you can do with this" intro shown on the admin page,
+     * above the ability toggles. Plain text or light inline HTML. Optional.
+     */
+    protected string $guide = '';
+
+    /**
+     * Example natural-language prompts a user could give Claude that this group
+     * would handle, e.g. "Publish my draft post about summer sales".
+     * Shown as a list under the guide. Optional.
+     *
+     * @var string[]
+     */
+    protected array $examples = [];
+
+    /**
      * Whether this group may be collapsed into a single dispatcher tool when
      * consolidation is enabled site-wide. Groups can opt out by setting false.
      */
@@ -109,6 +124,9 @@ abstract class Ability_Group {
     public function set_enabled( bool $v ): void   { $this->enabled = $v; }
     public function get_default_enabled(): bool    { return $this->default_enabled; }
     public function get_security_warning(): string { return $this->security_warning; }
+    public function get_guide(): string            { return $this->guide; }
+    /** @return string[] */
+    public function get_examples(): array          { return $this->examples; }
 
     /** @return Ability[] */
     public function get_abilities(): array    { return $this->abilities; }

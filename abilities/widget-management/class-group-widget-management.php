@@ -12,6 +12,12 @@ class Widget_Management_Group extends Ability_Group {
         $this->label       = __( 'Widget Management', 'mcp-abilities' );
         $this->description = __( 'List widget areas (sidebars), inspect, add, update and remove widgets.', 'mcp-abilities' );
         $this->icon        = 'dashicons-welcome-widgets-menus';
+        $this->guide       = __( "Manage widget areas (sidebars and footer): see what's where, add or remove widgets, and update their content.", 'mcp-abilities' );
+        $this->examples    = [
+            __( "List all widget areas and what's in them", 'mcp-abilities' ),
+            __( "Add a Recent Posts widget to the footer", 'mcp-abilities' ),
+            __( "Remove the search widget from the sidebar", 'mcp-abilities' ),
+        ];
     }
 
     protected function register_abilities(): void {

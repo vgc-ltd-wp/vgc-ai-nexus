@@ -12,6 +12,12 @@ class Custom_Code_Group extends Ability_Group {
         $this->label            = __( 'Custom CSS & JS', 'mcp-abilities' );
         $this->description      = __( 'Inject custom CSS and JavaScript into the site frontend.', 'mcp-abilities' );
         $this->icon             = 'dashicons-editor-code';
+        $this->guide       = __( "Add small front-end tweaks as site-wide custom CSS or JavaScript, then clear the cached CSS when you're done - quick visual fixes without editing theme files.", 'mcp-abilities' );
+        $this->examples    = [
+            __( "Add CSS to hide the page title on my Contact page", 'mcp-abilities' ),
+            __( "Inject a snippet that makes all external links open in a new tab", 'mcp-abilities' ),
+            __( "Remove the custom CSS you added earlier", 'mcp-abilities' ),
+        ];
         $this->security_warning = __( 'Security risk: these tools inject raw CSS and JavaScript directly into your site\'s frontend. Only enable for AI agents authenticated as an administrator.', 'mcp-abilities' );
     }
 

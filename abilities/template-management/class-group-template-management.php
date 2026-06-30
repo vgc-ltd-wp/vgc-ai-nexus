@@ -12,6 +12,12 @@ class Template_Management_Group extends Ability_Group {
         $this->label       = __( 'Template Management', 'mcp-abilities' );
         $this->description = __( 'List, read, create and edit Full Site Editing templates, template parts, global styles and block patterns. Block themes only.', 'mcp-abilities' );
         $this->icon        = 'dashicons-layout';
+        $this->guide       = __( "Edit your block (FSE) theme: read and modify site templates and template parts, adjust global styles (colours, typography), and manage block patterns. Block themes only.", 'mcp-abilities' );
+        $this->examples    = [
+            __( "Show me the header template part", 'mcp-abilities' ),
+            __( "Change the global link colour to #6C63FF", 'mcp-abilities' ),
+            __( "List all available templates in my theme", 'mcp-abilities' ),
+        ];
     }
 
     protected function register_abilities(): void {

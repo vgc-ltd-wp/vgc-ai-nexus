@@ -937,3 +937,137 @@
     align-items: center;
     gap: 4px;
 }
+
+/* ── Extensions overview cards ──────────────────────────────────────────── */
+.mcp-ext-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+}
+.mcp-ext-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px;
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    text-decoration: none;
+    color: var(--mcp-text);
+    transition: transform var(--mcp-transition), box-shadow var(--mcp-transition), border-color var(--mcp-transition);
+}
+.mcp-ext-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--mcp-primary);
+    box-shadow: 0 6px 24px rgba(108,99,255,.16);
+}
+.mcp-ext-card__icon {
+    font-size: 30px;
+    width: 30px;
+    height: 30px;
+    color: var(--mcp-primary);
+    flex: 0 0 auto;
+}
+.mcp-ext-card__body { flex: 1 1 auto; min-width: 0; }
+.mcp-ext-card__label { margin: 0 0 4px; font-size: 16px; }
+.mcp-ext-card__desc { margin: 0 0 12px; color: var(--mcp-muted); font-size: 13px; line-height: 1.5; }
+.mcp-ext-card__meta { display: flex; gap: 8px; }
+.mcp-ext-card__go {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mcp-primary);
+    white-space: nowrap;
+}
+.mcp-ext-card__go .dashicons { font-size: 16px; width: 16px; height: 16px; }
+
+/* ── Subpage back-link + extension header icon ──────────────────────────── */
+.mcp-backlink { margin: 0 0 12px; }
+.mcp-backlink a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    color: var(--mcp-muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+.mcp-backlink a:hover { color: var(--mcp-primary); }
+.mcp-backlink .dashicons { font-size: 16px; width: 16px; height: 16px; }
+.mcp-header__exticon {
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+    color: var(--mcp-primary);
+}
+
+/* ── Extension intro (overall guide on a subpage) ───────────────────────── */
+.mcp-intro {
+    background: linear-gradient(135deg, rgba(108,99,255,.06), rgba(108,99,255,.02));
+    border: 1px solid var(--mcp-border);
+    border-left: 3px solid var(--mcp-primary);
+    border-radius: var(--mcp-radius);
+    padding: 16px 20px;
+    margin: 0 0 18px;
+}
+.mcp-intro__lead { margin: 0; font-size: 14px; line-height: 1.6; color: var(--mcp-text); }
+.mcp-intro__examples { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.mcp-intro__examples li,
+.mcp-usage__examples li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--mcp-text);
+    font-style: italic;
+}
+.mcp-intro__examples .dashicons,
+.mcp-usage__examples .dashicons {
+    font-size: 15px; width: 15px; height: 15px;
+    color: var(--mcp-primary);
+    flex: 0 0 auto;
+    margin-top: 2px;
+}
+
+/* ── Per-group usage panel (guide + examples) ───────────────────────────── */
+.mcp-usage {
+    padding: 14px 18px;
+    background: var(--mcp-bg);
+    border-bottom: 1px solid var(--mcp-border);
+}
+.mcp-usage__lead {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.mcp-usage__lead .dashicons {
+    font-size: 18px; width: 18px; height: 18px;
+    color: var(--mcp-amber);
+    flex: 0 0 auto;
+    margin-top: 1px;
+}
+.mcp-usage__lead p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--mcp-text); }
+.mcp-usage__examples { margin-top: 10px; padding-left: 26px; }
+.mcp-usage__examples-title {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--mcp-muted);
+    margin-bottom: 6px;
+}
+.mcp-usage__examples ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+
+/* ── Subpage toolbar count ──────────────────────────────────────────────── */
+.mcp-toolbar__count {
+    font-size: 13px;
+    color: var(--mcp-muted);
+    font-weight: 600;
+    margin-left: 4px;
+}
