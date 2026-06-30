@@ -1071,3 +1071,42 @@
     font-weight: 600;
     margin-left: 4px;
 }
+
+/* ── Extensions: section headers + install cards ────────────────────────── */
+.mcp-section-title {
+    margin: 28px 0 4px;
+    font-size: 15px;
+    color: var(--mcp-text);
+}
+.mcp-section-sub {
+    margin: 0 0 14px;
+    color: var(--mcp-muted);
+    font-size: 13px;
+}
+.mcp-ext-card--install {
+    cursor: default;
+    flex-direction: column;
+    align-items: stretch;
+}
+.mcp-ext-card--install:hover {
+    transform: none;
+    border-color: var(--mcp-border);
+    box-shadow: var(--mcp-shadow);
+}
+.mcp-ext-card--install .mcp-ext-card__icon { font-size: 28px; }
+.mcp-badge--req {
+    background: #fff4e5;
+    color: #9a6700;
+    border-color: #ffe2b8;
+}
+.mcp-ext-card__install {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+.mcp-install-status { font-size: 12px; }
+.mcp-install-status.is-error   { color: var(--mcp-red); }
+.mcp-install-status.is-success { color: var(--mcp-green); }
+.mcp-spin { animation: mcp-spin 1s linear infinite; }
+@keyframes mcp-spin { to { transform: rotate(360deg); } }

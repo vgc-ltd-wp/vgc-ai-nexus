@@ -27,13 +27,18 @@ class Settings_Page {
     /** Cached result of the mcp_abilities_extensions filter. */
     private ?array $extensions = null;
 
-    public function __construct( private Registry $registry ) {}
+    private Extension_Installer $installer;
+
+    public function __construct( private Registry $registry ) {
+        $this->installer = new Extension_Installer();
+    }
 
     public function init(): void {
         add_action( 'admin_menu',            [ $this, 'add_menu' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
         add_action( 'wp_ajax_mcp_save_settings',           [ $this, 'ajax_save_settings' ] );
         add_action( 'wp_ajax_mcp_save_extension_settings', [ $this, 'ajax_save_extension_settings' ] );
+        $this->installer->init();
         // Keep the AI Nexus → Extensions menu highlighted while on a hidden subpage.
         add_filter( 'parent_file',  [ $this, 'highlight_parent_menu' ] );
         add_filter( 'submenu_file', [ $this, 'highlight_submenu' ] );
@@ -159,6 +164,7 @@ class Settings_Page {
                 'saved'  => __( 'Saved!',                'mcp-abilities' ),
                 'error'  => __( 'Error saving settings.', 'mcp-abilities' ),
                 'save'   => __( 'Save Settings',         'mcp-abilities' ),
+                'installing' => __( 'Installing…',       'mcp-abilities' ),
             ],
         ] );
     }
@@ -177,7 +183,8 @@ class Settings_Page {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html__( 'You do not have permission to access this page.', 'mcp-abilities' ) );
         }
-        $extensions = $this->get_extensions();
+        $extensions  = $this->get_extensions();
+        $installable = $this->installer->get_installable();
         include MCP_ABILITIES_DIR . 'admin/views/extensions-page.php';
     }
 

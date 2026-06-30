@@ -181,6 +181,37 @@
         } );
     } );
 
+    // ── One-click extension install ──────────────────────────────────────────
+
+    $( document ).on( 'click', '.mcp-install-btn', function () {
+        const $btn    = $( this );
+        const slug    = $btn.data( 'slug' );
+        const $status = $btn.siblings( '.mcp-install-status' );
+        const original = $btn.html();
+
+        $btn.prop( 'disabled', true ).html( '<span class="dashicons dashicons-update mcp-spin"></span> ' + ( mcpAbilities.i18n.installing || 'Installing…' ) );
+        $status.removeClass( 'is-error is-success' ).text( '' );
+
+        $.ajax( {
+            url:    mcpAbilities.ajaxUrl,
+            method: 'POST',
+            data:   { action: 'mcp_install_extension', nonce: mcpAbilities.nonce, slug: slug },
+            success: function ( res ) {
+                if ( res.success ) {
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Done.' );
+                    setTimeout( function () { window.location.reload(); }, 900 );
+                } else {
+                    $btn.prop( 'disabled', false ).html( original );
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Install failed.' );
+                }
+            },
+            error: function () {
+                $btn.prop( 'disabled', false ).html( original );
+                $status.addClass( 'is-error' ).text( 'Install failed.' );
+            },
+        } );
+    } );
+
     // ── Warn on unsaved changes ──────────────────────────────────────────────
 
     $( window ).on( 'beforeunload', function () {

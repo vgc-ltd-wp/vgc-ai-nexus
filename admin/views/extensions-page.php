@@ -28,7 +28,9 @@ defined( 'ABSPATH' ) || exit;
         </div>
     </div>
 
-    <?php if ( empty( $extensions ) ) : ?>
+    <?php $installable = $installable ?? []; ?>
+
+    <?php if ( empty( $extensions ) && empty( $installable ) ) : ?>
 
     <div class="mcp-empty-state">
         <span class="dashicons dashicons-admin-plugins mcp-empty-state__icon"></span>
@@ -36,8 +38,10 @@ defined( 'ABSPATH' ) || exit;
         <p><?php esc_html_e( 'Install a compatible add-on (e.g. VGC AI Nexus for WooCommerce) to manage its tools here.', 'mcp-abilities' ); ?></p>
     </div>
 
-    <?php else : ?>
+    <?php endif; ?>
 
+    <?php if ( ! empty( $extensions ) ) : ?>
+    <h2 class="mcp-section-title"><?php esc_html_e( 'Installed', 'mcp-abilities' ); ?></h2>
     <div class="mcp-ext-cards">
     <?php foreach ( $extensions as $extension ) :
         $ext_id     = sanitize_key( $extension['id'] );
@@ -67,7 +71,40 @@ defined( 'ABSPATH' ) || exit;
         </a>
     <?php endforeach; ?>
     </div>
+    <?php endif; ?>
 
+    <?php if ( ! empty( $installable ) ) : ?>
+    <h2 class="mcp-section-title"><?php esc_html_e( 'Available to install', 'mcp-abilities' ); ?></h2>
+    <p class="mcp-section-sub"><?php esc_html_e( 'One-click install of approved VGC AI Nexus extensions from the official channel.', 'mcp-abilities' ); ?></p>
+    <div class="mcp-ext-cards mcp-ext-cards--available">
+    <?php foreach ( $installable as $ext ) :
+        $slug    = esc_attr( $ext['slug'] );
+        $is_inst = 'inactive' === ( $ext['state'] ?? '' );
+    ?>
+        <div class="mcp-ext-card mcp-ext-card--install" data-slug="<?php echo $slug; ?>">
+            <span class="mcp-ext-card__icon dashicons <?php echo esc_attr( $ext['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
+            <div class="mcp-ext-card__body">
+                <h2 class="mcp-ext-card__label"><?php echo esc_html( $ext['name'] ?? $slug ); ?></h2>
+                <p class="mcp-ext-card__desc"><?php echo esc_html( $ext['description'] ?? '' ); ?></p>
+                <div class="mcp-ext-card__meta">
+                    <?php if ( ! empty( $ext['version'] ) ) : ?>
+                        <span class="mcp-badge">v<?php echo esc_html( $ext['version'] ); ?></span>
+                    <?php endif; ?>
+                    <?php if ( ! empty( $ext['requires'] ) ) : ?>
+                        <span class="mcp-badge mcp-badge--req"><?php printf( esc_html__( 'needs %s', 'mcp-abilities' ), esc_html( $ext['requires'] ) ); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="mcp-ext-card__install">
+                <button class="mcp-btn mcp-btn--primary mcp-install-btn" data-slug="<?php echo $slug; ?>">
+                    <span class="dashicons <?php echo $is_inst ? 'dashicons-yes' : 'dashicons-download'; ?>"></span>
+                    <?php echo $is_inst ? esc_html__( 'Activate', 'mcp-abilities' ) : esc_html__( 'Install', 'mcp-abilities' ); ?>
+                </button>
+                <span class="mcp-install-status"></span>
+            </div>
+        </div>
+    <?php endforeach; ?>
+    </div>
     <?php endif; ?>
 
 </div><!-- /.mcp-wrap -->
