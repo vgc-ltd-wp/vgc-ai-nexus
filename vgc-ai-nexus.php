@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
- * Description:       The AI management layer for WordPress. Exposes your site's content, users, settings and menus as MCP (Model Context Protocol) tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface. Requires the MCP Adapter plugin to be installed and active. Extend capabilities with VGC AI Nexus add-ons for WooCommerce and more.
- * Version:           2.12.0
+ * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
+ * Version:           2.13.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,12 +17,29 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.12.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.13.0' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
 define( 'MCP_ABILITIES_ABILITIES_DIR', MCP_ABILITIES_DIR . 'abilities/' );
 define( 'MCP_ABILITIES_OPTION_KEY',  'mcp_abilities_settings' );
+
+// ── Bundled MCP Adapter ──────────────────────────────────────────────────────
+// AI Nexus ships the MCP Adapter so it works as a SINGLE plugin (connection +
+// abilities). If another MCP Adapter — or a VGC Claude connector — is already
+// loaded, defer to it: only one adapter may run per site.
+if ( ! defined( 'WP_MCP_VERSION' ) ) {
+    if ( ! defined( 'WP_MCP_DIR' ) ) {
+        define( 'WP_MCP_DIR', MCP_ABILITIES_DIR . 'mcp' );
+    }
+    require_once WP_MCP_DIR . '/includes/Autoloader.php';
+    if ( \WP\MCP\Autoloader::autoload() ) {
+        define( 'WP_MCP_VERSION', '0.5.1-vgc' );
+        if ( class_exists( \WP\MCP\Plugin::class ) ) {
+            \WP\MCP\Plugin::instance();
+        }
+    }
+}
 
 // ── Autoloader ─────────────────────────────────────────────────────────────
 spl_autoload_register( function ( string $class ): void {

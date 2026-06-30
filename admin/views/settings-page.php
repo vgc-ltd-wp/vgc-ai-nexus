@@ -111,7 +111,7 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
             <div class="mcp-doc-section">
                 <h3><?php esc_html_e( 'Step 1 – Find your MCP server URL', 'mcp-abilities' ); ?></h3>
                 <p><?php esc_html_e( 'The MCP Adapter plugin exposes your site as an MCP server. Your server URL is:', 'mcp-abilities' ); ?></p>
-                <pre class="mcp-code-block"><?php echo esc_html( home_url( '/wp-json/mcp/v1' ) ); ?></pre>
+                <pre class="mcp-code-block"><?php echo esc_html( rest_url( 'mcp/mcp-adapter-default-server' ) ); ?></pre>
                 <p><?php esc_html_e( 'You will need this URL when configuring Claude or any other MCP-compatible AI client.', 'mcp-abilities' ); ?></p>
             </div>
 
@@ -131,7 +131,7 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
                 <h3><?php esc_html_e( 'Step 3 – Add the server in Claude Desktop', 'mcp-abilities' ); ?></h3>
                 <p><?php esc_html_e( 'Open your Claude Desktop configuration file and add the following entry under "mcpServers":', 'mcp-abilities' ); ?></p>
                 <pre class="mcp-code-block"><?php
-$site_url = home_url( '/wp-json/mcp/v1' );
+$site_url = rest_url( 'mcp/mcp-adapter-default-server' );
 echo esc_html(
     "\"mcpServers\": {\n" .
     "  \"vgc-ai-nexus\": {\n" .
@@ -154,7 +154,7 @@ echo esc_html(
                 <ol style="color:var(--mcp-muted);font-size:14px;padding-left:20px;margin:0 0 10px;">
                     <li><?php esc_html_e( 'Open Claude.ai and go to Settings → Integrations.', 'mcp-abilities' ); ?></li>
                     <li><?php esc_html_e( 'Click "Add Integration" and choose "Custom MCP Server".', 'mcp-abilities' ); ?></li>
-                    <li><?php printf( esc_html__( 'Paste your server URL: %s', 'mcp-abilities' ), '<code>' . esc_html( home_url( '/wp-json/mcp/v1' ) ) . '</code>' ); ?></li>
+                    <li><?php printf( esc_html__( 'Paste your server URL: %s', 'mcp-abilities' ), '<code>' . esc_html( rest_url( 'mcp/mcp-adapter-default-server' ) ) . '</code>' ); ?></li>
                     <li><?php esc_html_e( 'Enter your WordPress username and application password when prompted.', 'mcp-abilities' ); ?></li>
                 </ol>
             </div>
@@ -166,7 +166,7 @@ echo esc_html(
                     <li><?php esc_html_e( 'Confirm the MCP Adapter plugin is active.', 'mcp-abilities' ); ?></li>
                     <li><?php esc_html_e( 'Ensure at least one ability group is enabled on the Abilities tab.', 'mcp-abilities' ); ?></li>
                     <li><?php esc_html_e( 'Verify Application Passwords are enabled on your site (they require HTTPS).', 'mcp-abilities' ); ?></li>
-                    <li><?php printf( esc_html__( 'Test the endpoint directly: %s', 'mcp-abilities' ), '<code>' . esc_html( home_url( '/wp-json/mcp/v1/tools' ) ) . '</code>' ); ?></li>
+                    <li><?php printf( esc_html__( 'Test the endpoint directly: %s', 'mcp-abilities' ), '<code>' . esc_html( rest_url( 'mcp/mcp-adapter-default-server' ) ) . '</code>' ); ?></li>
                 </ul>
             </div>
 

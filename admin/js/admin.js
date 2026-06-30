@@ -212,6 +212,38 @@
         } );
     } );
 
+    // ── Connect: generate application password ───────────────────────────────
+
+    $( '#mcp-generate-pw' ).on( 'click', function () {
+        const $btn    = $( this );
+        const $status = $( '#mcp-generate-status' );
+        $btn.prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( ( mcpAbilities.i18n.installing || 'Working…' ) );
+
+        $.ajax( {
+            url:    mcpAbilities.ajaxUrl,
+            method: 'POST',
+            data:   { action: 'mcp_generate_app_password', nonce: mcpAbilities.nonce },
+            success: function ( res ) {
+                if ( res.success && res.data ) {
+                    $( '#mcp-connect-user' ).text( res.data.username );
+                    $( '#mcp-connect-pass' ).text( res.data.password );
+                    $( '#mcp-connect-config' ).text( res.data.config );
+                    $( '#mcp-connect-result' ).show();
+                    $status.text( '' );
+                } else {
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            },
+            error: function () {
+                $status.addClass( 'is-error' ).text( 'Request failed.' );
+            },
+            complete: function () {
+                $btn.prop( 'disabled', false );
+            },
+        } );
+    } );
+
     // ── Warn on unsaved changes ──────────────────────────────────────────────
 
     $( window ).on( 'beforeunload', function () {

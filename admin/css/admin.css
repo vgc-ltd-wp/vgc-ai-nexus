@@ -1110,3 +1110,10 @@
 .mcp-install-status.is-success { color: var(--mcp-green); }
 .mcp-spin { animation: mcp-spin 1s linear infinite; }
 @keyframes mcp-spin { to { transform: rotate(360deg); } }
+
+/* ── Connect page status ────────────────────────────────────────────────── */
+.mcp-save-status.is-error,
+.mcp-install-status.is-error   { color: var(--mcp-red); }
+.mcp-save-status.is-success,
+.mcp-install-status.is-success { color: var(--mcp-green); }
+#mcp-connect-result .mcp-code-block { white-space: pre; overflow-x: auto; }

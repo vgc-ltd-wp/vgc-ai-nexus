@@ -14,12 +14,14 @@ defined( 'ABSPATH' ) || exit;
  */
 class Settings_Page {
 
-    private const MENU_SLUG = 'mcp-abilities';
-    private const EXTS_SLUG = 'mcp-abilities-extensions';
+    private const MENU_SLUG    = 'mcp-abilities';
+    private const EXTS_SLUG    = 'mcp-abilities-extensions';
+    private const CONNECT_SLUG = 'mcp-abilities-connect';
 
     /** Hook suffixes returned by add_*_page() — used for asset gating. */
     private string $abilities_hook   = '';
     private string $extensions_hook  = '';
+    private string $connect_hook     = '';
 
     /** Hook suffix => extension id, for the per-extension subpages. */
     private array $subpage_hooks = [];
@@ -28,9 +30,11 @@ class Settings_Page {
     private ?array $extensions = null;
 
     private Extension_Installer $installer;
+    private Connect $connect;
 
     public function __construct( private Registry $registry ) {
         $this->installer = new Extension_Installer();
+        $this->connect   = new Connect();
     }
 
     public function init(): void {
@@ -39,6 +43,7 @@ class Settings_Page {
         add_action( 'wp_ajax_mcp_save_settings',           [ $this, 'ajax_save_settings' ] );
         add_action( 'wp_ajax_mcp_save_extension_settings', [ $this, 'ajax_save_extension_settings' ] );
         $this->installer->init();
+        $this->connect->init();
         // Keep the AI Nexus → Extensions menu highlighted while on a hidden subpage.
         add_filter( 'parent_file',  [ $this, 'highlight_parent_menu' ] );
         add_filter( 'submenu_file', [ $this, 'highlight_submenu' ] );
@@ -81,6 +86,16 @@ class Settings_Page {
             'manage_options',
             self::MENU_SLUG,
             [ $this, 'render_abilities_page' ]
+        );
+
+        // Connect sub-page (generate app password + Claude config).
+        $this->connect_hook = add_submenu_page(
+            self::MENU_SLUG,
+            __( 'Connect – VGC AI Nexus', 'mcp-abilities' ),
+            __( 'Connect', 'mcp-abilities' ),
+            'manage_options',
+            self::CONNECT_SLUG,
+            [ $this, 'render_connect_page' ]
         );
 
         // Extensions overview sub-page.
@@ -139,6 +154,7 @@ class Settings_Page {
     public function enqueue_assets( string $hook ): void {
         if ( $hook !== $this->abilities_hook
             && $hook !== $this->extensions_hook
+            && $hook !== $this->connect_hook
             && ! isset( $this->subpage_hooks[ $hook ] ) ) {
             return;
         }
@@ -177,6 +193,13 @@ class Settings_Page {
         }
         $groups = $this->registry->get_groups();
         include MCP_ABILITIES_DIR . 'admin/views/settings-page.php';
+    }
+
+    public function render_connect_page(): void {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( esc_html__( 'You do not have permission to access this page.', 'mcp-abilities' ) );
+        }
+        include MCP_ABILITIES_DIR . 'admin/views/connect-page.php';
     }
 
     public function render_extensions_page(): void {
