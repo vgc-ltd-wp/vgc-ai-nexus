@@ -320,6 +320,11 @@ class Settings_Page {
      * and get_examples(); set $this->guide / $this->examples in the group's
      * define_meta() to populate the "What you can do" panel.
      *
+     * Extension SETTINGS (API keys, connections, etc.) must render on the
+     * extension's AI Nexus subpage — NOT under WordPress → Settings. Hook the
+     * `mcp_abilities_extension_settings` action (it passes the extension id) and
+     * echo your settings UI; it appears above the ability toggles.
+     *
      * @return array[]
      */
     private function get_extensions(): array {

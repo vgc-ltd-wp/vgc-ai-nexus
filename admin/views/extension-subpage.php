@@ -58,6 +58,23 @@ foreach ( $ext_groups as $g ) {
     </div>
     <?php endif; ?>
 
+    <?php
+    /**
+     * Extension settings panel. Extensions render their own settings here (API
+     * keys, connections, etc.) — the convention is that ALL AI Nexus extension
+     * settings live on their AI Nexus subpage, NOT under WordPress → Settings.
+     * The callback is responsible for escaping its own output.
+     */
+    ob_start();
+    do_action( 'mcp_abilities_extension_settings', $ext_id );
+    $ext_settings_html = trim( (string) ob_get_clean() );
+    if ( '' !== $ext_settings_html ) :
+    ?>
+    <div class="mcp-ext-settings">
+        <?php echo $ext_settings_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the extension callback. ?>
+    </div>
+    <?php endif; ?>
+
     <div class="mcp-extension" data-extension-id="<?php echo $ext_id; ?>" data-option-key="<?php echo $option_key; ?>">
 
         <div class="mcp-toolbar">

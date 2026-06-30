@@ -1129,3 +1129,15 @@
     min-width: 280px;
     max-width: 100%;
 }
+
+/* ── Extension settings panel (rendered on the subpage) ─────────────────── */
+.mcp-ext-settings {
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    padding: 18px 22px;
+    margin: 0 0 18px;
+}
+.mcp-ext-settings h2 { margin-top: 0; font-size: 15px; }
+.mcp-ext-settings .form-table th { padding-left: 0; }
