@@ -1143,3 +1143,9 @@
 }
 .mcp-ext-settings h2 { margin-top: 0; font-size: 15px; }
 .mcp-ext-settings .form-table th { padding-left: 0; }
+
+/* ── Extension subpage: inset the toolbar so it isn't flush to the card edges ─ */
+.mcp-extension > .mcp-toolbar {
+    padding: 16px 16px 0;
+    margin-bottom: 0;
+}
