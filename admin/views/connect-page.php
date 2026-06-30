@@ -44,7 +44,23 @@ $adapter_ok = Connect::adapter_active();
 
         <div class="mcp-doc-section">
             <h3><?php esc_html_e( 'Step 2 — Generate the connection', 'mcp-abilities' ); ?></h3>
-            <p><?php esc_html_e( 'Create an Application Password for your account and get a ready-to-paste Claude Desktop config. The password is shown once.', 'mcp-abilities' ); ?></p>
+            <p><?php esc_html_e( 'Choose the WordPress user the connection will act as — Claude’s permissions match this account’s capabilities — then generate its Application Password. The password is shown once.', 'mcp-abilities' ); ?></p>
+            <?php
+            $connect_users   = Connect::eligible_users();
+            $connect_current = get_current_user_id();
+            ?>
+            <p>
+                <label for="mcp-connect-user-select" style="font-weight:600;margin-right:8px;"><?php esc_html_e( 'Connection user:', 'mcp-abilities' ); ?></label>
+                <select id="mcp-connect-user-select" class="mcp-select">
+                    <?php foreach ( $connect_users as $u ) :
+                        $roles = $u->roles ? ' — ' . esc_html( ucfirst( (string) reset( $u->roles ) ) ) : '';
+                    ?>
+                        <option value="<?php echo (int) $u->ID; ?>" <?php selected( $u->ID, $connect_current ); ?>>
+                            <?php echo esc_html( $u->display_name . ' (' . $u->user_login . ')' ) . $roles; ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </p>
             <p>
                 <button id="mcp-generate-pw" class="mcp-btn mcp-btn--primary">
                     <span class="dashicons dashicons-admin-network"></span>

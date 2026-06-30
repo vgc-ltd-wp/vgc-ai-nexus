@@ -220,10 +220,12 @@
         $btn.prop( 'disabled', true );
         $status.removeClass( 'is-error is-success' ).text( ( mcpAbilities.i18n.installing || 'Working…' ) );
 
+        const userId = $( '#mcp-connect-user-select' ).val() || '';
+
         $.ajax( {
             url:    mcpAbilities.ajaxUrl,
             method: 'POST',
-            data:   { action: 'mcp_generate_app_password', nonce: mcpAbilities.nonce },
+            data:   { action: 'mcp_generate_app_password', nonce: mcpAbilities.nonce, user_id: userId },
             success: function ( res ) {
                 if ( res.success && res.data ) {
                     $( '#mcp-connect-user' ).text( res.data.username );

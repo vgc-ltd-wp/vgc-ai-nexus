@@ -1117,3 +1117,15 @@
 .mcp-save-status.is-success,
 .mcp-install-status.is-success { color: var(--mcp-green); }
 #mcp-connect-result .mcp-code-block { white-space: pre; overflow-x: auto; }
+
+/* ── Connect: user selector ─────────────────────────────────────────────── */
+.mcp-select {
+    padding: 6px 10px;
+    border: 1px solid var(--mcp-border);
+    border-radius: 6px;
+    background: var(--mcp-surface);
+    color: var(--mcp-text);
+    font-size: 13px;
+    min-width: 280px;
+    max-width: 100%;
+}

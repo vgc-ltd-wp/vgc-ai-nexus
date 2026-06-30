@@ -53,6 +53,34 @@ class Connect {
         return empty( $conns ) ? 'not_configured' : 'connected';
     }
 
+    /**
+     * Roles never offered as connection users (customers, plain subscribers).
+     * Filterable via 'mcp_abilities_excluded_user_roles'.
+     *
+     * @return string[]
+     */
+    public static function excluded_roles(): array {
+        return array_values( array_filter( array_map(
+            'sanitize_key',
+            (array) apply_filters( 'mcp_abilities_excluded_user_roles', [ 'customer', 'subscriber' ] )
+        ) ) );
+    }
+
+    /**
+     * Users eligible to be a connection account (excludes low-privilege roles).
+     *
+     * @return \WP_User[]
+     */
+    public static function eligible_users( int $limit = 100 ): array {
+        $query = new \WP_User_Query( [
+            'role__not_in' => self::excluded_roles(),
+            'orderby'      => 'display_name',
+            'order'        => 'ASC',
+            'number'       => max( 1, $limit ),
+        ] );
+        return $query->get_results();
+    }
+
     public static function adapter_active(): bool {
         return defined( 'WP_MCP_VERSION' );
     }
@@ -64,9 +92,15 @@ class Connect {
             wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ] );
         }
 
-        $user = wp_get_current_user();
-        if ( ! $user || ! $user->exists() ) {
-            wp_send_json_error( [ 'message' => __( 'Could not determine the current user.', 'mcp-abilities' ) ] );
+        // Target user: the selected one, or the current user by default.
+        $target_id = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : get_current_user_id();
+        $user      = get_user_by( 'id', $target_id );
+        if ( ! $user instanceof \WP_User ) {
+            wp_send_json_error( [ 'message' => __( 'Select a valid user for the connection.', 'mcp-abilities' ) ] );
+        }
+        // Creating credentials for another account requires the capability to edit it.
+        if ( $user->ID !== get_current_user_id() && ! current_user_can( 'edit_user', $user->ID ) ) {
+            wp_send_json_error( [ 'message' => __( 'You do not have permission to create a connection for that user.', 'mcp-abilities' ) ] );
         }
         if ( ! wp_is_application_passwords_available_for_user( $user ) ) {
             wp_send_json_error( [ 'message' => __( 'Application Passwords are unavailable. The site must be served over HTTPS and the feature enabled.', 'mcp-abilities' ) ] );
