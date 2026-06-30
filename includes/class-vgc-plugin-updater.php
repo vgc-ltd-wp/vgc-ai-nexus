@@ -45,7 +45,10 @@ class VGC_Plugin_Updater {
         $this->manifest_url = $manifest_url;
         $this->cache_key    = 'vgc_upd_' . md5( $this->basename );
 
+        // Inject on both the SET (after a check) and the GET (every read) so detection
+        // doesn't depend on when WordPress last refreshed its update cache.
         add_filter( 'pre_set_site_transient_update_plugins', [ $this, 'inject_update' ] );
+        add_filter( 'site_transient_update_plugins', [ $this, 'inject_update' ] );
         add_filter( 'plugins_api', [ $this, 'plugin_info' ], 20, 3 );
         add_filter( 'upgrader_source_selection', [ $this, 'fix_source_dir' ], 10, 4 );
         add_action( 'upgrader_process_complete', [ $this, 'flush_cache' ], 10, 0 );
@@ -80,7 +83,7 @@ class VGC_Plugin_Updater {
             ? $data[ $this->slug ]
             : [];
 
-        set_transient( $this->cache_key, $entry, 6 * HOUR_IN_SECONDS );
+        set_transient( $this->cache_key, $entry, HOUR_IN_SECONDS );
         return $this->entry = $entry;
     }
 
