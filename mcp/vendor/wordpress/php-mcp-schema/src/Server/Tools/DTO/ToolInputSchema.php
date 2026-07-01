@@ -90,9 +90,11 @@ class ToolInputSchema extends AbstractDataTransferObject
             $result['$schema'] = $this->schema;
         }
         $result['type'] = $this->type;
-        if ($this->properties !== null) {
-            $result['properties'] = $this->properties;
-        }
+        // Always emit properties as a JSON object ({}), never an array ([]) — strict MCP
+        // clients (Claude Desktop 1.17377+) reject inputSchema.properties unless it is a record.
+        $result['properties'] = (is_array($this->properties) && $this->properties !== [])
+            ? $this->properties
+            : (object) [];
         if ($this->required !== null) {
             $result['required'] = $this->required;
         }
