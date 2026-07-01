@@ -7,9 +7,9 @@ defined( 'ABSPATH' ) || exit;
 
 use MCP_Abilities\Admin\Connect;
 
-$server_url = Connect::server_url();
-$status     = Connect::status();
-$adapter_ok = Connect::adapter_active();
+$server_url  = Connect::server_url();
+$connections = Connect::list_connections();
+$adapter_ok  = Connect::adapter_active();
 ?>
 <div class="mcp-wrap">
 
@@ -85,6 +85,56 @@ $adapter_ok = Connect::adapter_active();
         <div class="mcp-doc-section">
             <h3><?php esc_html_e( 'Step 3 — Restart Claude Desktop', 'mcp-abilities' ); ?></h3>
             <p><?php esc_html_e( 'Restart Claude Desktop; your site’s tools appear under the connector. Manage which tools are exposed on the Abilities and Extensions pages.', 'mcp-abilities' ); ?></p>
+        </div>
+
+        <div class="mcp-doc-section">
+            <h3><?php esc_html_e( 'Existing connections', 'mcp-abilities' ); ?></h3>
+            <p class="mcp-section-sub"><?php esc_html_e( 'Connections created by AI Nexus. The password itself is never stored (WordPress hashes it), but each connection is recorded here so you can see who it belongs to and revoke it.', 'mcp-abilities' ); ?></p>
+            <table class="widefat striped mcp-connections-table" id="mcp-connections-table">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'User', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Created', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Last used', 'mcp-abilities' ); ?></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $date_fmt = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+                    foreach ( $connections as $c ) :
+                    ?>
+                    <tr data-user="<?php echo (int) $c['user_id']; ?>" data-uuid="<?php echo esc_attr( $c['uuid'] ); ?>">
+                        <td>
+                            <strong><?php echo esc_html( $c['display_name'] ); ?></strong>
+                            <code><?php echo esc_html( $c['user_login'] ); ?></code>
+                        </td>
+                        <td><?php echo $c['created'] ? esc_html( wp_date( $date_fmt, $c['created'] ) ) : '&mdash;'; ?></td>
+                        <td>
+                            <?php
+                            if ( $c['last_used'] ) {
+                                echo esc_html( wp_date( $date_fmt, $c['last_used'] ) );
+                                if ( $c['last_ip'] ) {
+                                    echo ' <span class="mcp-section-sub">(' . esc_html( $c['last_ip'] ) . ')</span>';
+                                }
+                            } else {
+                                esc_html_e( 'Never', 'mcp-abilities' );
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <button class="mcp-btn mcp-btn--link mcp-revoke-conn" type="button">
+                                <?php esc_html_e( 'Revoke', 'mcp-abilities' ); ?>
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <tr class="mcp-conn-empty" <?php echo empty( $connections ) ? '' : 'style="display:none;"'; ?>>
+                        <td colspan="4" class="mcp-section-sub"><?php esc_html_e( 'No connections yet. Generate one above.', 'mcp-abilities' ); ?></td>
+                    </tr>
+                </tbody>
+            </table>
+            <span id="mcp-revoke-status" class="mcp-save-status"></span>
         </div>
 
     </div>

@@ -195,6 +195,12 @@
 .mcp-btn--danger { background: var(--mcp-red); color: #fff; border-color: var(--mcp-red); }
 .mcp-btn--danger:hover { background: #dc2626; }
 
+.mcp-btn--link { background: none; border: none; color: var(--mcp-red); padding: 2px 4px; box-shadow: none; }
+.mcp-btn--link:hover { color: #dc2626; text-decoration: underline; }
+
+.mcp-connections-table { margin-top: 8px; }
+.mcp-connections-table code { background: transparent; padding: 0; color: var(--mcp-muted, #666); }
+
 /* ── Groups ─────────────────────────────────────────────────────────────── */
 
 .mcp-groups { display: flex; flex-direction: column; gap: 12px; }

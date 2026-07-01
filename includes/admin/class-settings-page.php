@@ -181,6 +181,11 @@ class Settings_Page {
                 'error'  => __( 'Error saving settings.', 'mcp-abilities' ),
                 'save'   => __( 'Save Settings',         'mcp-abilities' ),
                 'installing' => __( 'Installing…',       'mcp-abilities' ),
+                'working'    => __( 'Working…',          'mcp-abilities' ),
+                'never'      => __( 'Never',             'mcp-abilities' ),
+                'justNow'    => __( 'Just now',          'mcp-abilities' ),
+                'revoke'     => __( 'Revoke',            'mcp-abilities' ),
+                'confirmRevoke' => __( 'Revoke this connection? Claude will lose access on next reconnect.', 'mcp-abilities' ),
             ],
         ] );
     }

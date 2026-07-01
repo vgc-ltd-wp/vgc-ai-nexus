@@ -18,6 +18,7 @@ class Connect {
 
     public function init(): void {
         add_action( 'wp_ajax_mcp_generate_app_password', [ $this, 'ajax_generate' ] );
+        add_action( 'wp_ajax_mcp_revoke_connection',     [ $this, 'ajax_revoke' ] );
     }
 
     /** The bundled MCP server's REST URL. */
@@ -49,8 +50,102 @@ class Connect {
     }
 
     public static function status(): string {
-        $conns = (array) get_option( self::OPTION_CONNECTIONS, [] );
-        return empty( $conns ) ? 'not_configured' : 'connected';
+        return empty( self::list_connections() ) ? 'not_configured' : 'connected';
+    }
+
+    /**
+     * Stored connections, reconciled against the live WordPress Application
+     * Passwords so the list always reflects reality:
+     *   - drops entries whose app password was revoked elsewhere (prunes the option),
+     *   - adopts app passwords created by this plugin (our APP_PASS_NAME) that are
+     *     missing from the option (e.g. created on an older build that only showed
+     *     them once and never recorded them — the "not stored" symptom).
+     *
+     * @return array<int, array{user_id:int,user_login:string,display_name:string,uuid:string,created:int,last_used:?int,last_ip:?string}>
+     */
+    public static function list_connections(): array {
+        if ( ! class_exists( '\WP_Application_Passwords' ) ) {
+            return [];
+        }
+
+        $stored  = (array) get_option( self::OPTION_CONNECTIONS, [] );
+        $changed = false;
+        $rows    = [];
+
+        // Consider every user that either has a stored connection or owns an app
+        // password named like ours. Start from stored users, then scan for adoptees.
+        $user_ids = array_map( 'absint', array_keys( $stored ) );
+
+        // Adopt: find users who own an app password with our name but aren't recorded.
+        $adopt_query = new \WP_User_Query( [
+            'meta_key' => '_application_passwords', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+            'fields'   => 'ID',
+            'number'   => 500,
+        ] );
+        foreach ( (array) $adopt_query->get_results() as $uid ) {
+            $user_ids[] = (int) $uid;
+        }
+        $user_ids = array_values( array_unique( array_filter( $user_ids ) ) );
+
+        foreach ( $user_ids as $uid ) {
+            $user = get_user_by( 'id', $uid );
+            if ( ! $user instanceof \WP_User ) {
+                if ( isset( $stored[ $uid ] ) ) { unset( $stored[ $uid ] ); $changed = true; }
+                continue;
+            }
+
+            $passwords = \WP_Application_Passwords::get_user_application_passwords( $uid );
+            $by_uuid   = [];
+            foreach ( (array) $passwords as $pw ) {
+                if ( ! empty( $pw['uuid'] ) ) {
+                    $by_uuid[ $pw['uuid'] ] = $pw;
+                }
+            }
+
+            // Resolve which app password backs this connection.
+            $uuid = isset( $stored[ $uid ] ) ? (string) $stored[ $uid ] : '';
+            $item = $uuid && isset( $by_uuid[ $uuid ] ) ? $by_uuid[ $uuid ] : null;
+
+            // Stored UUID no longer exists → try to adopt one of ours, else prune.
+            if ( ! $item ) {
+                foreach ( (array) $passwords as $pw ) {
+                    if ( isset( $pw['name'] ) && self::APP_PASS_NAME === $pw['name'] ) {
+                        $item = $pw;
+                        $uuid = (string) $pw['uuid'];
+                        break;
+                    }
+                }
+                if ( $item ) {
+                    if ( ! isset( $stored[ $uid ] ) || $stored[ $uid ] !== $uuid ) {
+                        $stored[ $uid ] = $uuid;
+                        $changed        = true;
+                    }
+                } elseif ( isset( $stored[ $uid ] ) ) {
+                    unset( $stored[ $uid ] );
+                    $changed = true;
+                    continue;
+                } else {
+                    continue; // nothing of ours for this user
+                }
+            }
+
+            $rows[] = [
+                'user_id'      => $uid,
+                'user_login'   => $user->user_login,
+                'display_name' => $user->display_name,
+                'uuid'         => $uuid,
+                'created'      => isset( $item['created'] ) ? (int) $item['created'] : 0,
+                'last_used'    => isset( $item['last_used'] ) && $item['last_used'] ? (int) $item['last_used'] : null,
+                'last_ip'      => isset( $item['last_ip'] ) ? (string) $item['last_ip'] : null,
+            ];
+        }
+
+        if ( $changed ) {
+            update_option( self::OPTION_CONNECTIONS, $stored, false );
+        }
+
+        usort( $rows, static fn( $a, $b ) => strcasecmp( $a['display_name'], $b['display_name'] ) );
+        return $rows;
     }
 
     /**
@@ -121,9 +216,40 @@ class Connect {
         update_option( self::OPTION_CONNECTIONS, $conns, false );
 
         wp_send_json_success( [
-            'username' => $user->user_login,
-            'password' => $password,
-            'config'   => wp_json_encode( self::config_snippet( $user->user_login, $password ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ),
+            'username'     => $user->user_login,
+            'display_name' => $user->display_name,
+            'user_id'      => $user->ID,
+            'uuid'         => $item['uuid'],
+            'password'     => $password,
+            'config'       => wp_json_encode( self::config_snippet( $user->user_login, $password ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ),
         ] );
+    }
+
+    /** AJAX: revoke a stored connection (delete its Application Password). */
+    public function ajax_revoke(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ] );
+        }
+
+        $target_id = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0;
+        $uuid      = isset( $_POST['uuid'] ) ? sanitize_text_field( wp_unslash( $_POST['uuid'] ) ) : '';
+        $user      = get_user_by( 'id', $target_id );
+        if ( ! $user instanceof \WP_User || '' === $uuid ) {
+            wp_send_json_error( [ 'message' => __( 'Invalid connection.', 'mcp-abilities' ) ] );
+        }
+        if ( $user->ID !== get_current_user_id() && ! current_user_can( 'edit_user', $user->ID ) ) {
+            wp_send_json_error( [ 'message' => __( 'You do not have permission to revoke that connection.', 'mcp-abilities' ) ] );
+        }
+
+        \WP_Application_Passwords::delete_application_password( $user->ID, $uuid );
+
+        $conns = (array) get_option( self::OPTION_CONNECTIONS, [] );
+        if ( isset( $conns[ $user->ID ] ) && $conns[ $user->ID ] === $uuid ) {
+            unset( $conns[ $user->ID ] );
+            update_option( self::OPTION_CONNECTIONS, $conns, false );
+        }
+
+        wp_send_json_success( [ 'message' => __( 'Connection revoked.', 'mcp-abilities' ) ] );
     }
 }

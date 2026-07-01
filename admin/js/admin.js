@@ -233,6 +233,7 @@
                     $( '#mcp-connect-config' ).text( res.data.config );
                     $( '#mcp-connect-result' ).show();
                     $status.text( '' );
+                    upsertConnectionRow( res.data );
                 } else {
                     $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
                 }
@@ -242,6 +243,69 @@
             },
             complete: function () {
                 $btn.prop( 'disabled', false );
+            },
+        } );
+    } );
+
+    // Insert (or refresh) a row in the "Existing connections" table after generating.
+    function upsertConnectionRow( data ) {
+        const $tbody = $( '#mcp-connections-table tbody' );
+        if ( ! $tbody.length ) return;
+        $tbody.find( '.mcp-conn-empty' ).hide();
+
+        const login = data.username || '';
+        const name  = data.display_name || login;
+        let $row = $tbody.find( 'tr[data-user="' + data.user_id + '"]' );
+        if ( ! $row.length ) {
+            $row = $( '<tr>' ).attr( 'data-user', data.user_id );
+            $row.html(
+                '<td><strong class="js-name"></strong> <code class="js-login"></code></td>' +
+                '<td class="js-created"></td>' +
+                '<td>' + ( mcpAbilities.i18n.never || 'Never' ) + '</td>' +
+                '<td><button class="mcp-btn mcp-btn--link mcp-revoke-conn" type="button">' +
+                    ( mcpAbilities.i18n.revoke || 'Revoke' ) + '</button></td>'
+            );
+            $tbody.prepend( $row );
+        }
+        $row.attr( 'data-uuid', data.uuid || '' );
+        $row.find( '.js-name' ).text( name );
+        $row.find( '.js-login' ).text( login );
+        $row.find( '.js-created' ).text( mcpAbilities.i18n.justNow || 'Just now' );
+    }
+
+    // ── Connect: revoke a stored connection ──────────────────────────────────
+
+    $( document ).on( 'click', '.mcp-revoke-conn', function () {
+        const $row    = $( this ).closest( 'tr' );
+        const $status = $( '#mcp-revoke-status' );
+        const userId  = $row.attr( 'data-user' );
+        const uuid    = $row.attr( 'data-uuid' );
+        if ( ! uuid || ! window.confirm( mcpAbilities.i18n.confirmRevoke || 'Revoke this connection? Claude will lose access on next reconnect.' ) ) {
+            return;
+        }
+        const $btn = $( this ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+
+        $.ajax( {
+            url:    mcpAbilities.ajaxUrl,
+            method: 'POST',
+            data:   { action: 'mcp_revoke_connection', nonce: mcpAbilities.nonce, user_id: userId, uuid: uuid },
+            success: function ( res ) {
+                if ( res.success ) {
+                    $row.remove();
+                    const $tbody = $( '#mcp-connections-table tbody' );
+                    if ( ! $tbody.find( 'tr[data-uuid]' ).length ) {
+                        $tbody.find( '.mcp-conn-empty' ).show();
+                    }
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Revoked.' );
+                } else {
+                    $btn.prop( 'disabled', false );
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            },
+            error: function () {
+                $btn.prop( 'disabled', false );
+                $status.addClass( 'is-error' ).text( 'Request failed.' );
             },
         } );
     } );
