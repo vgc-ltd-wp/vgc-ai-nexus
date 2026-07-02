@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
- * Version:           2.13.6
+ * Version:           2.13.7
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.13.6' );
+define( 'MCP_ABILITIES_VERSION',     '2.13.7' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -65,6 +65,28 @@ new \MCP_Abilities\VGC_Plugin_Updater(
     MCP_ABILITIES_VERSION,
     'https://raw.githubusercontent.com/vgc-ltd-wp/vgc-plugin-updates/main/plugins.json'
 );
+
+// ── OPcache self-heal ────────────────────────────────────────────────────────
+// Some hosts (SiteGround) run OPcache without timestamp validation, so after an
+// in-place plugin update PHP keeps executing STALE bytecode. For AI Nexus that
+// regresses the bundled MCP adapter's tools/list serialization, and strict MCP
+// clients (Claude Desktop 1.17377+) then silently drop the whole connector.
+// Reset OPcache whenever any plugin is installed/updated/activated, and when
+// the running core version differs from the last one recorded (covers manual
+// zip installs where the upgrader hooks may run on stale code).
+function mcp_abilities_opcache_reset(): void {
+    if ( function_exists( 'opcache_reset' ) ) {
+        @opcache_reset(); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- may be blocked by opcache.restrict_api
+    }
+}
+add_action( 'upgrader_process_complete', 'mcp_abilities_opcache_reset', 20 );
+add_action( 'activated_plugin', 'mcp_abilities_opcache_reset', 20 );
+add_action( 'plugins_loaded', function (): void {
+    if ( get_option( 'mcp_abilities_loaded_version' ) !== MCP_ABILITIES_VERSION ) {
+        update_option( 'mcp_abilities_loaded_version', MCP_ABILITIES_VERSION, false );
+        mcp_abilities_opcache_reset();
+    }
+}, 1 );
 
 // Enrich this plugin's "View details" modal with a live summary of its abilities.
 add_filter( 'vgc_plugin_updater_sections', function ( array $sections, string $slug ): array {
