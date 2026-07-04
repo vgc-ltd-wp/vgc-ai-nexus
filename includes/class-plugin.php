@@ -107,14 +107,21 @@ final class Plugin {
                 // WP 6.9 ability names only allow [a-z0-9-/] — convert underscores to dashes.
                 $name = 'mcp-abilities/' . str_replace( '_', '-', $ability->get_key() );
 
-                // Strip the top-level 'type' from the WP-registered schema.
-                // WP REST validation uses rest_is_object() which returns false for PHP []
-                // (empty array decoded from JSON {}), causing all no-param calls to fail.
-                // Without 'type', WP only enforces 'required' fields and validates provided
-                // properties — empty {} passes for optional-only abilities, required fields
-                // still fail correctly for abilities that need them.
-                $wp_schema = $ability->get_input_schema();
-                unset( $wp_schema['type'] );
+                // Keep the schema STRICT-CLIENT VALID as registered: Claude Desktop
+                // (1.17377+) rejects the whole connector if any tool schema lacks
+                // type:"object" or serializes properties as []. Several MCP adapters
+                // can serve this raw registration verbatim (WooCommerce 10.9 bundles
+                // one, AIOSEO installs one), so the registration itself must be valid.
+                // The old type-strip (a WP REST empty-{} validation workaround) is
+                // replaced by guaranteeing non-empty properties instead — verified
+                // live: no-param and param'd executions both validate (WP 6.9).
+                $wp_schema         = $ability->get_input_schema();
+                $wp_schema['type'] = 'object';
+                if ( empty( $wp_schema['properties'] ) || ! is_array( $wp_schema['properties'] ) ) {
+                    $wp_schema['properties'] = [
+                        'verbose' => [ 'type' => 'boolean', 'description' => 'Reserved for future use. Has no effect.' ],
+                    ];
+                }
 
                 wp_register_ability(
                     $name,
