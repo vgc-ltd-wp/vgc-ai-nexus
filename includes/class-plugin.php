@@ -90,12 +90,14 @@ final class Plugin {
         // Inject McpTool instances directly — bypasses wp_get_ability() so timing is not an issue.
         add_filter( 'mcp_adapter_default_server_config', [ $this, 'add_tools_to_default_server' ] );
 
-        // Put a short orientation in the initialize response. This is the only
-        // channel that reaches the client BEFORE any tool call — i.e. before it
-        // can form a wrong theory about what these tools can do. Set via the
-        // dedicated filter rather than the server description, which is a
-        // UI-facing field.
+        // Orientation is delivered two ways on purpose: through the server
+        // description in add_tools_to_default_server() (works on every adapter
+        // version, including a foreign one), and refined here via the dedicated
+        // filter where the adapter is new enough to offer it.
         add_filter( 'mcp_adapter_initialize_response', [ $this, 'add_orientation' ], 10, 1 );
+
+        // Make a foreign or failed adapter visible to administrators.
+        add_action( 'admin_notices', [ Adapter_Status::class, 'maybe_admin_notice' ] );
     }
 
     /**
@@ -109,9 +111,17 @@ final class Plugin {
             return $result;
         }
         try {
-            $data     = $result->toArray();
-            $existing = trim( (string) ( $data['instructions'] ?? '' ) );
-            $data['instructions'] = Guide::orientation() . ( '' !== $existing ? "\n\n" . $existing : '' );
+            $data        = $result->toArray();
+            $existing    = trim( (string) ( $data['instructions'] ?? '' ) );
+            $orientation = Guide::orientation();
+
+            // The server description already carries the orientation, and that is
+            // what the adapter reports as `instructions` — so on a healthy install
+            // this filter would otherwise duplicate it.
+            if ( '' !== $existing && false !== strpos( $existing, 'VGC AI Nexus' ) ) {
+                return $result;
+            }
+            $data['instructions'] = $orientation . ( '' !== $existing ? "\n\n" . $existing : '' );
 
             $class = get_class( $result );
             if ( method_exists( $class, 'fromArray' ) ) {
@@ -183,9 +193,14 @@ final class Plugin {
     }
 
     /**
-     * Add enabled abilities as McpTool instances to the default server.
-     * Using McpTool instances instead of string names avoids wp_get_ability()
-     * at server-creation time, which fires before wp_abilities_api_init on WP 6.9.
+     * Add enabled abilities as tools on the default server, and make sure the
+     * server carries our orientation text.
+     *
+     * `server_description` is what the adapter reports as the MCP `instructions`
+     * during the handshake — the only channel that reaches an AI client BEFORE
+     * its first tool call. We set it here, in the long-standing config filter,
+     * rather than only via mcp_adapter_initialize_response (adapter 0.5.0+), so
+     * the orientation still lands when an older or foreign adapter is serving.
      */
     public function add_tools_to_default_server( array $config ): array {
         foreach ( $this->registry->get_groups() as $group ) {
@@ -196,17 +211,39 @@ final class Plugin {
                 }
             }
         }
+
+        $existing = isset( $config['server_description'] ) ? trim( (string) $config['server_description'] ) : '';
+        $config['server_description'] = Guide::orientation() . ( '' !== $existing ? "\n\n" . $existing : '' );
+
         return $config;
     }
 
-    private function make_mcp_tool( Ability $ability, Ability_Group $group ): ?\WP\MCP\Domain\Tools\McpTool {
+    /**
+     * Build a tool for one ability.
+     *
+     * Returns an McpTool instance when our bundled adapter's API is available
+     * (it avoids a wp_get_ability() lookup at server-creation time, which fires
+     * before wp_abilities_api_init on WP 6.9). When ANOTHER plugin's adapter is
+     * serving and that class is absent, fall back to the ability NAME: every
+     * adapter can resolve a registered ability by name.
+     *
+     * Returning null here — as this used to — meant core contributed no tools at
+     * all whenever a foreign adapter won the load race, silently hiding the whole
+     * core toolset while extensions (which already had this fallback) stayed
+     * visible.
+     *
+     * @return \WP\MCP\Domain\Tools\McpTool|string|null
+     */
+    private function make_mcp_tool( Ability $ability, Ability_Group $group ) {
+        $ability_name = 'mcp-abilities/' . str_replace( '_', '-', $ability->get_key() );
+
         if ( ! class_exists( '\WP\MCP\Domain\Tools\McpTool' )
             || ! method_exists( '\WP\MCP\Domain\Tools\McpTool', 'fromArray' ) ) {
-            return null;
+            return $ability_name;
         }
 
         // McpNameSanitizer replaces '/' with '-', so pre-sanitize to get a predictable name.
-        $tool_name = str_replace( '/', '-', 'mcp-abilities/' . str_replace( '_', '-', $ability->get_key() ) );
+        $tool_name = str_replace( '/', '-', $ability_name );
 
         $tool = \WP\MCP\Domain\Tools\McpTool::fromArray( [
             'name'        => $tool_name,
@@ -223,7 +260,9 @@ final class Plugin {
             },
         ] );
 
-        return $tool instanceof \WP_Error ? null : $tool;
+        // Even if the DTO build fails, still expose the ability by name rather
+        // than dropping the tool entirely.
+        return $tool instanceof \WP_Error ? $ability_name : $tool;
     }
 
     /**

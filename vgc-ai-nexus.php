@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
- * Version:           2.16.0
+ * Version:           2.17.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.16.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.17.0' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -26,18 +26,43 @@ define( 'MCP_ABILITIES_OPTION_KEY',  'mcp_abilities_settings' );
 
 // ── Bundled MCP Adapter ──────────────────────────────────────────────────────
 // AI Nexus ships the MCP Adapter so it works as a SINGLE plugin (connection +
-// abilities). If another MCP Adapter — or a VGC Claude connector — is already
-// loaded, defer to it: only one adapter may run per site.
-if ( ! defined( 'WP_MCP_VERSION' ) ) {
+// abilities). Other plugins bundle the same library as a dependency (WooCommerce
+// 10.9+ ships it; AIOSEO can install it), and WordPress has no way to arbitrate:
+// whichever copy defines the WP\MCP\* classes first wins for the whole request.
+//
+// We therefore load ours as early as we can — at file level, before any hook —
+// and RECORD what actually happened. A silent deferral used to be invisible:
+// core would bind to a foreign adapter and contribute no tools at all, which is
+// exactly how an entire toolset can disappear without an error anywhere.
+$GLOBALS['mcp_abilities_adapter'] = [
+    'ours'            => false,
+    'preloaded_by'    => null,   // adapter version already present when we loaded
+    'autoload_failed' => false,
+];
+
+if ( defined( 'WP_MCP_VERSION' ) ) {
+    // Someone else got here first — record it so it can be reported, not guessed.
+    $GLOBALS['mcp_abilities_adapter']['preloaded_by'] = WP_MCP_VERSION;
+} else {
     if ( ! defined( 'WP_MCP_DIR' ) ) {
         define( 'WP_MCP_DIR', MCP_ABILITIES_DIR . 'mcp' );
     }
-    require_once WP_MCP_DIR . '/includes/Autoloader.php';
-    if ( \WP\MCP\Autoloader::autoload() ) {
-        define( 'WP_MCP_VERSION', '0.5.1-vgc' );
-        if ( class_exists( \WP\MCP\Plugin::class ) ) {
-            \WP\MCP\Plugin::instance();
+    $mcp_autoloader = WP_MCP_DIR . '/includes/Autoloader.php';
+    if ( is_readable( $mcp_autoloader ) ) {
+        require_once $mcp_autoloader;
+        if ( class_exists( '\WP\MCP\Autoloader' ) && \WP\MCP\Autoloader::autoload() ) {
+            define( 'WP_MCP_VERSION', '0.5.1-vgc' );
+            $GLOBALS['mcp_abilities_adapter']['ours'] = true;
+            if ( class_exists( \WP\MCP\Plugin::class ) ) {
+                \WP\MCP\Plugin::instance();
+            }
+        } else {
+            // The bundled adapter is present but unusable. Previously this failed
+            // silently and left the door open for another plugin's copy.
+            $GLOBALS['mcp_abilities_adapter']['autoload_failed'] = true;
         }
+    } else {
+        $GLOBALS['mcp_abilities_adapter']['autoload_failed'] = true;
     }
 }
 

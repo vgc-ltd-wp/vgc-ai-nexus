@@ -195,6 +195,11 @@ MD;
             $out[] = '- **AI Nexus components:** ' . implode( ', ', $vgc );
         }
 
+        // Which adapter is serving. Several plugins bundle the same library, and
+        // a foreign one winning changes which features are available — reported
+        // here so it is never something that has to be inferred.
+        $out[] = '- **MCP adapter:** ' . Adapter_Status::summary();
+
         // The money data: real post type slugs with their taxonomies.
         $rows = [];
         foreach ( get_post_types( [], 'objects' ) as $type ) {
