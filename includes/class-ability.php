@@ -71,6 +71,57 @@ abstract class Ability {
         return is_array( $data ) ? $data : [ 'result' => $data ];
     }
 
+    // ── Ignored-parameter surfacing ──────────────────────────────────────────
+
+    /**
+     * Parameters the caller sent that this ability does not declare.
+     *
+     * WordPress schema validation silently DROPS unknown properties, so a caller
+     * that guesses a plausible-but-wrong parameter name (e.g. "portfolio_category"
+     * instead of taxonomy+terms) gets a confident, wrong-looking-right result and
+     * no signal that its filter did nothing. Surfacing the dropped keys turns
+     * "silently wrong" into "wrong and clearly labelled", which lets an AI caller
+     * self-correct in one turn instead of theorising about the cause.
+     *
+     * @param array<string,mixed> $params Raw parameters as received.
+     * @return string[] Unknown parameter names.
+     */
+    public function unknown_params( array $params ): array {
+        $declared = array_keys( (array) ( $this->input_schema['properties'] ?? [] ) );
+        if ( ! $declared ) {
+            return [];
+        }
+        // 'action' is the consolidated-dispatcher selector, always legitimate.
+        $declared[] = 'action';
+        return array_values( array_diff( array_keys( $params ), $declared ) );
+    }
+
+    /**
+     * Attach an ignored-parameter notice to a result, when applicable.
+     *
+     * Deliberately non-fatal: the call still returns its data. Errors are left
+     * untouched so the original failure stays the headline.
+     *
+     * @param array<string,mixed> $result Ability result.
+     * @param array<string,mixed> $params Raw parameters as received.
+     * @return array<string,mixed>
+     */
+    public function annotate_ignored_params( array $result, array $params ): array {
+        $unknown = $this->unknown_params( $params );
+        if ( ! $unknown || isset( $result['success'] ) && false === $result['success'] ) {
+            return $result;
+        }
+        $declared = array_keys( (array) ( $this->input_schema['properties'] ?? [] ) );
+        $result['ignored_parameters'] = $unknown;
+        $result['warning'] = sprintf(
+            'These parameters are not supported by "%s" and had NO effect: %s. The results above are UNFILTERED with respect to them. Supported parameters: %s.',
+            $this->key,
+            implode( ', ', $unknown ),
+            $declared ? implode( ', ', $declared ) : '(none)'
+        );
+        return $result;
+    }
+
     // ── Authorization ────────────────────────────────────────────────────────
 
     public function current_user_can(): bool {

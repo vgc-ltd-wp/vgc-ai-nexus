@@ -143,7 +143,11 @@ final class Crud_Ability extends Ability {
 			}
 		}
 
-		return $op->execute( $params );
+		// Validate against the SELECTED operation's schema, not the union schema the
+		// dispatcher advertises: a parameter that belongs to a different action (or
+		// to no action at all) is silently dropped otherwise, and the caller gets an
+		// unfiltered result that looks correctly filtered.
+		return $op->annotate_ignored_params( $op->execute( $params ), $params );
 	}
 
 	/**

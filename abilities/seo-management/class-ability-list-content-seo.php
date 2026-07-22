@@ -21,13 +21,15 @@ class List_Content_Seo_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_content_seo';
         $this->label        = __( 'List Content SEO', 'mcp-abilities' );
-        $this->description  = 'List content with its SEO meta (meta description, SEO title, focus keyword), scoped by WPML language, paginated. Pass "ids" to look up specific posts only — e.g. the SEO of one page. Set missing_metadesc_only=true to return only items whose Yoast meta description is empty/missing. Reads Yoast meta; returns empty SEO values if Yoast is not installed.';
+        $this->description  = 'List content with its SEO meta (meta description, SEO title, focus keyword), scoped by WPML language, paginated. Works with ANY registered post type (post_type), including ones not exposed via the REST API. Filter by taxonomy + terms (e.g. taxonomy "portfolio_category", terms ["automotive"]), or pass "ids" to look up specific posts only — e.g. the SEO of one page. Set missing_metadesc_only=true to return only items whose Yoast meta description is empty/missing. Reads Yoast meta; returns empty SEO values if Yoast is not installed.';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => 'object',
             'properties' => [
                 'ids'                   => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Restrict to these post IDs (any post type). Use for single-item SEO lookups; other filters still apply.' ],
                 'post_type'             => [ 'type' => 'string',  'description' => "Post type slug, or 'any'. Ignored when \"ids\" is given.", 'default' => 'page' ],
+                'taxonomy'              => [ 'type' => 'string',  'description' => 'Taxonomy slug to filter by, e.g. "portfolio_category", "product_cat", "category". Use with "terms".' ],
+                'terms'                 => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Term slugs (or numeric IDs as strings) within "taxonomy". Items matching ANY listed term are returned.' ],
                 'language'              => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de'), or 'all'. Defaults to the current language. Ignored if WPML is inactive." ],
                 'status'                => [ 'type' => 'string',  'enum' => [ 'publish', 'draft', 'pending', 'private', 'any' ], 'default' => 'publish' ],
                 'offset'                => [ 'type' => 'integer', 'minimum' => 0 ],
@@ -65,6 +67,31 @@ class List_Content_Seo_Ability extends Ability {
             $args['orderby']       = 'post__in';
             $args['ignore_sticky_posts'] = true;
             unset( $args['order'] );
+        }
+
+        // Taxonomy filter (any taxonomy, e.g. portfolio_category) — mirrors list_posts
+        // so "the SEO of the Automotive portfolio items" is one call.
+        $taxonomy = isset( $params['taxonomy'] ) ? sanitize_key( (string) $params['taxonomy'] ) : '';
+        $terms    = isset( $params['terms'] ) && is_array( $params['terms'] ) ? array_filter( array_map( 'strval', $params['terms'] ) ) : [];
+        if ( '' !== $taxonomy || [] !== $terms ) {
+            if ( '' === $taxonomy || [] === $terms ) {
+                return $this->error( 'Provide BOTH "taxonomy" and "terms" to filter by a taxonomy.' );
+            }
+            if ( ! taxonomy_exists( $taxonomy ) ) {
+                $for_type = 'any' === $post_type ? [] : get_object_taxonomies( $post_type );
+                return $this->error( sprintf(
+                    'Taxonomy "%s" is not registered. Taxonomies available for post type "%s": %s.',
+                    $taxonomy,
+                    $post_type,
+                    $for_type ? implode( ', ', $for_type ) : '(none - or pass a specific post_type to see its taxonomies)'
+                ) );
+            }
+            $numeric = array_filter( $terms, 'is_numeric' );
+            $args['tax_query'] = [ [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+                'taxonomy' => $taxonomy,
+                'field'    => count( $numeric ) === count( $terms ) ? 'term_id' : 'slug',
+                'terms'    => count( $numeric ) === count( $terms ) ? array_map( 'intval', $terms ) : $terms,
+            ] ];
         }
 
         // Server-side filter: meta description empty OR not set. Keeps pagination

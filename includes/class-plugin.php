@@ -202,6 +202,9 @@ final class Plugin {
             return $this->disabled_tool_response( $ability );
         }
         $result = $ability->execute( $params );
+        // Flag parameters the caller sent that this ability doesn't support, so a
+        // dropped filter can't masquerade as a successful, correctly-filtered call.
+        $result = $ability->annotate_ignored_params( $result, $params );
         Logger::log( $ability->get_key(), $result );
         return $result;
     }
