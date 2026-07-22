@@ -21,12 +21,13 @@ class List_Content_Seo_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_content_seo';
         $this->label        = __( 'List Content SEO', 'mcp-abilities' );
-        $this->description  = 'List content with its SEO meta (meta description, SEO title, focus keyword), scoped by WPML language, paginated. Set missing_metadesc_only=true to return only items whose Yoast meta description is empty/missing. Reads Yoast meta; returns empty SEO values if Yoast is not installed.';
+        $this->description  = 'List content with its SEO meta (meta description, SEO title, focus keyword), scoped by WPML language, paginated. Pass "ids" to look up specific posts only — e.g. the SEO of one page. Set missing_metadesc_only=true to return only items whose Yoast meta description is empty/missing. Reads Yoast meta; returns empty SEO values if Yoast is not installed.';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => 'object',
             'properties' => [
-                'post_type'             => [ 'type' => 'string',  'description' => "Post type slug, or 'any'.", 'default' => 'page' ],
+                'ids'                   => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Restrict to these post IDs (any post type). Use for single-item SEO lookups; other filters still apply.' ],
+                'post_type'             => [ 'type' => 'string',  'description' => "Post type slug, or 'any'. Ignored when \"ids\" is given.", 'default' => 'page' ],
                 'language'              => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de'), or 'all'. Defaults to the current language. Ignored if WPML is inactive." ],
                 'status'                => [ 'type' => 'string',  'enum' => [ 'publish', 'draft', 'pending', 'private', 'any' ], 'default' => 'publish' ],
                 'offset'                => [ 'type' => 'integer', 'minimum' => 0 ],
@@ -49,6 +50,22 @@ class List_Content_Seo_Ability extends Ability {
             'orderby'     => 'title',
             'order'       => 'ASC',
         ];
+
+        // Explicit ID lookup: the common "SEO of this one page" case. Post type is
+        // widened to 'any' so callers don't have to know the item's type, and the
+        // status filter is relaxed so an explicitly requested draft still returns.
+        if ( isset( $params['ids'] ) ) {
+            $ids = array_values( array_filter( array_map( 'absint', (array) $params['ids'] ) ) );
+            if ( ! $ids ) {
+                return $this->error( '"ids" was provided but contained no valid post IDs.' );
+            }
+            $args['post__in']      = $ids;
+            $args['post_type']     = 'any';
+            $args['post_status']   = 'any';
+            $args['orderby']       = 'post__in';
+            $args['ignore_sticky_posts'] = true;
+            unset( $args['order'] );
+        }
 
         // Server-side filter: meta description empty OR not set. Keeps pagination
         // totals accurate (filtering happens in the query, not after).
