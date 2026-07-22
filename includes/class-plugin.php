@@ -89,6 +89,38 @@ final class Plugin {
 
         // Inject McpTool instances directly — bypasses wp_get_ability() so timing is not an issue.
         add_filter( 'mcp_adapter_default_server_config', [ $this, 'add_tools_to_default_server' ] );
+
+        // Put a short orientation in the initialize response. This is the only
+        // channel that reaches the client BEFORE any tool call — i.e. before it
+        // can form a wrong theory about what these tools can do. Set via the
+        // dedicated filter rather than the server description, which is a
+        // UI-facing field.
+        add_filter( 'mcp_adapter_initialize_response', [ $this, 'add_orientation' ], 10, 1 );
+    }
+
+    /**
+     * Prepend the AI Nexus orientation to the server's initialize instructions.
+     *
+     * @param mixed $result InitializeResult DTO.
+     * @return mixed
+     */
+    public function add_orientation( $result ) {
+        if ( ! is_object( $result ) || ! method_exists( $result, 'toArray' ) ) {
+            return $result;
+        }
+        try {
+            $data     = $result->toArray();
+            $existing = trim( (string) ( $data['instructions'] ?? '' ) );
+            $data['instructions'] = Guide::orientation() . ( '' !== $existing ? "\n\n" . $existing : '' );
+
+            $class = get_class( $result );
+            if ( method_exists( $class, 'fromArray' ) ) {
+                return $class::fromArray( $data );
+            }
+        } catch ( \Throwable $e ) {
+            // Never let orientation text break the handshake.
+        }
+        return $result;
     }
 
     public function register_ability_category(): void {
