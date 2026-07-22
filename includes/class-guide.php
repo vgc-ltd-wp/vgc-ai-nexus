@@ -84,6 +84,102 @@ class Guide {
         return $sections;
     }
 
+    /**
+     * A short block sized for pasting into a Claude Project's instructions (or
+     * an assistant's memory).
+     *
+     * Deliberately contains ONLY durable facts — rules, post type slugs, which
+     * extensions exist. No versions, counts, IDs or dates: those go stale the
+     * moment they are memorised, and a confidently-stale fact is worse than no
+     * fact. Volatile detail stays in the live guide, which is one call away.
+     */
+    public static function compact(): string {
+        $out   = [];
+        $out[] = '# VGC AI Nexus — operating rules for ' . get_bloginfo( 'name' );
+        $out[] = '';
+        $out[] = 'Guide version: ' . self::version() . '. Re-run the "usage_guide" tool if the site changes, or for anything not covered here.';
+        $out[] = '';
+        $out[] = '## Always';
+        $out[] = '- These tools run server-side. EVERY registered post type is usable, including ones not exposed via the WordPress REST API. Never treat rest_base/show_in_rest as a limit.';
+        $out[] = '- Never move large content through your own output. Use the server-side copy tools (create_from_template, import_template with url) instead of reading markup and pasting it back.';
+        $out[] = '- If a response contains "ignored_parameters", those parameters did nothing and the results are unfiltered with respect to them. Fix the call rather than reasoning about the results.';
+        $out[] = '- Never guess a post type, taxonomy, template or icon slug. list_post_types and the tools\' own error messages give the valid options.';
+        $out[] = '- Filter by a custom taxonomy with taxonomy + terms together, not by inventing a parameter named after the taxonomy.';
+
+        $builders = [];
+        if ( defined( 'ELEMENTOR_VERSION' ) ) {
+            $builders[] = 'Elementor' . ( defined( 'ELEMENTOR_PRO_VERSION' ) ? ' (Pro)' : '' );
+        }
+        if ( class_exists( 'FusionBuilder' ) ) {
+            $builders[] = 'Avada / Fusion Builder';
+        }
+
+        $out[] = '';
+        $out[] = '## This site';
+        if ( $builders ) {
+            $out[] = '- Page builder: ' . implode( ', ', $builders );
+        }
+        if ( class_exists( 'WooCommerce' ) ) {
+            $out[] = '- WooCommerce is active. The AI Nexus tools are the woocommerce-* ones; WooCommerce also registers its own, smaller woocommerce/... set.';
+        }
+        if ( defined( 'ICL_SITEPRESS_VERSION' ) ) {
+            $out[] = '- WPML is active: listing content without a language parameter returns the current language only.';
+        }
+
+        $rows = [];
+        foreach ( self::post_type_rows( 18 ) as $row ) {
+            $rows[] = '  - `' . $row['slug'] . '`' . ( $row['taxonomies'] ? ' — taxonomies: ' . implode( ', ', $row['taxonomies'] ) : '' );
+        }
+        if ( $rows ) {
+            $out[] = '- Post type slugs on this site:';
+            $out   = array_merge( $out, $rows );
+        }
+
+        $conventions = trim( (string) get_option( self::CONVENTIONS_OPTION, '' ) );
+        if ( '' !== $conventions ) {
+            $out[] = '';
+            $out[] = '## House rules';
+            $out[] = $conventions;
+        }
+
+        return implode( "\n", $out );
+    }
+
+    /** The same content shaped as a Claude skill file. */
+    public static function skill(): string {
+        $name = get_bloginfo( 'name' );
+        return "---\nname: " . sanitize_text_field( $name ) . " — WordPress operations\n"
+            . "description: How to work with " . sanitize_text_field( $name ) . " through VGC AI Nexus. Use whenever making changes to this site.\n---\n\n"
+            . self::compact()
+            . "\n\n## Going deeper\n\nCall the \"usage_guide\" tool for the full guide, including per-extension detail and the complete anti-pattern list. Pass a topic (see the topics list it returns) for one section.\n";
+    }
+
+    /**
+     * Post types worth telling a caller about.
+     *
+     * @return array<int,array{slug:string,label:string,taxonomies:string[]}>
+     */
+    private static function post_type_rows( int $limit = 40 ): array {
+        $rows = [];
+        foreach ( get_post_types( [], 'objects' ) as $type ) {
+            if ( in_array( $type->name, self::HIDDEN_TYPES, true ) ) {
+                continue;
+            }
+            if ( ! $type->public && ! $type->show_ui ) {
+                continue;
+            }
+            $rows[] = [
+                'slug'       => $type->name,
+                'label'      => $type->label,
+                'taxonomies' => array_values( array_diff( get_object_taxonomies( $type->name ), [ 'post_format' ] ) ),
+            ];
+            if ( count( $rows ) >= $limit ) {
+                break;
+            }
+        }
+        return $rows;
+    }
+
     /** Stable-ish fingerprint so a cached/memorised copy can be checked. */
     public static function version(): string {
         $body = '';
@@ -202,23 +298,13 @@ MD;
 
         // The money data: real post type slugs with their taxonomies.
         $rows = [];
-        foreach ( get_post_types( [], 'objects' ) as $type ) {
-            if ( in_array( $type->name, self::HIDDEN_TYPES, true ) ) {
-                continue;
-            }
-            if ( ! $type->public && ! $type->show_ui ) {
-                continue;
-            }
-            $taxes = array_values( array_diff( get_object_taxonomies( $type->name ), [ 'post_format' ] ) );
+        foreach ( self::post_type_rows( 40 ) as $row ) {
             $rows[] = sprintf(
                 '| `%s` | %s | %s |',
-                $type->name,
-                $type->label,
-                $taxes ? '`' . implode( '`, `', $taxes ) . '`' : '—'
+                $row['slug'],
+                $row['label'],
+                $row['taxonomies'] ? '`' . implode( '`, `', $row['taxonomies'] ) . '`' : '—'
             );
-            if ( count( $rows ) >= 40 ) {
-                break;
-            }
         }
 
         $body = implode( "\n", $out );

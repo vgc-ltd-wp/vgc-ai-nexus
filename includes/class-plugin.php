@@ -40,6 +40,9 @@ final class Plugin {
 
             $connections = new Admin\Connections_Page();
             $connections->init();
+
+            $guide_page = new Admin\Guide_Page();
+            $guide_page->init();
         }
 
         do_action( 'mcp_abilities_loaded', $this );
