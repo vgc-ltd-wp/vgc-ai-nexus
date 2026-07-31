@@ -101,6 +101,10 @@ final class Plugin {
 
         // Make a foreign or failed adapter visible to administrators.
         add_action( 'admin_notices', [ Adapter_Status::class, 'maybe_admin_notice' ] );
+
+        // Warn when a security layer (WP Cerber etc.) blocks the REST API and
+        // with it the MCP endpoint — invisible from outside, diagnosable from here.
+        add_action( 'admin_notices', [ Security_Status::class, 'maybe_admin_notice' ] );
     }
 
     /**

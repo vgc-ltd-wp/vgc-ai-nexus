@@ -296,6 +296,10 @@ MD;
         // here so it is never something that has to be inferred.
         $out[] = '- **MCP adapter:** ' . Adapter_Status::summary();
 
+        // Security layers that can block REST (and thus every MCP connection)
+        // from outside — the most misdiagnosed failure in customer reports.
+        $out[] = '- **Security:** ' . Security_Status::summary();
+
         // The money data: real post type slugs with their taxonomies.
         $rows = [];
         foreach ( self::post_type_rows( 40 ) as $row ) {
