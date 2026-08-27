@@ -87,4 +87,32 @@ final class Wpml_Support {
         $trid = apply_filters( 'wpml_element_trid', null, $post_id, 'post_' . $post_type );
         return $trid ? (int) $trid : null;
     }
+
+    /**
+     * Language code of a taxonomy term, or null.
+     *
+     * Looked up via the term_taxonomy_id read straight from the DB: WPML's
+     * element tables key terms by term_taxonomy_id, and reading the id directly
+     * avoids WPML's own get_term/get_term_by filters, which in a wrong-language
+     * request context can silently translate the id to a sibling term.
+     */
+    public static function term_language( int $term_id, string $taxonomy ): ?string {
+        if ( ! self::active() ) {
+            return null;
+        }
+        global $wpdb;
+        $tt_id = $wpdb->get_var( $wpdb->prepare(
+            "SELECT term_taxonomy_id FROM {$wpdb->term_taxonomy} WHERE term_id = %d AND taxonomy = %s",
+            $term_id,
+            $taxonomy
+        ) );
+        if ( ! $tt_id ) {
+            return null;
+        }
+        $code = apply_filters( 'wpml_element_language_code', null, [
+            'element_id'   => (int) $tt_id,
+            'element_type' => 'tax_' . $taxonomy,
+        ] );
+        return $code ? (string) $code : null;
+    }
 }

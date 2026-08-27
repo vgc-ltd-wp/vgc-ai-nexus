@@ -17,6 +17,7 @@ class Update_Page_Ability extends Ability {
             'properties' => [
                 'id'         => [ 'type' => 'integer' ],
                 'title'      => [ 'type' => 'string' ],
+                'slug'       => [ 'type' => 'string', 'description' => 'New page slug (post_name).' ],
                 'content'    => [ 'type' => 'string' ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'trash' ] ],
                 'parent_id'  => [ 'type' => 'integer' ],
@@ -35,6 +36,7 @@ class Update_Page_Ability extends Ability {
 
         $update = [ 'ID' => $page_id ];
         if ( isset( $params['title'] ) )      $update['post_title']   = sanitize_text_field( $params['title'] );
+        if ( ! empty( $params['slug'] ) )     $update['post_name']    = sanitize_title( $params['slug'] );
         if ( isset( $params['content'] ) )    $update['post_content']  = wp_kses_post( $params['content'] );
         if ( isset( $params['status'] ) )     $update['post_status']   = sanitize_key( $params['status'] );
         if ( isset( $params['parent_id'] ) )  $update['post_parent']   = absint( $params['parent_id'] );

@@ -16,6 +16,7 @@ class Create_Page_Ability extends Ability {
             'type'       => 'object',
             'properties' => [
                 'title'      => [ 'type' => 'string',  'description' => 'Page title.' ],
+                'slug'       => [ 'type' => 'string',  'description' => 'Page slug (post_name). Auto-generated from title if omitted — set it explicitly for non-Latin titles to avoid Cyrillic URLs.' ],
                 'content'    => [ 'type' => 'string',  'description' => 'Page content.' ],
                 'status'     => [ 'type' => 'string',  'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft' ],
                 'parent_id'  => [ 'type' => 'integer', 'description' => 'Parent page ID.' ],
@@ -35,6 +36,9 @@ class Create_Page_Ability extends Ability {
             'post_parent'  => absint( $params['parent_id'] ?? 0 ),
             'menu_order'   => (int) ( $params['menu_order'] ?? 0 ),
         ];
+        if ( ! empty( $params['slug'] ) ) {
+            $data['post_name'] = sanitize_title( $params['slug'] );
+        }
 
         $page_id = wp_insert_post( $data, true );
         if ( is_wp_error( $page_id ) ) {
