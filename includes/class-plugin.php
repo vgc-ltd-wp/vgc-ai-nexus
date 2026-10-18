@@ -105,6 +105,9 @@ final class Plugin {
         // Warn when a security layer (WP Cerber etc.) blocks the REST API and
         // with it the MCP endpoint — invisible from outside, diagnosable from here.
         add_action( 'admin_notices', [ Security_Status::class, 'maybe_admin_notice' ] );
+
+        // Read-only mode banner for administrators.
+        add_action( 'admin_notices', [ Read_Only::class, 'admin_notice' ] );
     }
 
     /**
@@ -278,6 +281,9 @@ final class Plugin {
     private function run_ability( Ability $ability, Ability_Group $group, array $params ): array {
         if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
             return $this->disabled_tool_response( $ability );
+        }
+        if ( $ability->blocked_by_read_only() ) {
+            return [ 'success' => false, 'error' => Read_Only::error_message( $ability->get_key() ) ];
         }
         $result = $ability->execute( $params );
         // Flag parameters the caller sent that this ability doesn't support, so a

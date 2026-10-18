@@ -76,6 +76,38 @@
         );
     } );
 
+    // Read-only mode saves on its own, immediately — it is not part of the
+    // per-ability form, so it never waits for "Save Settings".
+    $( document ).on( 'change', '#mcp-readonly-toggle', function () {
+        const $box    = $( this );
+        const on      = $box.is( ':checked' );
+        const $status = $( '#mcp-readonly-status' );
+        $box.prop( 'disabled', true );
+        $status.removeClass( 'mcp-save-status--success mcp-save-status--error' ).text( mcpAbilities.i18n.saving );
+        $.ajax( {
+            url:    mcpAbilities.ajaxUrl,
+            method: 'POST',
+            data:   { action: 'mcp_set_read_only', nonce: mcpAbilities.nonce, on: on ? 1 : 0 },
+            success: function ( res ) {
+                if ( res.success ) {
+                    $box.closest( '.mcp-readonly' ).toggleClass( 'is-on', !! res.data.on );
+                    $status.addClass( 'mcp-save-status--success' ).text( mcpAbilities.i18n.saved );
+                } else {
+                    $box.prop( 'checked', ! on );
+                    $status.addClass( 'mcp-save-status--error' ).text( ( res.data && res.data.message ) || mcpAbilities.i18n.error );
+                }
+            },
+            error: function () {
+                $box.prop( 'checked', ! on );
+                $status.addClass( 'mcp-save-status--error' ).text( mcpAbilities.i18n.error );
+            },
+            complete: function () {
+                $box.prop( 'disabled', false );
+                setTimeout( function () { $status.text( '' ); }, 3000 );
+            },
+        } );
+    } );
+
     // Consolidation toggle marks the form dirty (counts refresh on reload).
     $( document ).on( 'change', '#mcp-consolidate-toggle', function () {
         markDirty();

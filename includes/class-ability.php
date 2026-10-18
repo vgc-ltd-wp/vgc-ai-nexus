@@ -122,9 +122,33 @@ abstract class Ability {
         return $result;
     }
 
+    // ── Read-only mode ───────────────────────────────────────────────────────
+
+    /**
+     * Whether this ability changes the site. Null = classify by key (deny by
+     * default — see Read_Only::is_read_key()); subclasses may set it explicitly.
+     */
+    protected ?bool $writes = null;
+
+    public function is_write(): bool {
+        return $this->writes ?? ! Read_Only::is_read_key( $this->key );
+    }
+
+    public function blocked_by_read_only(): bool {
+        return $this->is_write() && Read_Only::active();
+    }
+
     // ── Authorization ────────────────────────────────────────────────────────
 
+    /**
+     * Every execution path — WordPress ability permission callbacks, MCP tool
+     * permission closures, in core and in every extension — asks this method,
+     * which is why read-only mode is enforced here.
+     */
     public function current_user_can(): bool {
+        if ( $this->blocked_by_read_only() ) {
+            return false;
+        }
         return \current_user_can( $this->required_cap );
     }
 

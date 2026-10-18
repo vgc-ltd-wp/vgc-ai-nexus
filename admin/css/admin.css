@@ -1155,3 +1155,27 @@
     padding: 16px 16px 0;
     margin-bottom: 0;
 }
+
+/* ── Read-only mode switch ──────────────────────────────────────────────── */
+.mcp-readonly {
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-left: 4px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    padding: 14px 18px;
+    margin: 0 0 18px;
+}
+.mcp-readonly.is-on {
+    border-left-color: #d63638;
+    background: #fcf0f1;
+}
+.mcp-readonly__switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+.mcp-readonly__switch input { margin: 0; }
+.mcp-readonly__title { font-weight: 600; font-size: 14px; }
+.mcp-readonly__help { margin: 8px 0 0; color: #50575e; }

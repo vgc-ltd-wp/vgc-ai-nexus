@@ -47,6 +47,10 @@ class Guide {
             '- If a filter appears to have been ignored, check "ignored_parameters" in the response: parameters this site does not support are reported there, and the results are UNFILTERED with respect to them.',
             '- Never guess a post type, taxonomy or template slug. Call list_post_types (or usage_guide) — error messages also list the valid options.',
         ];
+        if ( Read_Only::active() ) {
+            // Lead with it: it changes what every other rule means.
+            array_splice( $lines, 2, 0, [ Read_Only::orientation_line(), '' ] );
+        }
         return implode( "\n", $lines );
     }
 
@@ -299,6 +303,9 @@ MD;
         // Security layers that can block REST (and thus every MCP connection)
         // from outside — the most misdiagnosed failure in customer reports.
         $out[] = '- **Security:** ' . Security_Status::summary();
+        $out[] = '- **Read-only mode:** ' . ( Read_Only::active()
+            ? 'ON — all write tools are disabled' . ( Read_Only::forced() ? ' (locked in wp-config.php)' : '' ) . '. Read, list and search only.'
+            : 'off — reads and writes allowed (subject to per-tool permissions).' );
 
         // The money data: real post type slugs with their taxonomies.
         $rows = [];

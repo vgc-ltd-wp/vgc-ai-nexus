@@ -22,6 +22,9 @@ final class Crud_Ability extends Ability {
 	/** @var array<string,Ability> action value => underlying ability */
 	private array $ops = [];
 
+	/** A dispatcher only routes; read-only mode is enforced per action. */
+	protected ?bool $writes = false;
+
 	private string $group_slug;
 	private string $group_label;
 	private string $group_description;
@@ -50,11 +53,19 @@ final class Crud_Ability extends Ability {
 		$this->key   = str_replace( '-', '_', $this->group_slug );
 		$this->label = $this->group_label;
 
-		$actions = array_keys( $this->ops );
+		// In read-only mode, advertise only the actions that can still run, so
+		// the model is never offered a write it will be refused. If a group has
+		// no readable action, keep the full list (an empty enum is an invalid
+		// schema that strict MCP clients reject) — calls are refused anyway.
+		$visible = array_filter( $this->ops, static fn( Ability $op ) => ! $op->blocked_by_read_only() );
+		if ( ! $visible ) {
+			$visible = $this->ops;
+		}
+		$actions = array_keys( $visible );
 
 		// Per-action help so the model knows which params each operation needs.
 		$lines = [];
-		foreach ( $this->ops as $action => $op ) {
+		foreach ( $visible as $action => $op ) {
 			$req     = $op->get_input_schema()['required'] ?? [];
 			$req     = array_values( array_diff( (array) $req, [ 'action' ] ) );
 			$req_txt = $req ? ' [requires: ' . implode( ', ', $req ) . ']' : '';
@@ -64,7 +75,8 @@ final class Crud_Ability extends Ability {
 		$this->description = trim( $this->group_description )
 			. ' One tool for this group: set "action" to one of the operations below,'
 			. ' then provide that operation\'s parameters. Actions:' . "\n"
-			. implode( "\n", $lines );
+			. implode( "\n", $lines )
+			. ( count( $visible ) < count( $this->ops ) ? "\nRead-only mode is on: write actions are disabled on this site." : '' );
 
 		// Coarse gate = least-privileged capability among the ops. The precise
 		// per-action capability is enforced in execute().
@@ -109,6 +121,10 @@ final class Crud_Ability extends Ability {
 		}
 
 		$op = $this->ops[ $action ];
+
+		if ( $op->blocked_by_read_only() ) {
+			return $this->error( Read_Only::error_message( $action ) );
+		}
 
 		// Respect the per-ability enable state set in AI Nexus → Abilities.
 		if ( ! $op->is_enabled() ) {

@@ -50,6 +50,27 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
     <!-- ── TAB: Abilities ─────────────────────────────────────────────────── -->
     <div class="mcp-tab-panel" id="mcp-tab-abilities">
 
+        <?php
+        $mcp_ro_on     = \MCP_Abilities\Read_Only::active();
+        $mcp_ro_forced = \MCP_Abilities\Read_Only::forced();
+        ?>
+        <!-- Read-only mode: one switch for every AI Nexus tool, core and extensions -->
+        <div class="mcp-readonly<?php echo $mcp_ro_on ? ' is-on' : ''; ?>">
+            <label class="mcp-readonly__switch">
+                <input type="checkbox" id="mcp-readonly-toggle" <?php checked( $mcp_ro_on ); ?> <?php disabled( $mcp_ro_forced ); ?>>
+                <span class="mcp-readonly__title"><?php esc_html_e( 'Read-only mode', 'mcp-abilities' ); ?></span>
+                <span id="mcp-readonly-status" class="mcp-save-status"></span>
+            </label>
+            <p class="mcp-readonly__help">
+                <?php esc_html_e( 'When on, AI assistants can read, list and search this site but cannot change anything: every create, update, delete, upload and settings tool is refused — in AI Nexus and in all of its extensions, including tools added by future updates. Your per-ability settings below are kept and come back when you switch it off. Takes effect immediately.', 'mcp-abilities' ); ?>
+            </p>
+            <?php if ( $mcp_ro_forced ) : ?>
+                <p class="mcp-readonly__help"><strong>
+                    <?php esc_html_e( 'Locked on by VGC_AI_NEXUS_READONLY in wp-config.php — remove that line to use this switch.', 'mcp-abilities' ); ?>
+                </strong></p>
+            <?php endif; ?>
+        </div>
+
         <div class="mcp-toolbar">
             <button id="mcp-save-btn" class="mcp-btn mcp-btn--primary">
                 <span class="dashicons dashicons-saved"></span>

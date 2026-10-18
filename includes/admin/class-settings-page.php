@@ -42,6 +42,7 @@ class Settings_Page {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
         add_action( 'wp_ajax_mcp_save_settings',           [ $this, 'ajax_save_settings' ] );
         add_action( 'wp_ajax_mcp_save_extension_settings', [ $this, 'ajax_save_extension_settings' ] );
+        add_action( 'wp_ajax_mcp_set_read_only',           [ $this, 'ajax_set_read_only' ] );
         $this->installer->init();
         $this->connect->init();
         // Keep the AI Nexus → Extensions menu highlighted while on a hidden subpage.
@@ -260,6 +261,19 @@ class Settings_Page {
         }
 
         wp_send_json_success( [ 'message' => __( 'Settings saved.', 'mcp-abilities' ) ] );
+    }
+
+    /** The one-switch read-only mode. Admin-only; never reachable by an ability. */
+    public function ajax_set_read_only(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ] );
+        }
+        if ( \MCP_Abilities\Read_Only::forced() ) {
+            wp_send_json_error( [ 'message' => __( 'Locked by VGC_AI_NEXUS_READONLY in wp-config.php.', 'mcp-abilities' ) ] );
+        }
+        \MCP_Abilities\Read_Only::set( isset( $_POST['on'] ) && '1' === (string) $_POST['on'] );
+        wp_send_json_success( [ 'on' => \MCP_Abilities\Read_Only::active() ] );
     }
 
     public function ajax_save_extension_settings(): void {

@@ -28,6 +28,9 @@ class Update_Option_Ability extends Ability {
         // Plugin own settings (prevent AI from re-enabling disabled tools)
         'mcp_abilities_settings', 'mcp_woo_settings',
 
+        // Read-only mode is an administrator's decision, never the AI's.
+        'mcp_abilities_read_only',
+
         // Cron manipulation
         'cron', 'doing_cron',
 
