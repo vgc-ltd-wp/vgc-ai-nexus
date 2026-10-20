@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
- * Version:           2.23.0
+ * Version:           2.23.1
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.23.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.23.1' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -34,6 +34,11 @@ define( 'MCP_ABILITIES_OPTION_KEY',  'mcp_abilities_settings' );
 // and RECORD what actually happened. A silent deferral used to be invisible:
 // core would bind to a foreign adapter and contribute no tools at all, which is
 // exactly how an entire toolset can disappear without an error anywhere.
+//
+// Loading first is not enough on its own: a plugin that loads after us can put
+// its autoloader in front of ours (WooCommerce 10.9+ does), and every adapter
+// class not defined yet would then come from ITS copy. Adapter_Loader keeps a
+// loader for our copy in front — see includes/class-adapter-loader.php.
 $GLOBALS['mcp_abilities_adapter'] = [
     'ours'            => false,
     'preloaded_by'    => null,   // adapter version already present when we loaded
@@ -53,6 +58,8 @@ if ( defined( 'WP_MCP_VERSION' ) ) {
         if ( class_exists( '\WP\MCP\Autoloader' ) && \WP\MCP\Autoloader::autoload() ) {
             define( 'WP_MCP_VERSION', '0.5.1-vgc' );
             $GLOBALS['mcp_abilities_adapter']['ours'] = true;
+            require_once MCP_ABILITIES_DIR . 'includes/class-adapter-loader.php';
+            \MCP_Abilities\Adapter_Loader::register();
             if ( class_exists( \WP\MCP\Plugin::class ) ) {
                 \WP\MCP\Plugin::instance();
             }

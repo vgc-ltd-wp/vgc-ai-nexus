@@ -191,7 +191,7 @@ final class Plugin {
                             return $ability->current_user_can();
                         },
                         'execute_callback'    => function( $params = [] ) use ( $ability, $group ) {
-                            return $this->run_ability( $ability, $group, (array) $params );
+                            return $this->for_adapter( $this->run_ability( $ability, $group, (array) $params ) );
                         },
                         'meta'                => [
                             'mcp' => [ 'public' => true ],
@@ -260,7 +260,7 @@ final class Plugin {
             'description' => $ability->get_description(),
             'inputSchema' => $ability->get_input_schema(),
             'handler'     => function( $params = [] ) use ( $ability, $group ) {
-                return $this->run_ability( $ability, $group, (array) $params );
+                return $this->for_adapter( $this->run_ability( $ability, $group, (array) $params ) );
             },
             'permission'  => function() use ( $ability, $group ) {
                 if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
@@ -291,6 +291,42 @@ final class Plugin {
         $result = $ability->annotate_ignored_params( $result, $params );
         Logger::log( $ability->get_key(), $result );
         return $result;
+    }
+
+    /**
+     * Hand a tool result to the serving adapter in a form it can read.
+     *
+     * Errors are {success:false, error:"..."}, which our adapter turns into a
+     * tool error with that text. Another copy's ToolsHandler may not (0.1.0,
+     * bundled with WooCommerce 10.9, answers "An error occurred while executing
+     * the tool."), but every version passes on a WP_Error's message.
+     *
+     * Not inside the adapter's execute-ability tool: it returns an ability's
+     * array as data, which every version shows in full, while a WP_Error it
+     * turns into its own {success:false, error} — which the old ToolsHandler
+     * reduces to the generic message again.
+     *
+     * @return array|\WP_Error
+     */
+    private function for_adapter( array $result ) {
+        if ( isset( $result['success'], $result['error'] )
+            && false === $result['success']
+            && is_string( $result['error'] )
+            && '' !== trim( $result['error'] )
+            && Adapter_Status::tool_errors_need_wp_error()
+            && ! self::inside_execute_ability() ) {
+            return new \WP_Error( 'mcp_abilities_tool_error', $result['error'], [ 'status' => 400 ] );
+        }
+        return $result;
+    }
+
+    private static function inside_execute_ability(): bool {
+        foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 30 ) as $frame ) {
+            if ( isset( $frame['class'] ) && str_ends_with( $frame['class'], '\\ExecuteAbilityAbility' ) ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
