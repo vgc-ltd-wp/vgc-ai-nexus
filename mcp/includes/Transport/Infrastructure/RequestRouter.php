@@ -10,7 +10,7 @@ declare( strict_types=1 );
 namespace WP\MCP\Transport\Infrastructure;
 
 use WP\MCP\Infrastructure\ErrorHandling\McpErrorFactory;
-use WP\MCP\Infrastructure\Observability\McpObservabilityHelperTrait;
+use WP\MCP\Infrastructure\Observability\ErrorLogMcpObservabilityHandler; // VGC patch: was McpObservabilityHelperTrait, see is_sensitive_key() below.
 use WP\McpSchema\Common\AbstractDataTransferObject;
 use WP\McpSchema\Common\Content\DTO\TextContent;
 use WP\McpSchema\Common\JsonRpc\DTO\JSONRPCErrorResponse;
@@ -289,7 +289,11 @@ class RequestRouter {
 			// Filter argument keys to exclude sensitive-looking ones.
 			$safe_keys = array();
 			foreach ( array_keys( $params['arguments'] ) as $arg_key ) {
-				if ( McpObservabilityHelperTrait::is_sensitive_key( (string) $arg_key ) ) {
+				// VGC patch (AI Nexus 2.23.3), keep it when re-vendoring: call the trait's static
+				// helper through a class that uses the trait. Calling it on the trait itself is
+				// deprecated since PHP 8.1 and wrote two Deprecated lines per argument key to
+				// debug.log on every tools/call.
+				if ( ErrorLogMcpObservabilityHandler::is_sensitive_key( (string) $arg_key ) ) {
 					$safe_keys[] = '[REDACTED]';
 				} else {
 					$safe_keys[] = $arg_key;

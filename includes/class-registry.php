@@ -18,9 +18,24 @@ class Registry {
     /** @var Ability_Group[] keyed by group slug */
     private array $groups = [];
 
+    /** Whether auto_discover() has run (it runs once per request). */
+    private bool $discovered = false;
+
     // ── Discovery ───────────────────────────────────────────────────────────
 
+    /**
+     * Build every group and ability. Plugin::init() runs this on `init`, not on
+     * plugins_loaded: groups and abilities translate their labels as they are
+     * built, and WordPress 6.7+ logs "Translation loading for the mcp-abilities
+     * domain was triggered too early" for any translation before that. Code that
+     * asks for groups earlier still gets them: the getters below discover first.
+     */
     public function auto_discover(): void {
+        if ( $this->discovered ) {
+            return;
+        }
+        $this->discovered = true;
+
         $settings = get_option( MCP_ABILITIES_OPTION_KEY, [] );
 
         // Scan the core abilities directory
@@ -96,10 +111,12 @@ class Registry {
 
     /** @return Ability_Group[] */
     public function get_groups(): array {
+        $this->auto_discover();
         return $this->groups;
     }
 
     public function get_group( string $slug ): ?Ability_Group {
+        $this->auto_discover();
         return $this->groups[ $slug ] ?? null;
     }
 
@@ -109,6 +126,7 @@ class Registry {
      * @return Ability[]
      */
     public function get_enabled_abilities(): array {
+        $this->auto_discover();
         $abilities = [];
         foreach ( $this->groups as $group ) {
             if ( ! $group->is_enabled() ) {
@@ -127,6 +145,7 @@ class Registry {
      * Lookup a single ability by its key (tool name).
      */
     public function get_ability( string $key ): ?Ability {
+        $this->auto_discover();
         foreach ( $this->groups as $group ) {
             foreach ( $group->get_abilities() as $ability ) {
                 if ( $ability->get_key() === $key ) {
@@ -141,6 +160,7 @@ class Registry {
      * Persist current enabled states to the database.
      */
     public function save_settings( array $raw_settings ): void {
+        $this->auto_discover();
         $clean = [];
         foreach ( $this->groups as $slug => $group ) {
             $clean[ $slug ]['enabled'] = ! empty( $raw_settings[ $slug ]['enabled'] );

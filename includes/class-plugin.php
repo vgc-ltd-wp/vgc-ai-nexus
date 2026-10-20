@@ -26,8 +26,14 @@ final class Plugin {
         $this->load_dependencies();
         $this->load_textdomain();
 
+        // Groups translate their labels as they are built, so build them on init
+        // (WordPress 6.7+ flags translations before it); see Registry::auto_discover().
         $this->registry = new Registry();
-        $this->registry->auto_discover();
+        if ( did_action( 'init' ) ) {
+            $this->registry->auto_discover();
+        } else {
+            add_action( 'init', [ $this->registry, 'auto_discover' ], 0 );
+        }
 
         $this->register_with_adapter();
 
