@@ -73,6 +73,13 @@ add_action( 'wp_abilities_api_init', function () use ( $abilities ): void {
 } );
 ```
 
+Keep `execute_callback` a closure over the `$ability` object and return its
+`{success:false, error:"..."}` arrays as they are. That closure is how AI Nexus
+core (2.23.2+) recognises the ability: when another plugin's copy of the MCP
+adapter serves the site, core hands its error arrays over as `WP_Error`, so the
+error text still reaches the AI (adapter 0.1.0 would answer "An error occurred
+while executing the tool.").
+
 ### 5. Inject tools into the MCP server
 
 ```php

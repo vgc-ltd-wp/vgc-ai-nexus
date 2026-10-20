@@ -158,11 +158,12 @@ class Adapter_Status {
             );
         }
         return sprintf(
-            'Serving via an adapter provided by ANOTHER plugin (%s)%s. AI Nexus is using the %s path for tool registration%s.',
+            'Serving via an adapter provided by ANOTHER plugin (%s)%s. AI Nexus is using the %s path for tool registration%s.%s',
             $s['adapter_version'] ?: 'unknown version',
             $s['bundled_autoload_failed'] ? ', because the adapter bundled with AI Nexus could not be loaded' : '',
             $s['tool_injection'],
-            $s['foreign_sources'] ? ' (adapter classes from: ' . implode( ', ', $s['foreign_sources'] ) . ')' : ''
+            $s['foreign_sources'] ? ' (adapter classes from: ' . implode( ', ', $s['foreign_sources'] ) . ')' : '',
+            'WP_Error' === $s['tool_errors_as'] ? ' Tool errors of AI Nexus and its extensions are handed over as WP_Error so their text still reaches the AI.' : ''
         );
     }
 
