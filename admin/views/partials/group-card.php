@@ -45,15 +45,22 @@ $g_examples  = method_exists( $group, 'get_examples' ) ? $group->get_examples() 
                 <span class="mcp-badge mcp-badge--consolidated" title="<?php esc_attr_e( 'Exposed as a single tool with an action parameter', 'mcp-abilities' ); ?>">
                     <?php
                     printf(
-                        /* translators: 1: number of abilities, 2: number of exposed tools */
-                        esc_html__( '%1$d abilities → %2$d tool', 'mcp-abilities' ),
-                        (int) $g_abilities,
-                        (int) $g_tools
+                        /* translators: 1: "N abilities", 2: "N tools" (exposed) */
+                        esc_html__( '%1$s → %2$s', 'mcp-abilities' ),
+                        /* translators: %d: number of abilities */
+                        esc_html( sprintf( _n( '%d ability', '%d abilities', $g_abilities, 'mcp-abilities' ), $g_abilities ) ),
+                        /* translators: %d: number of exposed tools */
+                        esc_html( sprintf( _n( '%d tool', '%d tools', $g_tools, 'mcp-abilities' ), $g_tools ) )
                     );
                     ?>
                 </span>
             <?php else : ?>
-                <span class="mcp-badge"><?php echo (int) $g_abilities; ?> <?php esc_html_e( 'tools', 'mcp-abilities' ); ?></span>
+                <span class="mcp-badge">
+                    <?php
+                    /* translators: %d: number of exposed tools */
+                    echo esc_html( sprintf( _n( '%d tool', '%d tools', $g_abilities, 'mcp-abilities' ), $g_abilities ) );
+                    ?>
+                </span>
             <?php endif; ?>
             <label class="mcp-toggle" title="<?php echo $g_locked ? esc_attr__( 'Disabled in wp-config.php; cannot be enabled here.', 'mcp-abilities' ) : esc_attr__( 'Enable/disable entire group', 'mcp-abilities' ); ?>">
                 <input type="checkbox"

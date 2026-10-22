@@ -1179,3 +1179,49 @@
 .mcp-readonly__switch input { margin: 0; }
 .mcp-readonly__title { font-weight: 600; font-size: 14px; }
 .mcp-readonly__help { margin: 8px 0 0; color: #50575e; }
+
+/* ── Phone (WordPress admin's own breakpoint) ───────────────────────────────
+   Group cards, the toolbar and the abilities table are shared by the Abilities
+   page and every extension subpage. Desktop rules above stay untouched. */
+@media screen and (max-width: 782px) {
+    /* Toolbar: Save + count on one row, the filter box on its own full row. */
+    .mcp-toolbar { flex-wrap: wrap; row-gap: 10px; }
+    .mcp-toolbar__search {
+        flex: 1 1 100%;
+        min-width: 0;
+        margin-left: 0;
+    }
+    #mcp-search { flex: 1 1 auto; width: auto; min-width: 0; }
+
+    /* Group card: icon + title/description full width, controls on their own row
+       (indented to line up with the text: icon 36px + gap 14px). */
+    .mcp-group__header { flex-wrap: wrap; row-gap: 10px; padding: 14px 16px; }
+    .mcp-group__meta { flex: 1 1 0; }
+    .mcp-group__controls { flex: 1 1 100%; min-width: 0; padding-left: 50px; }
+    .mcp-group__controls .mcp-toggle { margin-left: auto; }
+
+    /* Abilities table: one stacked block per ability, toggle top right. */
+    .mcp-abilities-table,
+    .mcp-abilities-table tbody { display: block; }
+    .mcp-abilities-table thead { display: none; }
+    .mcp-ability-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--mcp-border);
+    }
+    .mcp-ability-row.mcp-ability-row--hidden { display: none; }
+    .mcp-ability-row:last-child { border-bottom: none; }
+    .mcp-abilities-table .mcp-ability-row td {
+        display: block;
+        padding: 0;
+        border-bottom: none;
+        background: none;
+    }
+    .mcp-ability-row td:first-child { grid-column: 1; grid-row: 1; }
+    .mcp-ability-row td.mcp-col-toggle { grid-column: 2; grid-row: 1; width: auto; }
+    .mcp-ability-row td.mcp-tool-desc { grid-column: 1 / -1; max-width: none; margin-top: 6px; }
+    .mcp-ability-row td:nth-child(3) { grid-column: 1 / -1; margin-top: 6px; }
+    .mcp-tool-key { max-width: 100%; overflow-wrap: anywhere; }
+}

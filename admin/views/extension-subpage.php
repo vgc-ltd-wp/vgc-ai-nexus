@@ -86,10 +86,12 @@ foreach ( $ext_groups as $g ) {
             <span class="mcp-toolbar__count">
                 <?php
                 printf(
-                    /* translators: 1: tools exposed, 2: underlying abilities */
-                    esc_html__( '%1$d tools · %2$d abilities', 'mcp-abilities' ),
-                    (int) $ext_tool_total,
-                    (int) $ext_ability_total
+                    /* translators: 1: "N tools" (exposed to AI clients), 2: "N abilities" (underlying) */
+                    esc_html__( '%1$s · %2$s', 'mcp-abilities' ),
+                    /* translators: %d: number of tools exposed to AI clients */
+                    esc_html( sprintf( _n( '%d tool', '%d tools', $ext_tool_total, 'mcp-abilities' ), $ext_tool_total ) ),
+                    /* translators: %d: number of underlying abilities */
+                    esc_html( sprintf( _n( '%d ability', '%d abilities', $ext_ability_total, 'mcp-abilities' ), $ext_ability_total ) )
                 );
                 ?>
             </span>
