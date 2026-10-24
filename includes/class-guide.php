@@ -313,6 +313,10 @@ MD;
         $out[] = '- **Read-only mode:** ' . ( Read_Only::active()
             ? 'ON — all write tools are disabled' . ( Read_Only::forced() ? ' (locked in wp-config.php)' : '' ) . '. Read, list and search only.'
             : 'off — reads and writes allowed (subject to per-tool permissions).' );
+        $oauth  = \MCP_Abilities\OAuth\Bootstrap::mode();
+        $out[]  = '- **Remote access (claude.ai web, mobile, scheduled tasks):** ' . ( 'core' === $oauth
+            ? 'OAuth sign-in served by AI Nexus — add ' . Admin\Connect::server_url() . ' as a custom connector in claude.ai.'
+            : ( 'connector' === $oauth ? 'OAuth sign-in served by the VGC MCP Claude Connector plugin.' : 'OAuth sign-in is switched off.' ) );
 
         // The money data: real post type slugs with their taxonomies.
         $rows = [];

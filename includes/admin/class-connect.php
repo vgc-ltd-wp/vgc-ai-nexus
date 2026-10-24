@@ -19,6 +19,34 @@ class Connect {
     public function init(): void {
         add_action( 'wp_ajax_mcp_generate_app_password', [ $this, 'ajax_generate' ] );
         add_action( 'wp_ajax_mcp_revoke_connection',     [ $this, 'ajax_revoke' ] );
+        add_action( 'wp_ajax_mcp_oauth_policy',          [ $this, 'ajax_oauth_policy' ] );
+        add_action( 'wp_ajax_mcp_oauth_revoke',          [ $this, 'ajax_oauth_revoke' ] );
+    }
+
+    /** AJAX: who may register as a claude.ai-style OAuth app (restricted/open/closed). */
+    public function ajax_oauth_policy(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ] );
+        }
+        $policy = isset( $_POST['policy'] ) ? sanitize_key( wp_unslash( $_POST['policy'] ) ) : '';
+        if ( ! \MCP_Abilities\OAuth\Options::set_policy( $policy ) ) {
+            wp_send_json_error( [ 'message' => __( 'Unknown setting.', 'mcp-abilities' ) ] );
+        }
+        wp_send_json_success( [ 'message' => __( 'Saved.', 'mcp-abilities' ) ] );
+    }
+
+    /** AJAX: revoke an OAuth app (claude.ai connection) and all of its tokens. */
+    public function ajax_oauth_revoke(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ] );
+        }
+        $client_id = isset( $_POST['client_id'] ) ? sanitize_text_field( wp_unslash( $_POST['client_id'] ) ) : '';
+        if ( '' === $client_id || ! \MCP_Abilities\OAuth\Bootstrap::revoke( $client_id ) ) {
+            wp_send_json_error( [ 'message' => __( 'That app is not registered.', 'mcp-abilities' ) ] );
+        }
+        wp_send_json_success( [ 'message' => __( 'Disconnected. Claude will need to connect again.', 'mcp-abilities' ) ] );
     }
 
     /** The bundled MCP server's REST URL. */

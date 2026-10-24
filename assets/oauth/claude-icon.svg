@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Claude Desktop icon: stylised "C" with desktop silhouette -->
+  <rect width="64" height="64" rx="12" fill="#D97757"/>
+  <!-- Desktop screen shape -->
+  <rect x="12" y="12" width="40" height="28" rx="3" fill="white" opacity="0.25"/>
+  <rect x="14" y="14" width="36" height="24" rx="2" fill="white" opacity="0.15"/>
+  <!-- Stand -->
+  <rect x="27" y="40" width="10" height="5" rx="1" fill="white" opacity="0.25"/>
+  <rect x="22" y="44" width="20" height="3" rx="1.5" fill="white" opacity="0.25"/>
+  <!-- "C" letter for Claude -->
+  <path d="M38 25.5C37 22.7 34.3 21 31 21C26.6 21 23 24.2 23 28.5C23 32.8 26.6 36 31 36C34.3 36 37 34.3 38 31.5"
+        stroke="white" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.9"/>
+</svg>

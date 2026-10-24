@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
- * Version:           2.24.0
+ * Version:           2.25.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.24.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.25.0' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -87,6 +87,14 @@ spl_autoload_register( function ( string $class ): void {
         require_once $file;
     }
 } );
+
+// ── Remote sign-in (OAuth) for claude.ai ─────────────────────────────────────
+// claude.ai (web, mobile, scheduled tasks) connects with OAuth, not with an
+// Application Password. Defined at file load so the VGC MCP Claude Connector
+// (1.4.0+), which loads later, knows to stand its own OAuth server down.
+define( 'MCP_ABILITIES_OAUTH', MCP_ABILITIES_VERSION );
+\MCP_Abilities\OAuth\Bootstrap::silence_display_errors_for_machine_requests();
+add_action( 'plugins_loaded', [ \MCP_Abilities\OAuth\Bootstrap::class, 'boot' ], 20 );
 
 // ── Self-hosted updates ──────────────────────────────────────────────────────
 // Reads a PUBLIC manifest so the normal WordPress "Update now" button works even

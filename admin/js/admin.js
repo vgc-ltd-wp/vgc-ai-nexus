@@ -305,6 +305,50 @@
         $row.find( '.js-created' ).text( mcpAbilities.i18n.justNow || 'Just now' );
     }
 
+    // ── Connect: claude.ai (OAuth) — registration policy + disconnect ────────
+
+    $( document ).on( 'change', '#mcp-oauth-policy', function () {
+        const $sel    = $( this );
+        const $status = $( '#mcp-oauth-policy-status' );
+        $sel.prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.saving || 'Saving…' );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_oauth_policy', nonce: mcpAbilities.nonce, policy: $sel.val() } )
+            .done( function ( res ) {
+                $status.addClass( res.success ? 'is-success' : 'is-error' ).text( ( res.data && res.data.message ) || ( res.success ? 'Saved.' : 'Failed.' ) );
+            } )
+            .fail( function () { $status.addClass( 'is-error' ).text( 'Failed.' ); } )
+            .always( function () { $sel.prop( 'disabled', false ); } );
+    } );
+
+    $( document ).on( 'click', '.mcp-oauth-revoke', function () {
+        const $row    = $( this ).closest( 'tr' );
+        const $status = $( '#mcp-oauth-status' );
+        const client  = $row.attr( 'data-client' );
+        if ( ! client || ! window.confirm( 'Disconnect this app? Claude loses access immediately and will have to connect and approve again.' ) ) {
+            return;
+        }
+        const $btn = $( this ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_oauth_revoke', nonce: mcpAbilities.nonce, client_id: client } )
+            .done( function ( res ) {
+                if ( res.success ) {
+                    $row.remove();
+                    const $tbody = $( '#mcp-oauth-table tbody' );
+                    if ( ! $tbody.find( 'tr[data-client]' ).length ) {
+                        $tbody.find( '.mcp-conn-empty' ).show();
+                    }
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Disconnected.' );
+                } else {
+                    $btn.prop( 'disabled', false );
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $btn.prop( 'disabled', false );
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } );
+    } );
+
     // ── Connect: revoke a stored connection ──────────────────────────────────
 
     $( document ).on( 'click', '.mcp-revoke-conn', function () {

@@ -36,6 +36,82 @@ $adapter_ok  = Connect::adapter_active();
 
     <div class="mcp-docs">
 
+        <?php
+        $oauth_mode = \MCP_Abilities\OAuth\Bootstrap::mode();
+        $oauth_apps = 'core' === $oauth_mode ? \MCP_Abilities\OAuth\Bootstrap::connected_apps() : [];
+        $date_fmt   = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+        ?>
+        <div class="mcp-doc-section mcp-oauth" id="mcp-oauth">
+            <h3><?php esc_html_e( 'claude.ai — web, mobile and scheduled tasks', 'mcp-abilities' ); ?></h3>
+            <?php if ( 'connector' === $oauth_mode ) : ?>
+                <p><?php
+                    printf(
+                        /* translators: %s: connector plugin version */
+                        esc_html__( 'Sign-in for claude.ai is currently served by the VGC MCP Claude Connector (OAuth) plugin, version %s. AI Nexus now includes it: update that plugin to 1.4.0 or later, or deactivate it, and AI Nexus takes over. Existing claude.ai connections keep working either way.', 'mcp-abilities' ),
+                        esc_html( (string) VGC_CC_VERSION )
+                    );
+                ?></p>
+            <?php elseif ( 'off' === $oauth_mode ) : ?>
+                <p><?php esc_html_e( 'Sign-in for claude.ai is switched off on this site (the mcp_abilities_oauth_enabled filter).', 'mcp-abilities' ); ?></p>
+            <?php else : ?>
+                <p><?php esc_html_e( 'Works from anywhere, with nothing running on your computer — in claude.ai on the web, the Claude mobile apps, Claude Desktop’s connectors and scheduled tasks. In claude.ai open Settings → Connectors → Add custom connector, paste this address, leave the OAuth client ID and secret empty, then click Connect and approve with your WordPress login.', 'mcp-abilities' ); ?></p>
+                <pre class="mcp-code-block"><?php echo esc_html( $server_url ); ?></pre>
+                <p class="mcp-section-sub"><?php esc_html_e( 'Claude acts with the permissions of the WordPress user who approves the connection, and stays signed in (renewing itself) until you disconnect it below.', 'mcp-abilities' ); ?></p>
+
+                <p>
+                    <label for="mcp-oauth-policy" style="font-weight:600;margin-right:8px;"><?php esc_html_e( 'Which apps may connect:', 'mcp-abilities' ); ?></label>
+                    <select id="mcp-oauth-policy" class="mcp-select">
+                        <?php
+                        $policy  = \MCP_Abilities\OAuth\Options::policy();
+                        $choices = [
+                            'restricted' => __( 'Claude only (claude.ai and Anthropic) — recommended', 'mcp-abilities' ),
+                            'open'       => __( 'Any app (each still needs your approval)', 'mcp-abilities' ),
+                            'closed'     => __( 'None — no new connections', 'mcp-abilities' ),
+                        ];
+                        foreach ( $choices as $value => $label ) :
+                        ?>
+                            <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $policy, $value ); ?>><?php echo esc_html( $label ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <span id="mcp-oauth-policy-status" class="mcp-save-status"></span>
+                </p>
+
+                <table class="widefat striped mcp-connections-table" id="mcp-oauth-table">
+                    <thead>
+                        <tr>
+                            <th><?php esc_html_e( 'App', 'mcp-abilities' ); ?></th>
+                            <th><?php esc_html_e( 'Registered', 'mcp-abilities' ); ?></th>
+                            <th><?php esc_html_e( 'Signed in as', 'mcp-abilities' ); ?></th>
+                            <th><?php esc_html_e( 'Status', 'mcp-abilities' ); ?></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ( $oauth_apps as $app ) : ?>
+                        <tr data-client="<?php echo esc_attr( $app['client_id'] ); ?>">
+                            <td><strong><?php echo esc_html( $app['name'] ?: __( 'Unnamed app', 'mcp-abilities' ) ); ?></strong>
+                                <?php if ( $app['hosts'] ) : ?><br><span class="mcp-section-sub"><?php echo esc_html( implode( ', ', $app['hosts'] ) ); ?></span><?php endif; ?></td>
+                            <td><?php echo $app['created_at'] ? esc_html( wp_date( $date_fmt, $app['created_at'] ) ) : '&mdash;'; ?></td>
+                            <td><?php echo $app['users'] ? esc_html( implode( ', ', $app['users'] ) ) : '&mdash;'; ?></td>
+                            <td><?php
+                                echo $app['connected']
+                                    ? esc_html( sprintf( /* translators: %s: date */ __( 'Connected (renews until %s)', 'mcp-abilities' ), wp_date( get_option( 'date_format' ), $app['refresh_until'] ) ) )
+                                    : esc_html__( 'Not connected', 'mcp-abilities' );
+                            ?></td>
+                            <td><button class="mcp-btn mcp-btn--link mcp-oauth-revoke" type="button"><?php echo $app['connected'] ? esc_html__( 'Disconnect', 'mcp-abilities' ) : esc_html__( 'Remove', 'mcp-abilities' ); ?></button></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr class="mcp-conn-empty" <?php echo empty( $oauth_apps ) ? '' : 'style="display:none;"'; ?>>
+                            <td colspan="5" class="mcp-section-sub"><?php esc_html_e( 'No claude.ai connections yet.', 'mcp-abilities' ); ?></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <span id="mcp-oauth-status" class="mcp-save-status"></span>
+            <?php endif; ?>
+        </div>
+
+        <h2 style="margin:28px 0 8px;"><?php esc_html_e( 'Claude Desktop with an Application Password', 'mcp-abilities' ); ?></h2>
+
         <div class="mcp-doc-section">
             <h3><?php esc_html_e( 'Step 1 — Your MCP server URL', 'mcp-abilities' ); ?></h3>
             <p><?php esc_html_e( 'Claude connects to this site at:', 'mcp-abilities' ); ?></p>
