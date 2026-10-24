@@ -118,6 +118,9 @@ final class Plugin {
 
         // Read-only mode banner for administrators.
         add_action( 'admin_notices', [ Read_Only::class, 'admin_notice' ] );
+
+        // One-time upload links (create_upload_link) for Media Library images.
+        add_action( 'rest_api_init', [ Upload_Links::class, 'register_routes' ] );
     }
 
     /**

@@ -241,6 +241,13 @@ markup. Prefer the server-side copy paths:
 If you find yourself planning several chunked reads followed by a large write,
 stop and look for a server-side equivalent first.
 
+The same applies to images. An image already on the web goes in with
+`upload_image` and its `url` (the site downloads it). A file you made or have in
+your workspace goes in with `create_upload_link`, then `curl -F "file=@image.png"`
+to the returned link — the bytes never pass through the conversation. Inline
+`data_base64` is only for small images (max 3 MB). Attach to a post and set the
+featured image in the same call (`post_id`, `set_featured`).
+
 **Trust `ignored_parameters`, not appearances.** A result that looks correctly
 filtered may not be. If the response contains `ignored_parameters`, those
 parameters did nothing and the data is unfiltered with respect to them — fix the

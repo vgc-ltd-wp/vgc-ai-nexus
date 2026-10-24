@@ -31,5 +31,9 @@ class Installer {
     public static function uninstall(): void {
         Logger::drop_table();
         delete_option( MCP_ABILITIES_OPTION_KEY );
+        global $wpdb;
+        foreach ( (array) $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( Upload_Links::PREFIX ) . '%' ) ) as $name ) {
+            delete_option( $name );
+        }
     }
 }
