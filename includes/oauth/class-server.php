@@ -890,6 +890,31 @@ final class Server {
 				</div>
 			</form>
 		</div>
+		<script>
+		// Submit once. A second Approve (double click, slow redirect) issues a second
+		// code and sends the browser back to claude.ai with an already-used state,
+		// which claude.ai reports as a failed connection even though the first worked.
+		(function () {
+			var form = document.querySelector( 'form' );
+			if ( ! form ) { return; }
+			form.addEventListener( 'submit', function ( e ) {
+				if ( form.getAttribute( 'data-sent' ) ) { e.preventDefault(); return; }
+				form.setAttribute( 'data-sent', '1' );
+				var b = e.submitter;
+				if ( b ) {
+					// Carry the decision explicitly: a disabled button's value is not sent.
+					var h = document.createElement( 'input' );
+					h.type = 'hidden'; h.name = b.name; h.value = b.value;
+					form.appendChild( h );
+					b.textContent = <?php echo wp_json_encode( __( 'One moment…', 'mcp-abilities' ) ); ?>;
+				}
+				setTimeout( function () {
+					var all = form.querySelectorAll( 'button' );
+					for ( var i = 0; i < all.length; i++ ) { all[ i ].disabled = true; }
+				}, 0 );
+			} );
+		})();
+		</script>
 		</body></html>
 		<?php
 	}
