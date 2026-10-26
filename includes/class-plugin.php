@@ -109,6 +109,10 @@ final class Plugin {
         // filter where the adapter is new enough to offer it.
         add_filter( 'mcp_adapter_initialize_response', [ $this, 'add_orientation' ], 10, 1 );
 
+        // The site's own name, address and Site Icon in serverInfo, so a
+        // sub-domain's connector does not show the main domain's favicon.
+        Site_Identity::init();
+
         // Make a foreign or failed adapter visible to administrators.
         add_action( 'admin_notices', [ Adapter_Status::class, 'maybe_admin_notice' ] );
 

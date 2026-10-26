@@ -56,6 +56,27 @@ $adapter_ok  = Connect::adapter_active();
             <?php else : ?>
                 <p><?php esc_html_e( 'Works from anywhere, with nothing running on your computer — in claude.ai on the web, the Claude mobile apps, Claude Desktop’s connectors and scheduled tasks. In claude.ai open Settings → Connectors → Add custom connector, paste this address, leave the OAuth client ID and secret empty, then click Connect and approve with your WordPress login.', 'mcp-abilities' ); ?></p>
                 <pre class="mcp-code-block"><?php echo esc_html( $server_url ); ?></pre>
+                <?php $mcp_icon = (string) get_site_icon_url( 64 ); ?>
+                <p class="mcp-section-sub" style="display:flex;align-items:center;gap:8px;">
+                    <?php if ( '' !== $mcp_icon ) : ?>
+                        <img src="<?php echo esc_url( $mcp_icon ); ?>" alt="" width="24" height="24" style="border-radius:4px;">
+                        <?php
+                        printf(
+                            /* translators: %s: site name */
+                            esc_html__( 'Claude is told this site is “%s”, with this icon (the Site Icon). Changed it? Remove and re-add the connector in claude.ai to refresh it.', 'mcp-abilities' ),
+                            esc_html( \MCP_Abilities\Site_Identity::title() )
+                        );
+                        ?>
+                    <?php else : ?>
+                        <?php
+                        printf(
+                            /* translators: %s: link to the Customizer's Site Identity panel */
+                            wp_kses( __( 'This site has no Site Icon, so Claude guesses one — often the main domain’s. <a href="%s">Set a Site Icon</a> to give this site its own.', 'mcp-abilities' ), [ 'a' => [ 'href' => [] ] ] ),
+                            esc_url( admin_url( 'customize.php?autofocus[section]=title_tagline' ) )
+                        );
+                        ?>
+                    <?php endif; ?>
+                </p>
                 <p class="mcp-section-sub"><?php esc_html_e( 'Claude acts with the permissions of the WordPress user who approves the connection, and stays signed in (renewing itself) until you disconnect it below.', 'mcp-abilities' ); ?></p>
 
                 <p>

@@ -335,6 +335,7 @@ final class Server {
 			'authorization_servers'    => array( self::as_issuer() ),
 			'scopes_supported'         => array( 'mcp' ),
 			'bearer_methods_supported' => array( 'header' ),
+			'resource_name'            => \MCP_Abilities\Site_Identity::title(),
 		);
 	}
 
