@@ -48,7 +48,7 @@ $adapter_ok  = Connect::adapter_active();
                     printf(
                         /* translators: %s: connector plugin version */
                         esc_html__( 'Sign-in for claude.ai is currently served by the VGC MCP Claude Connector (OAuth) plugin, version %s. AI Nexus now includes it: update that plugin to 1.4.0 or later, or deactivate it, and AI Nexus takes over. Existing claude.ai connections keep working either way.', 'mcp-abilities' ),
-                        esc_html( (string) VGC_CC_VERSION )
+                        esc_html( (string) \MCP_Abilities\OAuth\Bootstrap::connector_version() )
                     );
                 ?></p>
             <?php elseif ( 'off' === $oauth_mode ) : ?>

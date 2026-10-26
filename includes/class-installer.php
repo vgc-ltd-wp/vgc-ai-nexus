@@ -34,7 +34,7 @@ class Installer {
         delete_option( 'mcp_abilities_oauth_rules' );
         // OAuth clients and tokens are shared with the VGC MCP Claude Connector;
         // keep them while that plugin is active and serving the connections.
-        if ( ! defined( 'VGC_CC_VERSION' ) ) {
+        if ( null === OAuth\Bootstrap::connector_version() ) {
             OAuth\Token_Store::delete_all();
             foreach ( [ OAuth\Options::CLIENTS, OAuth\Options::REG_POLICY, OAuth\Options::ALLOWED_ORIGINS, 'vgc_cc_dynamic_reg_user_id' ] as $opt ) {
                 delete_option( $opt );

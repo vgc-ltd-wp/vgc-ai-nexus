@@ -29,8 +29,30 @@ final class Bootstrap {
 
 	private static string $mode = 'off';
 
+	/**
+	 * The active VGC MCP Claude Connector (OAuth)'s version, or null when it is
+	 * not active.
+	 *
+	 * VGC_CC_VERSION alone does not identify it: VGC MCP Claude Desktop (no
+	 * OAuth server) and VGC Cookie Compliance define the same constant, and on
+	 * vibrantcolorink.com Cookie Compliance 1.1.0 made AI Nexus stand back for
+	 * a connector that was not there, so nobody served claude.ai sign-in. The
+	 * connector is recognised by its OAuth server file, present in every
+	 * version of it and in no other plugin.
+	 */
+	public static function connector_version(): ?string {
+		if ( ! defined( 'VGC_CC_VERSION' ) || ! defined( 'VGC_CC_PLUGIN_DIR' ) ) {
+			return null;
+		}
+		if ( ! file_exists( trailingslashit( (string) VGC_CC_PLUGIN_DIR ) . 'includes/class-oauth-server.php' ) ) {
+			return null;
+		}
+		return (string) VGC_CC_VERSION;
+	}
+
 	public static function boot(): void {
-		if ( defined( 'VGC_CC_VERSION' ) && version_compare( (string) VGC_CC_VERSION, '1.4.0', '<' ) ) {
+		$connector = self::connector_version();
+		if ( null !== $connector && version_compare( $connector, '1.4.0', '<' ) ) {
 			self::$mode = 'connector';
 			return;
 		}
