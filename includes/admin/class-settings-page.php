@@ -76,7 +76,8 @@ class Settings_Page {
             self::MENU_SLUG,
             [ $this, 'render_abilities_page' ],
             $this->menu_icon(),
-            82
+            // Right after VGC Toolbox (position 2.9), near the top of the menu.
+            '2.95'
         );
 
         // Rename the auto-created first submenu item.

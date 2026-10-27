@@ -83,6 +83,12 @@ final class Read_Only {
         if ( ! current_user_can( 'manage_options' ) || ! self::active() ) {
             return;
         }
+        // Only on AI Nexus's own screens (Abilities, Connect, Extensions and
+        // their pages, Connections, Guide): every slug starts with mcp-abilities.
+        $page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( 'mcp-abilities' !== $page && 0 !== strpos( $page, 'mcp-abilities-' ) ) {
+            return;
+        }
         echo '<div class="notice notice-info"><p><strong>VGC AI Nexus:</strong> '
             . esc_html__( 'Read-only mode is on — AI assistants can read this site but cannot change anything.', 'mcp-abilities' )
             . ( self::forced()
