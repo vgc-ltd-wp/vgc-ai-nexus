@@ -143,12 +143,7 @@ class Settings_Page {
     }
 
     private function menu_icon(): string {
-        // Simple diamond with a centre dot — works as a white icon against WP's dark sidebar.
-        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">'
-             . '<path d="M10 1L19 10L10 19L1 10Z" fill="black"/>'
-             . '<circle cx="10" cy="10" r="2.8" fill="white"/>'
-             . '</svg>';
-        return 'data:image/svg+xml;base64,' . base64_encode( $svg );
+        return \MCP_Abilities\Icons::menu_icon();
     }
 
     // ── Asset enqueuing ─────────────────────────────────────────────────────

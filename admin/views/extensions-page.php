@@ -16,11 +16,7 @@ defined( 'ABSPATH' ) || exit;
     <!-- Header -->
     <div class="mcp-header">
         <div class="mcp-header__logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="32" height="32" rx="8" fill="#1a1a2e"/>
-                <path d="M8 16L16 8L24 16L16 24L8 16Z" stroke="#6C63FF" stroke-width="2" fill="none"/>
-                <circle cx="16" cy="16" r="3" fill="#6C63FF"/>
-            </svg>
+            <?php echo \MCP_Abilities\Icons::logo(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- fixed markup ?>
             <div>
                 <h1><?php esc_html_e( 'VGC AI Nexus – Extensions', 'mcp-abilities' ); ?></h1>
                 <p><?php esc_html_e( 'Each installed add-on has its own page with a usage guide and per-tool toggles.', 'mcp-abilities' ); ?></p>
@@ -55,7 +51,7 @@ defined( 'ABSPATH' ) || exit;
         $url = \MCP_Abilities\Admin\Settings_Page::subpage_url( $ext_id );
     ?>
         <a class="mcp-ext-card" href="<?php echo esc_url( $url ); ?>">
-            <span class="mcp-ext-card__icon dashicons <?php echo esc_attr( $extension['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
+            <?php echo \MCP_Abilities\Icons::render( (string) $ext_id, (string) ( $extension['icon'] ?? '' ), 'mcp-ext-card__icon' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div class="mcp-ext-card__body">
                 <h2 class="mcp-ext-card__label"><?php echo esc_html( $extension['label'] ); ?></h2>
                 <p class="mcp-ext-card__desc"><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
@@ -82,7 +78,7 @@ defined( 'ABSPATH' ) || exit;
         $is_inst = 'inactive' === ( $ext['state'] ?? '' );
     ?>
         <div class="mcp-ext-card mcp-ext-card--install" data-slug="<?php echo $slug; ?>">
-            <span class="mcp-ext-card__icon dashicons <?php echo esc_attr( $ext['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
+            <?php echo \MCP_Abilities\Icons::render( (string) $ext['slug'], (string) ( $ext['icon'] ?? '' ), 'mcp-ext-card__icon' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div class="mcp-ext-card__body">
                 <h2 class="mcp-ext-card__label"><?php echo esc_html( $ext['name'] ?? $slug ); ?></h2>
                 <p class="mcp-ext-card__desc"><?php echo esc_html( $ext['description'] ?? '' ); ?></p>

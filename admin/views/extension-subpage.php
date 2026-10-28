@@ -35,7 +35,7 @@ foreach ( $ext_groups as $g ) {
     <!-- Header -->
     <div class="mcp-header">
         <div class="mcp-header__logo">
-            <span class="mcp-header__exticon dashicons <?php echo esc_attr( $extension['icon'] ?? 'dashicons-admin-plugins' ); ?>"></span>
+            <?php echo \MCP_Abilities\Icons::render( (string) ( $extension['id'] ?? '' ), (string) ( $extension['icon'] ?? '' ), 'mcp-header__exticon', 32 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div>
                 <h1><?php echo esc_html( $extension['label'] ); ?></h1>
                 <p><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
