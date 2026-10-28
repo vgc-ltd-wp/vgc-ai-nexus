@@ -26,11 +26,20 @@ class Delete_Page_Ability extends Ability {
         $page_id = absint( $params['id'] );
         $force   = ! empty( $params['force'] );
 
-        if ( ! get_post( $page_id ) ) {
+        $page = get_post( $page_id );
+        if ( ! $page ) {
             return $this->error( "Page {$page_id} not found." );
         }
+        if ( 'page' !== $page->post_type ) {
+            return $this->error( "Item {$page_id} is a {$page->post_type}, not a page. Use delete_post for other post types." );
+        }
+        if ( ! current_user_can( 'delete_post', $page_id ) ) {
+            return $this->error( 'You do not have permission to delete this page.' );
+        }
 
-        wp_delete_post( $page_id, $force );
+        if ( ! wp_delete_post( $page_id, $force ) ) {
+            return $this->error( 'Failed to delete the page.' );
+        }
         return $this->success( "Page {$page_id} " . ( $force ? 'deleted permanently' : 'moved to trash' ) . '.' );
     }
 }

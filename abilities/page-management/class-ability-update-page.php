@@ -31,8 +31,15 @@ class Update_Page_Ability extends Ability {
 
     public function execute( array $params ): array {
         $page_id = absint( $params['id'] );
-        if ( ! get_post( $page_id ) ) {
+        $page    = get_post( $page_id );
+        if ( ! $page ) {
             return $this->error( "Page {$page_id} not found." );
+        }
+        if ( 'page' !== $page->post_type ) {
+            return $this->error( "Item {$page_id} is a {$page->post_type}, not a page. Use update_post for other post types." );
+        }
+        if ( ! current_user_can( 'edit_post', $page_id ) ) {
+            return $this->error( 'You do not have permission to edit this page.' );
         }
 
         $update = [ 'ID' => $page_id ];
