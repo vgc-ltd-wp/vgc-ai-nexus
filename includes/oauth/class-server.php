@@ -770,6 +770,19 @@ final class Server {
 			return self::token_error( 'invalid_grant', 'client_id mismatch.' );
 		}
 
+		// A confidential client (it proved its client_secret just now: claude.ai
+		// does) keeps the SAME refresh token, its 30 days pushed forward on every
+		// use. Rotating it broke vibrantcolorink.com: claude.ai sometimes comes
+		// back with the token from before its last refresh (a lost response, or
+		// another of its workers), minutes later, and a rotated token was dead
+		// after REFRESH_GRACE, so the connector was dropped. OAuth 2.1 requires
+		// rotation only for public clients; those keep it below.
+		if ( '' !== $client_secret && empty( $rt_data['rotated_at'] ) ) {
+			$rt_data['expires'] = time() + self::TTL_REFRESH;
+			Token_Store::put( 'refresh', $refresh_token, $rt_data );
+			return self::issue_tokens( (int) $rt_data['user_id'], $client_id, $refresh_token );
+		}
+
 		if ( empty( $rt_data['rotated_at'] ) ) {
 			// First use: rotate, but keep the old token alive for a short grace period.
 			$rt_data['rotated_at'] = time();
@@ -802,9 +815,13 @@ final class Server {
 		error_log( 'AI Nexus OAuth: ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 	}
 
-	private static function issue_tokens( int $user_id, string $client_id ): \WP_REST_Response {
+	/**
+	 * @param string $keep_refresh A refresh token to hand back unchanged (a
+	 *                             confidential client's refresh); '' = new one.
+	 */
+	private static function issue_tokens( int $user_id, string $client_id, string $keep_refresh = '' ): \WP_REST_Response {
 		$access_token  = Client_Manager::generate_token( 32 );
-		$refresh_token = Client_Manager::generate_token( 32 );
+		$refresh_token = '' !== $keep_refresh ? $keep_refresh : Client_Manager::generate_token( 32 );
 
 		Token_Store::put( 'token', $access_token,
 			array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_ACCESS ) );
@@ -816,8 +833,10 @@ final class Server {
 			substr( hash( 'sha256', $access_token ), 0, 12 )
 		) );
 
-		Token_Store::put( 'refresh', $refresh_token,
-			array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_REFRESH ) );
+		if ( '' === $keep_refresh ) {
+			Token_Store::put( 'refresh', $refresh_token,
+				array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_REFRESH ) );
+		}
 
 		Token_Store::cleanup();
 
