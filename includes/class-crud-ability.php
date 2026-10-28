@@ -96,8 +96,26 @@ final class Crud_Ability extends Ability {
 		foreach ( $this->ops as $op ) {
 			$schema = $op->get_input_schema();
 			foreach ( (array) ( $schema['properties'] ?? [] ) as $name => $def ) {
-				if ( 'action' === $name || isset( $properties[ $name ] ) ) {
-					continue; // first definition wins on name collision
+				if ( 'action' === $name ) {
+					continue;
+				}
+				if ( isset( $properties[ $name ] ) ) {
+					// First definition wins on a name collision, but its enum and
+					// default must not refuse or fill in values for another action:
+					// update_post's status "future"/"trash" was rejected by
+					// create_post's narrower enum. Enums are joined, and a default
+					// that only one action has is dropped (each op has its own).
+					$prev = $properties[ $name ];
+					if ( isset( $prev['enum'] ) ) {
+						if ( isset( $def['enum'] ) && is_array( $def['enum'] ) ) {
+							$prev['enum'] = array_values( array_unique( array_merge( (array) $prev['enum'], $def['enum'] ) ) );
+						} else {
+							unset( $prev['enum'] );
+						}
+					}
+					unset( $prev['default'] );
+					$properties[ $name ] = $prev;
+					continue;
 				}
 				$properties[ $name ] = $def;
 			}

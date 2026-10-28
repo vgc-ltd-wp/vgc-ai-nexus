@@ -10,7 +10,7 @@ class Update_Post_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'update_post';
         $this->label        = __( 'Update Post', 'mcp-abilities' );
-        $this->description  = 'Update an existing post. Only provided fields are changed.';
+        $this->description  = 'Update an existing post, page or custom post type item by ID. Only provided fields are changed. "date" changes the publish (created) date of the existing post; the result echoes the stored date, date_gmt and status.';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => 'object',
@@ -19,7 +19,8 @@ class Update_Post_Ability extends Ability {
                 'title'      => [ 'type' => 'string' ],
                 'content'    => [ 'type' => 'string' ],
                 'excerpt'    => [ 'type' => 'string' ],
-                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'trash' ] ],
+                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the post; it needs a future date.' ],
+                'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
                 'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ] ],
                 'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ] ],
                 'meta'       => [ 'type' => 'object', 'description' => 'Meta key/value pairs to update.' ],
@@ -39,6 +40,13 @@ class Update_Post_Ability extends Ability {
         }
 
         $update = [ 'ID' => $post_id ];
+        $date_error = $this->prepare_post_date( $post_id, $params, $update );
+        if ( null !== $date_error ) {
+            return $this->error( $date_error );
+        }
+        $post = get_post( $post_id );
+        $old_status = $post->post_status;
+        $old_date   = $post->post_date;
         if ( isset( $params['title'] ) )   $update['post_title']   = sanitize_text_field( $params['title'] );
         if ( isset( $params['content'] ) ) $update['post_content']  = wp_kses_post( $params['content'] );
         if ( isset( $params['excerpt'] ) ) $update['post_excerpt']  = sanitize_textarea_field( $params['excerpt'] );
@@ -57,9 +65,9 @@ class Update_Post_Ability extends Ability {
             }
         }
 
-        return $this->success( "Post {$post_id} updated successfully.", [
+        return $this->success( "Post {$post_id} updated successfully.", array_merge( [
             'post_id'   => $post_id,
             'permalink' => get_permalink( $post_id ),
-        ] );
+        ], self::post_date_readback( $post_id, $old_status, $old_date ) ) );
     }
 }

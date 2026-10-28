@@ -216,6 +216,15 @@ Filtering content by a custom taxonomy uses `taxonomy` + `terms` together, e.g.
 `{ post_type: "avada_portfolio", taxonomy: "portfolio_category", terms: ["automotive"] }`.
 That pattern works on `list_posts` and on `list_content_seo`.
 
+**Dates of existing content.** `update_post` (any post type, by ID) and
+`update_page` take `date`: the publish/created date in site local time,
+`"Y-m-d H:i:s"` (or `"Y-m-d"`). The GMT date follows from the site time zone.
+A future date on a published post is refused unless you also send
+`status: "future"` (that schedules it and takes it off the site until then); a
+past date on a scheduled post publishes it. The result echoes the stored
+`date`, `date_gmt` and `status`. The modified date cannot be set: WordPress
+updates it itself on every save.
+
 Writes are capability-checked against the connected WordPress user, and each
 group can be disabled per site in WP Admin → AI Nexus → Abilities.
 MD;

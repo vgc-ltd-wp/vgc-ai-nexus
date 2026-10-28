@@ -23,7 +23,7 @@ class Create_Post_Ability extends Ability {
                 'author_id'  => [ 'type' => 'integer','description' => 'Author user ID. Defaults to current user.' ],
                 'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of category IDs (post type "post" only).' ],
                 'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of tag IDs (post type "post" only).' ],
-                'date'       => [ 'type' => 'string', 'description' => 'Publish date in Y-m-d H:i:s format.' ],
+                'date'       => [ 'type' => 'string', 'description' => 'Publish (created) date in site local time, "Y-m-d H:i:s". create_post: the date of the new post. update_post / update_page: changes the date of an EXISTING post (also "Y-m-d\TH:i:s" or "Y-m-d"); a future date on a published post is refused unless status "future" is sent too; a past date on a scheduled post publishes it. The modified date cannot be set (WordPress updates it itself).' ],
                 'meta'       => [ 'type' => 'object', 'description' => 'Key/value post meta to set.' ],
                 'slug'       => [ 'type' => 'string', 'description' => 'Post slug (post_name). Auto-generated from title if omitted.' ],
                 'parent_id'  => [ 'type' => 'integer', 'description' => 'Parent post ID for hierarchical post types (e.g. pages).' ],
