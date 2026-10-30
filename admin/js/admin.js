@@ -349,6 +349,97 @@
             } );
     } );
 
+    // ── Connect: "Require admin approval for new connections" ───────────────
+    // The switch never acts on its own: it opens an inline confirmation row.
+
+    $( document ).on( 'change', '#mcp-approval-toggle', function () {
+        const wantOn = this.checked;
+        this.checked = ! wantOn; // stays as it was until confirmed
+        $( '#mcp-approval-confirm-on' ).prop( 'hidden', ! wantOn );
+        $( '#mcp-approval-confirm-off' ).prop( 'hidden', wantOn );
+    } );
+
+    $( document ).on( 'click', '.mcp-approval-cancel', function () {
+        $( '.mcp-approval__confirm' ).prop( 'hidden', true );
+        $( '#mcp-approval-existing' ).prop( 'checked', false );
+    } );
+
+    $( document ).on( 'click', '#mcp-approval-on-yes, #mcp-approval-off-yes', function () {
+        const on      = 'mcp-approval-on-yes' === this.id;
+        const $status = $( '#mcp-approval-status' );
+        const $btn    = $( this ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, {
+            action: 'mcp_approval_setting',
+            nonce: mcpAbilities.nonce,
+            on: on ? 1 : 0,
+            existing_pending: $( '#mcp-approval-existing' ).is( ':checked' ) ? 1 : 0
+        } )
+            .done( function ( res ) {
+                if ( res.success ) {
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Saved.' );
+                    window.setTimeout( function () { window.location.reload(); }, 900 );
+                } else {
+                    $btn.prop( 'disabled', false );
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $btn.prop( 'disabled', false );
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } );
+    } );
+
+    $( document ).on( 'click', '.mcp-approval-decide', function () {
+        const $row    = $( this ).closest( 'tr' );
+        const $status = $( '#mcp-approval-decide-status' );
+        const $btns   = $row.find( 'button' ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, {
+            action: 'mcp_approval_decide',
+            nonce: mcpAbilities.nonce,
+            key: $row.attr( 'data-key' ),
+            decision: $( this ).attr( 'data-decision' )
+        } )
+            .done( function ( res ) {
+                if ( res.success ) {
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Saved.' );
+                    window.setTimeout( function () { window.location.reload(); }, 700 );
+                } else {
+                    $btns.prop( 'disabled', false );
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $btns.prop( 'disabled', false );
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } );
+    } );
+
+    $( document ).on( 'click', '.mcp-approval-disconnect', function () {
+        $( this ).prop( 'hidden', true ).siblings( '.mcp-approval__inline-confirm' ).prop( 'hidden', false );
+    } );
+
+    $( document ).on( 'click', '.mcp-approval-disconnect-no', function () {
+        const $wrap = $( this ).closest( '.mcp-approval__inline-confirm' ).prop( 'hidden', true );
+        $wrap.siblings( '.mcp-approval-disconnect' ).prop( 'hidden', false );
+    } );
+
+    $( document ).on( 'click', '.mcp-approval-disconnect-yes', function () {
+        const $row    = $( this ).closest( 'tr' );
+        const $status = $( '#mcp-approval-decide-status' );
+        $( this ).prop( 'disabled', true );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_oauth_revoke', nonce: mcpAbilities.nonce, client_id: $row.attr( 'data-client' ) } )
+            .done( function ( res ) {
+                $status.removeClass( 'is-error is-success' ).addClass( res.success ? 'is-success' : 'is-error' )
+                    .text( ( res.data && res.data.message ) || ( res.success ? 'Disconnected.' : 'Failed.' ) );
+                if ( res.success ) {
+                    window.setTimeout( function () { window.location.reload(); }, 700 );
+                }
+            } )
+            .fail( function () { $status.addClass( 'is-error' ).text( 'Failed.' ); } );
+    } );
+
     // ── Connect: "who is connecting" for a claude.ai connection ─────────────
     // The name is set with .text() / .val() only: it is typed by people.
 

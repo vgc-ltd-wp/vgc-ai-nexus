@@ -24,11 +24,12 @@ defined( 'ABSPATH' ) || exit;
  *   - Status (success / error) + error message
  *   - Objects changed: JSON [ { type:"post", id, revision } ]    (v2)
  *   - Who said they were connecting (OAuth consent, not checked) (v3)
+ *   - Status pending_approval: refused, the connection awaits approval (v4)
  */
 class Logger {
 
     const TABLE_VERSION_OPTION = 'mcp_abilities_log_table_version';
-    const TABLE_VERSION        = 3;
+    const TABLE_VERSION        = 4;
     const LOG_RETENTION_DAYS   = 90;
 
     // ── Bootstrap ───────────────────────────────────────────────────────────
@@ -175,7 +176,8 @@ class Logger {
      */
     private static function status_of( $result ): array {
         if ( is_wp_error( $result ) ) {
-            return [ 'error', substr( $result->get_error_message(), 0, 500 ) ];
+            $status = Connection_Approval::ERROR_CODE === $result->get_error_code() ? Connection_Approval::LOG_STATUS : 'error';
+            return [ $status, substr( $result->get_error_message(), 0, 500 ) ];
         }
         if ( is_array( $result ) && array_key_exists( 'success', $result ) && false === $result['success'] ) {
             $error = $result['error'] ?? '';
@@ -373,7 +375,7 @@ class Logger {
      * column and turns a comment into a broken ALTER. One space between a
      * column's name and type, or dbDelta re-issues CHANGE COLUMN every run.
      * v2 columns: auth_method, client_label, oauth_client_id, session_id, objects.
-     * v3 column: operator.
+     * v3 column: operator. v4: status widened to 20 characters (pending_approval).
      */
     public static function create_table(): void {
         global $wpdb;
@@ -395,7 +397,7 @@ operator varchar(191) DEFAULT NULL,
 client_name varchar(100) DEFAULT NULL,
 client_version varchar(50) DEFAULT NULL,
 ip varchar(45) DEFAULT NULL,
-status varchar(10) NOT NULL DEFAULT 'success',
+status varchar(20) NOT NULL DEFAULT 'success',
 error_message text DEFAULT NULL,
 objects text DEFAULT NULL,
 PRIMARY KEY  (id),

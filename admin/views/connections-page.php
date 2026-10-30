@@ -151,6 +151,7 @@ function mcp_time_ago( string $utc_datetime ): string {
             <option value=""><?php esc_html_e( 'All statuses', 'mcp-abilities' ); ?></option>
             <option value="success" <?php selected( $filter_status, 'success' ); ?>><?php esc_html_e( 'Success', 'mcp-abilities' ); ?></option>
             <option value="error"   <?php selected( $filter_status, 'error' ); ?>><?php esc_html_e( 'Error', 'mcp-abilities' ); ?></option>
+            <option value="pending_approval" <?php selected( $filter_status, 'pending_approval' ); ?>><?php esc_html_e( 'Waiting for approval', 'mcp-abilities' ); ?></option>
         </select>
 
         <!-- Date range -->
@@ -228,6 +229,7 @@ function mcp_time_ago( string $utc_datetime ): string {
                 <?php foreach ( $result['rows'] as $row ) :
                     $user     = $row->user_id ? get_userdata( (int) $row->user_id ) : null;
                     $is_error = 'error' === $row->status;
+                    $is_held  = 'pending_approval' === $row->status;
                     $auth     = isset( $row->auth_method ) ? (string) $row->auth_method : '';
                     if ( '' === $auth && ! empty( $row->app_pass_name ) ) {
                         $auth = 'app_password'; // rows logged before 2.29.0
@@ -323,7 +325,12 @@ function mcp_time_ago( string $utc_datetime ): string {
 
                         <!-- Status -->
                         <td class="mcp-col-status">
-                            <?php if ( $is_error ) : ?>
+                            <?php if ( $is_held ) : ?>
+                                <span class="mcp-status mcp-status--held" title="<?php echo esc_attr( $row->error_message ?: '' ); ?>">
+                                    <span class="dashicons dashicons-clock"></span>
+                                    <?php esc_html_e( 'Waiting for approval', 'mcp-abilities' ); ?>
+                                </span>
+                            <?php elseif ( $is_error ) : ?>
                                 <span class="mcp-status mcp-status--error" title="<?php echo esc_attr( $row->error_message ?: '' ); ?>">
                                     <span class="dashicons dashicons-no-alt"></span>
                                     <?php esc_html_e( 'Error', 'mcp-abilities' ); ?>

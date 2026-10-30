@@ -31,6 +31,11 @@ class Update_Option_Ability extends Ability {
         // Read-only mode is an administrator's decision, never the AI's.
         'mcp_abilities_read_only',
 
+        // So are connection approval and who-is-connecting names: an AI must
+        // never approve itself or rename the person behind a connection.
+        'mcp_abilities_require_approval', 'mcp_abilities_connection_approvals',
+        'mcp_abilities_approval_mail_times', 'mcp_abilities_oauth_operators',
+
         // Cron manipulation
         'cron', 'doing_cron',
 

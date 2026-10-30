@@ -67,6 +67,7 @@ final class Plugin {
         $files = [
             'class-installer.php',
             'class-request-context.php',
+            'class-connection-approval.php',
             'class-logger.php',
             'class-registry.php',
             'class-ability-group.php',
@@ -92,6 +93,10 @@ final class Plugin {
         // Who is acting and through which app, and one frame per ability call
         // (MCP detection, app-password / OAuth capture, the call's log row).
         Request_Context::init();
+
+        // "Require admin approval for new connections" (off by default): a
+        // held connection gets one status tool and nothing else.
+        Connection_Approval::init();
 
         // Start the activity logger (table upgrade + cron pruning).
         Logger::init();
@@ -258,6 +263,13 @@ final class Plugin {
             }
         }
 
+        // The connection-status tool: listed only for a connection that waits
+        // for an administrator's approval (Connection_Approval filters the list).
+        $status_tool = Connection_Approval::status_tool();
+        if ( null !== $status_tool ) {
+            $config['tools'][] = $status_tool;
+        }
+
         $existing = isset( $config['server_description'] ) ? trim( (string) $config['server_description'] ) : '';
         $config['server_description'] = Guide::orientation() . ( '' !== $existing ? "\n\n" . $existing : '' );
 
@@ -331,6 +343,9 @@ final class Plugin {
     }
 
     private function run_ability_inner( Ability $ability, Ability_Group $group, array $params ): array {
+        if ( Connection_Approval::is_held() ) {
+            return [ 'success' => false, 'error' => Connection_Approval::message() ];
+        }
         if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
             return $this->disabled_tool_response( $ability );
         }

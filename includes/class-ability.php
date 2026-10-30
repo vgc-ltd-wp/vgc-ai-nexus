@@ -271,6 +271,11 @@ abstract class Ability {
         if ( $this->blocked_by_read_only() ) {
             return false;
         }
+        // A connection waiting for (or refused) an administrator's approval has
+        // no abilities at all - core's and every extension's, whatever serves them.
+        if ( Connection_Approval::is_held() ) {
+            return false;
+        }
         return \current_user_can( $this->required_cap );
     }
 

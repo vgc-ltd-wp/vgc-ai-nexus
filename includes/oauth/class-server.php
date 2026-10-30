@@ -1025,6 +1025,9 @@ final class Server {
 			// An empty field leaves a name set earlier (e.g. by an administrator) as it is.
 			Operators::set( $client_id, get_current_user_id(), $operator, get_current_user_id() );
 		}
+		// With "Require admin approval" on, the connection is known (and the
+		// administrator told) from this moment; it gets no tools until approved.
+		\MCP_Abilities\Connection_Approval::on_oauth_consent( $client_id, get_current_user_id(), $operator );
 
 		$code     = Client_Manager::generate_token( 32 );
 		Token_Store::put( 'code', $code, array(

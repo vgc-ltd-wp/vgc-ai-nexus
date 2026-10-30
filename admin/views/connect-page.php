@@ -33,6 +33,148 @@ $adapter_ok  = Connect::adapter_active();
     <div class="mcp-docs">
 
         <?php
+        // ── Admin approval for new connections ──────────────────────────────
+        $appr_on      = \MCP_Abilities\Connection_Approval::enabled();
+        $appr_forced  = \MCP_Abilities\Connection_Approval::forced();
+        $appr_records = \MCP_Abilities\Connection_Approval::records();
+        $appr_fmt     = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+        $appr_waiting = array_filter( $appr_records, static fn( $r ) => is_array( $r ) && in_array( $r['status'] ?? '', [ 'pending', 'rejected' ], true ) );
+        $appr_ok      = array_filter( $appr_records, static fn( $r ) => is_array( $r ) && 'approved' === ( $r['status'] ?? '' ) );
+        uasort( $appr_waiting, static fn( $a, $b ) => (int) $b['first_seen'] <=> (int) $a['first_seen'] );
+        uasort( $appr_ok, static fn( $a, $b ) => (int) $b['decided_at'] <=> (int) $a['decided_at'] );
+        $appr_who = static function ( array $r ): string {
+            $u = get_userdata( (int) $r['user_id'] );
+            return $u ? '<strong>' . esc_html( $u->display_name ) . '</strong><br><span class="mcp-section-sub">' . esc_html( $u->user_login . ' · ' . implode( ', ', (array) $u->roles ) ) . '</span>' : esc_html( '#' . (int) $r['user_id'] );
+        };
+        $appr_via = static function ( array $r ): string {
+            $app = (string) ( $r['app'] ?? '' );
+            return esc_html( 'oauth' === ( $r['auth'] ?? '' ) ? __( 'claude.ai sign-in', 'mcp-abilities' ) : __( 'Application Password', 'mcp-abilities' ) )
+                . ( '' !== $app ? '<br><span class="mcp-section-sub">' . esc_html( $app ) . '</span>' : '' );
+        };
+        $appr_op = static function ( array $r ): string {
+            $op = \MCP_Abilities\Connection_Approval::operator_of( $r );
+            return '' !== $op ? esc_html( $op ) : '<span class="mcp-muted">&mdash;</span>';
+        };
+        $appr_when = static function ( $ts ) use ( $appr_fmt ): string {
+            return (int) $ts ? esc_html( wp_date( $appr_fmt, (int) $ts ) ) : '&mdash;';
+        };
+        ?>
+        <div class="mcp-doc-section mcp-approval" id="mcp-approval">
+            <h3><?php esc_html_e( 'Admin approval for AI connections', 'mcp-abilities' ); ?></h3>
+            <div class="mcp-approval__box<?php echo $appr_on ? ' is-on' : ''; ?>">
+                <label class="mcp-readonly__switch">
+                    <input type="checkbox" id="mcp-approval-toggle" <?php checked( $appr_on ); ?> <?php disabled( $appr_forced ); ?>>
+                    <span class="mcp-readonly__title"><?php esc_html_e( 'Require admin approval for new connections', 'mcp-abilities' ); ?></span>
+                    <span id="mcp-approval-status" class="mcp-save-status"></span>
+                </label>
+                <p class="mcp-readonly__help"><?php esc_html_e( 'When on, a new AI connection — a claude.ai sign-in or an Application Password — can connect but gets no tools until you approve it here. Until then it only sees that it is waiting. Administrators, WP-CLI and your own signed-in browser are never held.', 'mcp-abilities' ); ?></p>
+                <?php if ( $appr_forced ) : ?>
+                    <p class="mcp-readonly__help"><strong><?php esc_html_e( 'Locked on by VGC_AI_NEXUS_REQUIRE_APPROVAL in wp-config.php — remove that line to use this switch.', 'mcp-abilities' ); ?></strong></p>
+                <?php endif; ?>
+                <div class="mcp-approval__confirm" id="mcp-approval-confirm-on" hidden>
+                    <p><?php esc_html_e( 'Turn on approval? New connections will get no tools until you approve them. Connections that work today are approved now, so scheduled tasks keep running.', 'mcp-abilities' ); ?></p>
+                    <label class="mcp-approval__check"><input type="checkbox" id="mcp-approval-existing"> <?php esc_html_e( 'Also require approval for existing connections', 'mcp-abilities' ); ?></label>
+                    <p>
+                        <button type="button" class="mcp-btn mcp-btn--primary" id="mcp-approval-on-yes"><?php esc_html_e( 'Turn on', 'mcp-abilities' ); ?></button>
+                        <button type="button" class="mcp-btn mcp-btn--ghost mcp-approval-cancel"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
+                    </p>
+                </div>
+                <div class="mcp-approval__confirm" id="mcp-approval-confirm-off" hidden>
+                    <p><?php esc_html_e( 'Turn off approval? Every connection can use its tools again, including those waiting or rejected. The records below are kept.', 'mcp-abilities' ); ?></p>
+                    <p>
+                        <button type="button" class="mcp-btn mcp-btn--danger" id="mcp-approval-off-yes"><?php esc_html_e( 'Turn off', 'mcp-abilities' ); ?></button>
+                        <button type="button" class="mcp-btn mcp-btn--ghost mcp-approval-cancel"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
+                    </p>
+                </div>
+            </div>
+
+            <?php if ( $appr_on || $appr_records ) : ?>
+                <?php if ( ! $appr_on ) : ?>
+                    <p class="mcp-section-sub"><?php esc_html_e( 'Approval is off: these records are kept but not used.', 'mcp-abilities' ); ?></p>
+                <?php endif; ?>
+                <h4><?php printf( /* translators: %d: count */ esc_html__( 'Waiting for approval (%d)', 'mcp-abilities' ), count( $appr_waiting ) ); ?></h4>
+                <div class="mcp-table-scroll">
+                <table class="widefat striped mcp-connections-table" id="mcp-approval-waiting">
+                    <thead><tr>
+                        <th><?php esc_html_e( 'User', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Signed in with', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Who is connecting', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'First seen', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Last seen', 'mcp-abilities' ); ?></th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ( $appr_waiting as $key => $r ) : ?>
+                        <tr data-key="<?php echo esc_attr( (string) $key ); ?>">
+                            <td><?php echo $appr_who( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper ?>
+                                <?php if ( 'rejected' === $r['status'] ) : ?><br><span class="mcp-approval-badge"><?php esc_html_e( 'Rejected', 'mcp-abilities' ); ?></span><?php endif; ?></td>
+                            <td><?php echo $appr_via( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td><?php echo $appr_op( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td><?php echo $appr_when( $r['first_seen'] ?? 0 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                <?php if ( ! empty( $r['ip'] ) ) : ?><br><span class="mcp-section-sub"><?php echo esc_html( (string) $r['ip'] ); ?></span><?php endif; ?></td>
+                            <td><?php echo $appr_when( $r['last_seen'] ?? 0 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td class="mcp-approval__actions">
+                                <button type="button" class="mcp-btn mcp-btn--primary mcp-approval-decide" data-decision="approve"><?php esc_html_e( 'Approve', 'mcp-abilities' ); ?></button>
+                                <?php if ( 'rejected' === $r['status'] ) : ?>
+                                    <button type="button" class="mcp-btn mcp-btn--link mcp-approval-decide" data-decision="remove"><?php esc_html_e( 'Remove record', 'mcp-abilities' ); ?></button>
+                                <?php else : ?>
+                                    <button type="button" class="mcp-btn mcp-btn--link mcp-approval-decide" data-decision="reject"><?php esc_html_e( 'Reject', 'mcp-abilities' ); ?></button>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if ( ! $appr_waiting ) : ?>
+                        <tr><td colspan="6" class="mcp-section-sub"><?php esc_html_e( 'Nothing is waiting.', 'mcp-abilities' ); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+                </div>
+
+                <h4><?php printf( /* translators: %d: count */ esc_html__( 'Approved (%d)', 'mcp-abilities' ), count( $appr_ok ) ); ?></h4>
+                <div class="mcp-table-scroll">
+                <table class="widefat striped mcp-connections-table" id="mcp-approval-approved">
+                    <thead><tr>
+                        <th><?php esc_html_e( 'User', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Signed in with', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Who is connecting', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Approved', 'mcp-abilities' ); ?></th>
+                        <th><?php esc_html_e( 'Last seen', 'mcp-abilities' ); ?></th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ( $appr_ok as $key => $r ) :
+                        $by = (int) ( $r['decided_by'] ?? 0 ) ? get_userdata( (int) $r['decided_by'] ) : null; ?>
+                        <tr data-key="<?php echo esc_attr( (string) $key ); ?>"<?php echo 'oauth' === ( $r['auth'] ?? '' ) ? ' data-client="' . esc_attr( (string) $r['client_id'] ) . '"' : ''; ?>>
+                            <td><?php echo $appr_who( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td><?php echo $appr_via( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td><?php echo $appr_op( $r ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td><?php echo $appr_when( $r['decided_at'] ?? 0 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                <br><span class="mcp-section-sub"><?php echo esc_html( $by ? sprintf( /* translators: %s: user login */ __( 'by %s', 'mcp-abilities' ), $by->user_login ) : '' ); ?><?php echo ! empty( $r['note'] ) ? ' · ' . esc_html( (string) $r['note'] ) : ''; ?></span></td>
+                            <td><?php echo $appr_when( $r['last_seen'] ?? 0 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            <td class="mcp-approval__actions">
+                                <button type="button" class="mcp-btn mcp-btn--ghost mcp-approval-decide" data-decision="revoke"><?php esc_html_e( 'Revoke approval', 'mcp-abilities' ); ?></button>
+                                <?php if ( 'oauth' === ( $r['auth'] ?? '' ) ) : ?>
+                                    <button type="button" class="mcp-btn mcp-btn--link mcp-approval-disconnect"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
+                                    <span class="mcp-approval__inline-confirm" hidden>
+                                        <?php esc_html_e( 'Disconnect? Claude loses access and must connect again.', 'mcp-abilities' ); ?>
+                                        <button type="button" class="mcp-btn mcp-btn--danger mcp-approval-disconnect-yes"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
+                                        <button type="button" class="mcp-btn mcp-btn--ghost mcp-approval-disconnect-no"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if ( ! $appr_ok ) : ?>
+                        <tr><td colspan="6" class="mcp-section-sub"><?php esc_html_e( 'No approved connections yet.', 'mcp-abilities' ); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+                </div>
+                <span id="mcp-approval-decide-status" class="mcp-save-status"></span>
+            <?php endif; ?>
+        </div>
+
+        <?php
         $oauth_mode = \MCP_Abilities\OAuth\Bootstrap::mode();
         $oauth_apps = 'core' === $oauth_mode ? \MCP_Abilities\OAuth\Bootstrap::connected_apps() : [];
         $date_fmt   = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );

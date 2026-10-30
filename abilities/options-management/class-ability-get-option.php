@@ -17,6 +17,10 @@ class Get_Option_Ability extends Ability {
 
         // Plugin own settings
         'mcp_abilities_settings', 'mcp_woo_settings',
+
+        // Who is connected, from where, and who approved it.
+        'mcp_abilities_connection_approvals', 'mcp_abilities_approval_mail_times',
+        'mcp_abilities_oauth_operators',
     ];
 
     /** Option name patterns blocked via prefix/substring match. */

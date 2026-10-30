@@ -103,6 +103,12 @@ class Connections_Page {
             case 'order':
                 $html = self::order_html( $id, $deleted );
                 break;
+            case 'connection':
+                $html = self::connection_html( (string) ( $object['key'] ?? '' ) );
+                break;
+            case 'setting':
+                $html = esc_html__( 'setting: require admin approval', 'mcp-abilities' );
+                break;
             default:
                 $html = esc_html( $type . ' #' . $id );
         }
@@ -155,6 +161,22 @@ class Connections_Page {
             : sprintf( __( 'comment #%d', 'mcp-abilities' ), $id );
         $url   = current_user_can( 'edit_comment', $id ) ? (string) get_edit_comment_link( $id ) : '';
         return self::link( $url, $text );
+    }
+
+    /** A connection (approval record), linked to the Connect page. */
+    private static function connection_html( string $key ): string {
+        $record = \MCP_Abilities\Connection_Approval::records()[ $key ] ?? null;
+        if ( ! is_array( $record ) ) {
+            /* translators: %s: connection key */
+            return '<span class="mcp-muted">' . esc_html( sprintf( __( 'connection %s (no record)', 'mcp-abilities' ), $key ) ) . '</span>';
+        }
+        $user = get_userdata( (int) $record['user_id'] );
+        $who  = $user ? $user->user_login : '#' . (int) $record['user_id'];
+        $app  = (string) ( $record['app'] ?? '' );
+        /* translators: 1: user login, 2: app name */
+        $text = sprintf( __( 'connection: %1$s via %2$s', 'mcp-abilities' ), $who, '' !== $app ? $app : __( 'unnamed app', 'mcp-abilities' ) );
+        return self::link( admin_url( 'admin.php?page=mcp-abilities-connect#mcp-approval' ), $text )
+            . ' <span class="mcp-log-object__type">' . esc_html( (string) ( $record['status'] ?? '' ) ) . '</span>';
     }
 
     private static function order_html( int $id, bool $deleted ): string {

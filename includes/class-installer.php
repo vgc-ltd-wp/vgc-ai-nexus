@@ -44,8 +44,10 @@ class Installer {
         // keep them while that plugin is active and serving the connections.
         if ( null === OAuth\Bootstrap::connector_version() ) {
             OAuth\Token_Store::delete_all();
-            // Including who-is-connecting names: they belong to these connections.
-            foreach ( [ OAuth\Options::CLIENTS, OAuth\Options::REG_POLICY, OAuth\Options::ALLOWED_ORIGINS, 'vgc_cc_dynamic_reg_user_id', OAuth\Operators::OPTION ] as $opt ) {
+            // Including who-is-connecting names and connection approvals:
+            // they belong to these connections.
+            foreach ( [ OAuth\Options::CLIENTS, OAuth\Options::REG_POLICY, OAuth\Options::ALLOWED_ORIGINS, 'vgc_cc_dynamic_reg_user_id', OAuth\Operators::OPTION,
+                Connection_Approval::OPTION, Connection_Approval::RECORDS, Connection_Approval::MAIL_LOG ] as $opt ) {
                 delete_option( $opt );
             }
         }

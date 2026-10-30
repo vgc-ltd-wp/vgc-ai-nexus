@@ -120,7 +120,7 @@ final class Request_Context {
     }
 
     /** 'http' for an MCP server route, 'abilities-rest' for the run route, '' otherwise. */
-    private static function route_kind( string $route ): string {
+    public static function route_kind( string $route ): string {
         // WordPress matches REST routes in any letter case.
         $route = strtolower( '/' . ltrim( $route, '/' ) );
         if ( preg_match( '#^/wp-abilities/v\d+/abilities/.+/run/?$#', $route ) ) {
@@ -787,6 +787,9 @@ final class Request_Context {
         self::$call       = null;
         if ( class_exists( OAuth\Server::class, false ) && method_exists( OAuth\Server::class, 'forget_authenticated_client' ) ) {
             OAuth\Server::forget_authenticated_client();
+        }
+        if ( class_exists( Connection_Approval::class, false ) ) {
+            Connection_Approval::reset();
         }
     }
 }

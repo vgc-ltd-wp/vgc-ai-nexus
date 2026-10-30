@@ -324,6 +324,7 @@ MD;
         // Security layers that can block REST (and thus every MCP connection)
         // from outside — the most misdiagnosed failure in customer reports.
         $out[] = '- **Security:** ' . Security_Status::summary();
+        $out[] = '- **Admin approval for new connections:** ' . Connection_Approval::guide_line();
         $out[] = '- **Read-only mode:** ' . ( Read_Only::active()
             ? 'ON — all write tools are disabled' . ( Read_Only::forced() ? ' (locked in wp-config.php)' : '' ) . '. Read, list and search only.'
             : 'off — reads and writes allowed (subject to per-tool permissions).' );

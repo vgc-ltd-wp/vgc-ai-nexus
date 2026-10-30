@@ -22,6 +22,8 @@ class Connect {
         add_action( 'wp_ajax_mcp_oauth_policy',          [ $this, 'ajax_oauth_policy' ] );
         add_action( 'wp_ajax_mcp_oauth_revoke',          [ $this, 'ajax_oauth_revoke' ] );
         add_action( 'wp_ajax_mcp_oauth_operator',        [ $this, 'ajax_oauth_operator' ] );
+        add_action( 'wp_ajax_mcp_approval_setting',      [ $this, 'ajax_approval_setting' ] );
+        add_action( 'wp_ajax_mcp_approval_decide',       [ $this, 'ajax_approval_decide' ] );
     }
 
     /** AJAX: who may register as a claude.ai-style OAuth app (restricted/open/closed). */
@@ -48,6 +50,57 @@ class Connect {
             wp_send_json_error( [ 'message' => __( 'That app is not registered.', 'mcp-abilities' ) ] );
         }
         wp_send_json_success( [ 'message' => __( 'Disconnected. Claude will need to connect again.', 'mcp-abilities' ) ] );
+    }
+
+    /**
+     * AJAX: switch "Require admin approval for new connections" on or off.
+     * Switching on approves the connections that work today, unless
+     * existing_pending is sent (then they are held too).
+     */
+    public function ajax_approval_setting(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        if ( \MCP_Abilities\Connection_Approval::forced() ) {
+            wp_send_json_error( [ 'message' => __( 'Locked on by VGC_AI_NEXUS_REQUIRE_APPROVAL in wp-config.php.', 'mcp-abilities' ) ] );
+        }
+        $on = ! empty( $_POST['on'] );
+        if ( $on === \MCP_Abilities\Connection_Approval::enabled() ) {
+            wp_send_json_success( [ 'on' => $on, 'message' => __( 'No change.', 'mcp-abilities' ) ] );
+        }
+        if ( $on ) {
+            $hold_existing = ! empty( $_POST['existing_pending'] );
+            $approved      = \MCP_Abilities\Connection_Approval::enable( $hold_existing, get_current_user_id() );
+            $message       = $hold_existing
+                ? __( 'On. Every connection, including existing ones, now needs your approval.', 'mcp-abilities' )
+                /* translators: %d: number of connections */
+                : sprintf( _n( 'On. %d existing connection was approved; new ones need your approval.', 'On. %d existing connections were approved; new ones need your approval.', $approved, 'mcp-abilities' ), $approved );
+        } else {
+            \MCP_Abilities\Connection_Approval::disable();
+            $message = __( 'Off. Every connection can use its tools again; the approval records are kept.', 'mcp-abilities' );
+        }
+        wp_send_json_success( [ 'on' => \MCP_Abilities\Connection_Approval::enabled(), 'message' => $message ] );
+    }
+
+    /** AJAX: approve, reject, revoke approval of, or forget one connection. */
+    public function ajax_approval_decide(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $key      = isset( $_POST['key'] ) ? sanitize_text_field( wp_unslash( $_POST['key'] ) ) : '';
+        $decision = isset( $_POST['decision'] ) ? sanitize_key( wp_unslash( $_POST['decision'] ) ) : '';
+        if ( ! \MCP_Abilities\Connection_Approval::decide( $key, $decision, get_current_user_id() ) ) {
+            wp_send_json_error( [ 'message' => __( 'That connection or decision is not known.', 'mcp-abilities' ) ] );
+        }
+        $messages = [
+            'approve' => __( 'Approved. The connection can use its tools from its next request.', 'mcp-abilities' ),
+            'reject'  => __( 'Rejected. The connection stays without tools.', 'mcp-abilities' ),
+            'revoke'  => __( 'Approval revoked. The connection waits for approval again.', 'mcp-abilities' ),
+            'remove'  => __( 'Record removed. If the connection is used again, it waits for approval again.', 'mcp-abilities' ),
+        ];
+        wp_send_json_success( [ 'message' => $messages[ $decision ] ] );
     }
 
     /**

@@ -145,6 +145,9 @@ final class Crud_Ability extends Ability {
 		// dispatchers are this class too, so their actions are named as well.
 		Request_Context::note_ability( $action, Request_Context::RANK_ACTION, $op->is_write() );
 
+		if ( Connection_Approval::is_held() ) {
+			return $this->error( Connection_Approval::message() );
+		}
 		if ( $op->blocked_by_read_only() ) {
 			return $this->error( Read_Only::error_message( $action ) );
 		}
