@@ -191,6 +191,7 @@ Key protections:
 - **Object-level checks** — each post, page and media item is checked against the user (`read_post`, `edit_post`, `delete_post`, `publish_post`): a Contributor reads only published content and their own drafts, cannot publish, and cannot read or write protected meta; media tools act only on attachments the user may edit
 - **Input validation** — every call is checked against the tool's schema (required fields, types, and the enums of core tools) before it runs
 - **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl`, the roles table, caches, OAuth tokens, this plugin's own settings and mail/payment credentials are read- and/or write-protected
+- **claude.ai sign-in (OAuth)** — a token works only on the MCP routes, so read-only mode and the tool switches cannot be bypassed through the plain REST API; the consent page cannot be framed or cached and shows where the browser goes after Approve; app registration is capped, rate-limited per address and expires when unused; codes, tokens and request bodies are never logged
 - **SSRF protection** on upload tools — URLs resolving to private IP ranges are rejected
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy; non-admins cannot create or modify administrator accounts or give a role with more permissions than their own; term tools check each taxonomy's own capabilities

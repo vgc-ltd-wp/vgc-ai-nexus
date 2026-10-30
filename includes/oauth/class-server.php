@@ -188,7 +188,8 @@ final class Server {
 	 */
 	private static function dispatch_register_at_root(): void {
 		$raw = (string) file_get_contents( 'php://input' );
-		self::log( 'root /register POST received. content-type=' . ( $_SERVER['CONTENT_TYPE'] ?? '?' ) . ' raw_body=' . substr( $raw, 0, 500 ) );
+		// The body is never logged: anyone can send one (audit L2).
+		self::debug( sprintf( 'root /register POST received. content-type=%s bytes=%d', sanitize_text_field( (string) ( $_SERVER['CONTENT_TYPE'] ?? '?' ) ), strlen( $raw ) ) );
 
 		// Parse from the raw body we just read (php://input may not be re-readable).
 		$params = array();
@@ -582,6 +583,11 @@ final class Server {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public static function handle_dynamic_registration( \WP_REST_Request $request ) {
+		$wait = Rate_Limit::hit( 'register' );
+		if ( $wait > 0 ) {
+			return Rate_Limit::response( $wait );
+		}
+
 		// Map the dynamic client to a configurable default WordPress user.
 		// Admins can override this in Settings; defaults to the first admin.
 		$default_user_id = (int) get_option( 'vgc_cc_dynamic_reg_user_id', 0 );
@@ -605,15 +611,14 @@ final class Server {
 		if ( is_wp_error( $result ) ) {
 			$status = (int) ( $result->get_error_data()['status'] ?? 400 );
 			// Log the rejection so registration failures are diagnosable in
-			// WP_DEBUG_LOG (e.g. a redirect_uri rejected by the policy).
-			error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-				sprintf(
-					'AI Nexus OAuth: dynamic registration failed (%s): %s | request=%s',
-					$result->get_error_code(),
-					$result->get_error_message(),
-					wp_json_encode( $body )
-				)
-			);
+			// WP_DEBUG_LOG (e.g. a redirect_uri rejected by the policy). Not the
+			// request body: anyone can send one, of any size (audit M7/L2).
+			self::log( sprintf(
+				'dynamic registration failed (%s) from %s: %s',
+				$result->get_error_code(),
+				Rate_Limit::ip(),
+				mb_substr( $result->get_error_message(), 0, 200 )
+			) );
 			return new \WP_REST_Response(
 				array( 'error' => $result->get_error_code(), 'error_description' => $result->get_error_message() ),
 				$status
@@ -633,6 +638,11 @@ final class Server {
 	// ── Token endpoint ─────────────────────────────────────────────────────
 
 	public static function handle_token_request( \WP_REST_Request $request ) {
+		$wait = Rate_Limit::hit( 'token' );
+		if ( $wait > 0 ) {
+			return Rate_Limit::response( $wait );
+		}
+
 		$grant_type = $request->get_param( 'grant_type' );
 		self::log( sprintf(
 			'token endpoint hit: grant_type=%s client_id=%s has_code=%s has_verifier=%s has_secret=%s',
@@ -908,6 +918,11 @@ final class Server {
 			<h1><?php esc_html_e( 'Authorize Access', 'mcp-abilities' ); ?></h1>
 			<p><?php printf( /* translators: 1:client 2:site */ esc_html__( '%1$s is requesting access to %2$s.', 'mcp-abilities' ), '<strong>' . esc_html( $client['name'] ) . '</strong>', '<strong>' . esc_html( get_bloginfo( 'name' ) ) . '</strong>' ); ?></p>
 			<p class="vgc-cc-user"><?php printf( esc_html__( 'Signed in as %s.', 'mcp-abilities' ), '<strong>' . esc_html( $user->display_name . ' (' . $user->user_login . ')' ) . '</strong>' ); ?></p>
+			<?php // Where the code goes: the person approving should see it (audit M6). ?>
+			<p class="vgc-cc-dest"><?php printf( /* translators: %s: host name, e.g. claude.ai */ esc_html__( 'After you approve, your browser goes back to %s.', 'mcp-abilities' ), '<strong>' . esc_html( (string) wp_parse_url( $params['redirect_uri'], PHP_URL_HOST ) ) . '</strong>' ); ?></p>
+			<?php if ( ! Client_Manager::is_claude_redirect( $params['redirect_uri'] ) ) : ?>
+				<p class="vgc-cc-warn" role="note"><?php esc_html_e( 'This is not a Claude address. Approve only if you started this connection yourself and trust that site.', 'mcp-abilities' ); ?></p>
+			<?php endif; ?>
 			<p class="vgc-cc-scope-intro"><?php esc_html_e( 'This will allow the application to call MCP tools on this WordPress site with your account permissions.', 'mcp-abilities' ); ?></p>
 			<form method="post">
 				<?php wp_nonce_field( self::NONCE_CONSENT . '_' . $params['client_id'] ); ?>
@@ -1028,6 +1043,8 @@ final class Server {
 		// With "Require admin approval" on, the connection is known (and the
 		// administrator told) from this moment; it gets no tools until approved.
 		\MCP_Abilities\Connection_Approval::on_oauth_consent( $client_id, get_current_user_id(), $operator );
+		// A signed-in person approved it: the registration is kept from now on.
+		Client_Manager::mark_used( $client_id );
 
 		$code     = Client_Manager::generate_token( 32 );
 		Token_Store::put( 'code', $code, array(
@@ -1044,7 +1061,12 @@ final class Server {
 			'state' => $state,
 			'iss'   => self::as_issuer(), // RFC 9207 — required by OAuth 2.1 / MCP clients.
 		) );
-		self::log( sprintf( 'consent POST: APPROVED — issued code, redirecting to %s', $final ) );
+		// Never the code itself, nor the callback URL that carries it (audit L2).
+		self::log( sprintf(
+			'consent POST: APPROVED — issued code code_hash=%s, redirecting to %s',
+			substr( hash( 'sha256', $code ), 0, 12 ),
+			(string) wp_parse_url( $redirect_uri, PHP_URL_HOST )
+		) );
 		wp_redirect( $final ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect
 		exit;
 	}
@@ -1223,6 +1245,13 @@ final class Server {
 		// priority 1), so declare HTML explicitly.
 		if ( ! headers_sent() ) {
 			header( 'Content-Type: text/html; charset=utf-8' );
+			// WordPress's own frame and cache headers never run here (we exit on
+			// parse_request). Another site must not frame the Approve button, and
+			// no cache may keep a signed-in user's page (audit M6). claude.ai opens
+			// this page in a window or browser tab, never in a frame.
+			header( 'X-Frame-Options: DENY' );
+			header( "Content-Security-Policy: frame-ancestors 'none'" );
+			nocache_headers();
 		}
 		?>
 <!DOCTYPE html>
@@ -1239,6 +1268,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 h1{font-size:1.4em;text-align:center;margin-bottom:16px;color:#1d2327}
 p{color:#3c434a;margin-bottom:12px;line-height:1.5}
 .vgc-cc-user{background:#f6f7f7;border:1px solid #c3c4c7;border-radius:4px;padding:10px 14px;font-size:.9em}
+.vgc-cc-dest{font-size:.9em}
+.vgc-cc-warn{color:#6e4a00;background:#fcf9e8;border:1px solid #dba617;border-radius:4px;padding:10px 14px;font-size:.9em}
 .vgc-cc-scope-intro{margin-top:16px;font-size:.9em;color:#646970}
 .vgc-cc-field{margin-top:18px}
 .vgc-cc-field label{display:block;font-weight:600;font-size:.9em;margin-bottom:6px}

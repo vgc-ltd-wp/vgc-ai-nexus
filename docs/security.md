@@ -14,6 +14,20 @@ Scope the password to an account with only the capabilities the AI actually need
 
 ---
 
+## OAuth Sign-In for claude.ai (hardened in 2.35.0)
+
+claude.ai (web, mobile, Desktop connectors, scheduled routines) cannot use an Application Password, so AI Nexus runs a small OAuth server (`includes/oauth/`): the app registers itself, a signed-in WordPress user approves it on a consent page, and the app gets a bearer token that acts as that user.
+
+- **The token is for MCP only.** It signs a request in only on the MCP server routes (`/wp-json/mcp/…`, and any other MCP server the adapter registers) and the OAuth server's own routes (`/wp-json/vgc-cc/…`). On `/wp/v2`, WooCommerce or any other REST route the request stays signed out, so read-only mode, the tool switches and connection approval, which apply to MCP, cannot be bypassed through plain REST. Developers can add a prefix with the filter `mcp_abilities_oauth_bearer_routes` (read-only mode then does not protect that route).
+- **A Bearer header alone changes nothing.** WordPress's cookie nonce check is skipped only for a request that a valid token actually signed in, not merely because an `Authorization: Bearer` header is present next to a login cookie.
+- **Consent page:** sent with `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and no-cache headers, so another site cannot frame the Approve button and no cache keeps the page. It shows the host the browser goes back to after Approve, with a warning when that is not a Claude address.
+- **Registration needs no sign-in, so it is bounded:** at most 10 redirect addresses of up to 2,000 characters each, and names of up to 100 characters. A registration nobody approves expires after a day, and at most 50 unapproved ones are kept (the oldest make room). Once someone approves an app it is kept. At 200 registered apps, the oldest ones with no live token make room, and if every one is still connected, new registrations are refused until an administrator disconnects some on the Connect page. Apps registered before 2.35.0 count as approved.
+- **Rate limits per address** (`REMOTE_ADDR`): 30 registrations an hour and 60 token requests a minute. Above that the answer is HTTP 429 with `Retry-After`. Filters: `mcp_abilities_oauth_rate_limit` (`[requests, seconds]`, 0 turns a limit off) and `mcp_abilities_oauth_client_ip` (for a proxy that does not pass the visitor's address).
+- **Logging:** registrations, approvals, token issues and errors are logged (prefix `AI Nexus OAuth:`), but never a request body, an authorization code or a token, only short hashes of codes and tokens. Per-request tracing needs `MCP_ABILITIES_OAUTH_DEBUG`.
+- Codes and tokens are 256-bit random values stored only as SHA-256 hashes; PKCE (S256) and exact redirect-address matching are enforced. The registration policy on the Connect page (Claude addresses only by default, any app, or none) decides which apps may register.
+
+---
+
 ## Capability Enforcement
 
 Every ability defines a `required_cap` that is checked by WordPress's `current_user_can()` before the tool executes.
