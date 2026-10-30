@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -18,13 +19,13 @@ class Create_Post_Ability extends Ability {
                 'title'      => [ 'type' => 'string', 'description' => 'Post title.' ],
                 'content'    => [ 'type' => 'string', 'description' => 'Post content (HTML or blocks).' ],
                 'excerpt'    => [ 'type' => 'string', 'description' => 'Post excerpt.' ],
-                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft' ],
+                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft', 'description' => '"publish" and "private" need the permission to publish this post type; without it the post is created as "pending" (see status_note).' ],
                 'post_type'  => [ 'type' => 'string', 'description' => 'Post type slug. Defaults to "post". Use list_post_types to see all available types.' ],
                 'author_id'  => [ 'type' => 'integer','description' => 'Author user ID. Defaults to current user.' ],
                 'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of category IDs (post type "post" only).' ],
                 'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of tag IDs (post type "post" only).' ],
                 'date'       => [ 'type' => 'string', 'description' => 'Publish (created) date in site local time, "Y-m-d H:i:s". create_post: the date of the new post. update_post / update_page: changes the date of an EXISTING post (also "Y-m-d\TH:i:s" or "Y-m-d"); a future date on a published post is refused unless status "future" is sent too; a past date on a scheduled post publishes it. The modified date cannot be set (WordPress updates it itself).' ],
-                'meta'       => [ 'type' => 'object', 'description' => 'Key/value post meta to set.' ],
+                'meta'       => [ 'type' => 'object', 'description' => 'Key/value post meta to set. Protected keys (e.g. starting with "_") need permission to edit them; refused keys are listed in meta_skipped.' ],
                 'slug'       => [ 'type' => 'string', 'description' => 'Post slug (post_name). Auto-generated from title if omitted.' ],
                 'parent_id'  => [ 'type' => 'integer', 'description' => 'Parent post ID for hierarchical post types (e.g. pages).' ],
             ],
@@ -35,7 +36,7 @@ class Create_Post_Ability extends Ability {
     public function execute( array $params ): array {
         $allowed_statuses = [ 'publish', 'draft', 'pending', 'private' ];
         $status           = in_array( $params['status'] ?? 'draft', $allowed_statuses, true )
-            ? $params['status']
+            ? ( $params['status'] ?? 'draft' )
             : 'draft';
 
         // Resolve and validate post type.
@@ -53,9 +54,17 @@ class Create_Post_Ability extends Ability {
 
         $author_id = isset( $params['author_id'] ) ? absint( $params['author_id'] ) : get_current_user_id();
 
-        // Attributing a post to a different user requires edit_others_posts.
-        if ( $author_id !== get_current_user_id() && ! current_user_can( 'edit_others_posts' ) ) {
+        // Attributing a post to a different user requires the type's edit_others_posts.
+        if ( $author_id !== get_current_user_id() && ! current_user_can( $type_obj->cap->edit_others_posts ) ) {
             return $this->error( 'You do not have permission to create posts attributed to other users.' );
+        }
+
+        // Publishing, scheduling or a private post needs the type's own
+        // publish capability; without it the post is created as pending.
+        $status_note = null;
+        if ( in_array( $status, Post_Access::PUBLISH_STATUSES, true ) && ! current_user_can( $type_obj->cap->publish_posts ) ) {
+            $status_note = sprintf( 'Status "%s" needs the permission to publish (%s), which this account does not have, so the item was created as "pending" (Pending Review) for an editor to publish.', $status, $type_obj->cap->publish_posts );
+            $status      = 'pending';
         }
 
         $post_data = [
@@ -96,18 +105,27 @@ class Create_Post_Ability extends Ability {
             return $this->error( $post_id->get_error_message() );
         }
 
-        // Set custom meta
+        // Set custom meta: protected keys only with permission to edit them.
+        $meta_skipped = [];
         if ( ! empty( $params['meta'] ) && is_array( $params['meta'] ) ) {
-            foreach ( $params['meta'] as $key => $value ) {
-                update_post_meta( $post_id, sanitize_key( $key ), $value );
+            [ $meta, $meta_skipped ] = Post_Access::writable_meta( $post_id, $params['meta'] );
+            foreach ( $meta as $key => $value ) {
+                update_post_meta( $post_id, $key, $value );
             }
         }
 
-        return $this->json_result( [
+        $result = [
             'id'        => $post_id,
             'permalink' => get_permalink( $post_id ),
             'edit_url'  => get_edit_post_link( $post_id, 'raw' ),
-            'status'    => $status,
-        ] );
+            'status'    => get_post_status( $post_id ),
+        ];
+        if ( null !== $status_note ) {
+            $result['status_note'] = $status_note;
+        }
+        if ( $meta_skipped ) {
+            $result['meta_skipped'] = $meta_skipped;
+        }
+        return $this->json_result( $result );
     }
 }

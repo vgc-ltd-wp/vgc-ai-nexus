@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -84,14 +85,58 @@ class Search_Content_Ability extends Ability {
         $page          = max( 1, (int) ( $params['page'] ?? 1 ) );
         $offset        = ( $page - 1 ) * $per_page;
 
-        $like = '%' . $wpdb->esc_like( $query ) . '%';
-        $type_ph   = implode( ', ', array_fill( 0, count( $types ), '%s' ) );
-        $status_ph = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
-        $like_op   = $match_case ? 'LIKE BINARY' : 'LIKE';
+        // Only what this account may read (Post_Access), worked into the SQL so
+        // total and pages stay right: content types it may see; for a type
+        // where it may not edit other authors' items, their unpublished and
+        // password-protected items are left out.
+        $user_id     = get_current_user_id();
+        $scope_sql   = [];
+        $scope_args  = [];
+        foreach ( $types as $type ) {
+            if ( ! Post_Access::can_see_type( $type ) ) {
+                if ( 'any' !== $post_type ) {
+                    return $this->error( sprintf( 'You do not have permission to search "%s" items.', $type ) );
+                }
+                continue;
+            }
+            if ( Post_Access::can_list_unpublished( [ $type ] ) ) {
+                $scope_sql[] = '(post_type = %s AND post_status IN (' . implode( ', ', array_fill( 0, count( $statuses ), '%s' ) ) . '))';
+                $scope_args  = array_merge( $scope_args, [ $type ], $statuses );
+                continue;
+            }
+            $open = [];
+            $own  = [];
+            foreach ( $statuses as $s ) {
+                $status_obj = get_post_status_object( $s );
+                if ( $status_obj && $status_obj->public ) {
+                    $open[] = $s;
+                } else {
+                    $own[] = $s;
+                }
+            }
+            $parts     = [];
+            $type_args = [ $type ];
+            if ( $open ) {
+                $parts[]   = '(post_status IN (' . implode( ', ', array_fill( 0, count( $open ), '%s' ) ) . ") AND (post_password = '' OR post_author = %d))";
+                $type_args = array_merge( $type_args, $open, [ $user_id ] );
+            }
+            if ( $own ) {
+                $parts[]   = '(post_status IN (' . implode( ', ', array_fill( 0, count( $own ), '%s' ) ) . ') AND post_author = %d)';
+                $type_args = array_merge( $type_args, $own, [ $user_id ] );
+            }
+            $scope_sql[] = '(post_type = %s AND (' . implode( ' OR ', $parts ) . '))';
+            $scope_args  = array_merge( $scope_args, $type_args );
+        }
+        if ( ! $scope_sql ) {
+            return $this->error( 'No searchable post types resolved.' );
+        }
+
+        $like    = '%' . $wpdb->esc_like( $query ) . '%';
+        $like_op = $match_case ? 'LIKE BINARY' : 'LIKE';
 
         // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders below are all %s/%d via prepare()
-        $where_args = array_merge( [ $like ], $types, $statuses );
-        $where_sql  = "post_content $like_op %s AND post_type IN ($type_ph) AND post_status IN ($status_ph)";
+        $where_args = array_merge( [ $like ], $scope_args );
+        $where_sql  = "post_content $like_op %s AND (" . implode( ' OR ', $scope_sql ) . ')';
 
         $total = (int) $wpdb->get_var(
             $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE $where_sql", $where_args )
@@ -99,16 +144,22 @@ class Search_Content_Ability extends Ability {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT ID, post_title, post_type, post_status, post_content
-                 FROM {$wpdb->posts} WHERE $where_sql
+                "SELECT * FROM {$wpdb->posts} WHERE $where_sql
                  ORDER BY post_modified DESC LIMIT %d OFFSET %d",
                 array_merge( $where_args, [ $per_page, $offset ] )
             )
         );
         // phpcs:enable
+        update_post_cache( $rows );
 
-        $items = [];
+        $items     = [];
+        $not_shown = 0;
         foreach ( (array) $rows as $row ) {
+            $post = get_post( (int) $row->ID );
+            if ( ! $post || ! Post_Access::can_read( $post ) ) {
+                $not_shown++;
+                continue;
+            }
             $content = (string) $row->post_content;
             $count   = $match_case
                 ? substr_count( $content, $query )
@@ -136,7 +187,7 @@ class Search_Content_Ability extends Ability {
             $items[] = $item;
         }
 
-        return $this->json_result( [
+        $result = [
             'query'       => $query,
             'match_case'  => $match_case,
             'post_types'  => 'any' === $post_type ? 'any' : $post_type,
@@ -145,6 +196,11 @@ class Search_Content_Ability extends Ability {
             'per_page'    => $per_page,
             'total_pages' => (int) max( 1, ceil( $total / $per_page ) ),
             'items'       => $items,
-        ] );
+        ];
+        if ( $not_shown ) {
+            $result['not_shown'] = $not_shown;
+            $result['note']      = sprintf( '%d matching item(s) on this page are not shown: this account may not read them. "total" counts them.', $not_shown );
+        }
+        return $this->json_result( $result );
     }
 }

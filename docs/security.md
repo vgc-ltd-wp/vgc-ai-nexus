@@ -26,9 +26,37 @@ Every ability defines a `required_cap` that is checked by WordPress's `current_u
 | Comment Management | `moderate_comments` |
 | Taxonomy Management | `manage_categories` |
 | Menu Management | `edit_theme_options` |
-| Options Management | `manage_options` |
+| Options Management | `edit_posts` to reach the tool (its `list_post_types` action declares it); every other action needs `manage_options` |
 | Theme Management | `edit_theme_options` |
 | User Management | `list_users` / `edit_users` |
+
+With consolidation on (the default), each group is one tool whose gate is the lowest capability among its actions; the selected action's own capability is checked again before it runs. With consolidation off, each action is its own tool with its own capability.
+
+---
+
+## Object-Level Checks (since 2.33.0)
+
+The capability above only says whether a tool can be used at all. Which post, which status and which meta key the caller may touch is checked inside each action, the way WordPress checks it for its own screens and REST API (`includes/class-post-access.php`).
+
+### Reading content
+`get_post`, `get_meta`, `list_posts`, `list_pages`, `list_content_seo` and `search_content`:
+
+- The post type must be public, or the caller must be able to edit that type (`cap->edit_posts`). Coupons, orders, block templates, Additional CSS and similar internal types stay hidden from roles that cannot manage them.
+- `read_post` must pass for the item. An item that is not publicly visible (draft, pending, private, scheduled, trashed, password-protected) also needs `edit_post`.
+- Lists use `perm => readable`. Other authors' drafts, pending, scheduled and private items are listed only for callers with the type's `edit_others_posts` (and `read_private_posts`); anyone else gets their own items for those statuses, and the result says so in `note`. Asking for another author's unpublished items is refused.
+- `search_content` applies the same rules in its SQL, so `total` and the page count match what is shown.
+- Explicit IDs (`get_meta`, `list_content_seo` with `ids`) are returned only when readable; the others are reported as `forbidden` or counted in `note`.
+
+### Meta
+- Protected keys (`is_protected_meta()`, e.g. a leading underscore) are read and written only with `edit_post_meta` for that key, or with the type's `edit_others_posts` plus `edit_post` on the item (Editors and Administrators). Withheld keys are listed in `meta_hidden`; refused writes in `meta_skipped`.
+- `_wp_attached_file`, `_wp_attachment_metadata` and `_wp_attachment_backup_sizes` (they decide which files deleting an attachment removes) are never written from a tool, whoever asks.
+
+### Status
+- `update_post` and `update_page`: setting `publish`, `future` or `private` (or a date change on an item that already has one of those statuses) needs `publish_post` on the item. Without it the item is saved as `pending` and the result explains why in `status_note`, as the WordPress editor does. A published or private item keeps its status when someone who may edit it saves it without changing the date. Moving to the trash needs `delete_post`.
+- `create_post` checks the post type's own `cap->publish_posts` (e.g. `publish_pages` for pages) and its `cap->edit_others_posts` for another author.
+
+### Media
+- `update_media` and `delete_media` act only on attachments, and need `edit_post` / `delete_post` on that attachment. An Author can change or delete their own media, not other people's, and can no longer rewrite pages or posts through `update_media`.
 
 ---
 
@@ -38,9 +66,11 @@ Every ability defines a `required_cap` that is checked by WordPress's `current_u
 The following categories of option keys are blocked from being read:
 
 - Authentication keys and salts (`auth_key`, `secure_auth_key`, etc.)
-- Payment gateway credentials (`woocommerce_stripe_*`, `woocommerce_paypal_*`, etc.)
-- Email service API keys (`smtp_*`, `sendgrid_*`, `mailchimp_*`, etc.)
-- Any key containing `_license`, `_api_key`, `_secret`, or `_private_key`
+- Payment gateway credentials (`woocommerce_stripe_*`, `woocommerce_paypal_*`, `woocommerce-ppcp-settings`, any key containing `ppcp`, etc.)
+- Email credentials: `wp_mail_smtp`, core `mailserver_pass`, any key containing `smtp`, `sendgrid`, `mailchimp`, etc.
+- `jetpack_private_options` (and any key containing `jetpack_private`), `fs_accounts` (Freemius)
+- AI Nexus OAuth data: `vgc_cc_oauth_clients` and any key starting with `vgc_cc_` (clients, tokens, policy); who is connected and who approved it
+- Any key containing `_license`, `_api_key`, `_secret`, `_private_key`, `_pass` or `token`
 
 ### Write protection (`update_option`)
 The following keys can never be written:
@@ -48,14 +78,27 @@ The following keys can never be written:
 | Key | Why |
 |---|---|
 | `siteurl`, `home` | Would redirect the entire site |
-| `admin_email` | Could be used for account takeover |
+| `admin_email`, `adminhash`, `new_admin_email` | Could be used for account takeover |
 | `active_plugins` | Could activate arbitrary code |
+| `uninstall_plugins` | Stored callbacks that run when a plugin is deleted |
 | `template`, `stylesheet`, `current_theme` | Could change the active theme |
 | `default_role`, `users_can_register` | Could open registration to anyone |
+| `{prefix}user_roles` | The role → capability table |
 | `upload_path`, `upload_url_path` | Could redirect file uploads |
 | All auth keys and salts | Would invalidate all sessions |
 | `mcp_abilities_settings`, `mcp_woo_settings` | Prevents self-modification of plugin config |
 | `cron`, `doing_cron` | Could break scheduled events |
+| `sidebars_widgets`, `rewrite_rules`, `permalink_structure` | Widget placement and how every URL resolves |
+
+And every key starting with:
+
+| Prefix | Why |
+|---|---|
+| `vgc_cc_` | OAuth token store (a written row would be a login), the apps allowed to connect, the registration policy |
+| `mcp_abilities_` | This plugin's own settings: read-only mode, connection approval, the guide conventions every AI session reads, the tool consolidation switch |
+| `_transient_`, `_site_transient_` | Caches, including the update and extension-installer package URLs |
+| `auto_update_` | Which plugins and themes update themselves |
+| `theme_mods_`, `widget_`, `mcp_custom_` | Customizer settings, widget content, custom code (use the dedicated tools) |
 
 ---
 

@@ -11,7 +11,7 @@ class List_Pages_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_pages';
         $this->label        = __( 'List Pages', 'mcp-abilities' );
-        $this->description  = 'List WordPress pages with hierarchy info. Supports pagination (offset or page + per_page), WPML language scoping, and inline meta fields for bulk reads. Returns items, total and total_pages.';
+        $this->description  = 'List WordPress pages with hierarchy info. Supports pagination (offset or page + per_page), WPML language scoping, and inline meta fields for bulk reads. Returns items, total and total_pages. Drafts, pending and private pages of other authors are listed only for accounts that may edit them; anyone else gets their own (the result says so in "note").';
         $this->required_cap = 'edit_pages';
         $this->input_schema = [
             'type'       => [ 'object', 'array' ],
@@ -55,7 +55,7 @@ class List_Pages_Ability extends Ability {
             ];
             $item = Query_Support::with_wpml( $item, $page );
             if ( $meta_keys ) {
-                $item['meta'] = Query_Support::meta_block( $page->ID, $meta_keys );
+                $item = Query_Support::with_meta( $item, $page->ID, $meta_keys );
             }
             return $item;
         } ) );

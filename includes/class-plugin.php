@@ -74,6 +74,7 @@ final class Plugin {
             'class-ability.php',
             'class-crud-ability.php',
             'class-wpml-support.php',
+            'class-post-access.php',
             'class-query-support.php',
             'class-revision-support.php',
             'class-revision-attribution.php',

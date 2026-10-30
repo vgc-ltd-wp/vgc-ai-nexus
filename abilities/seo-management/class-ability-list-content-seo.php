@@ -56,6 +56,8 @@ class List_Content_Seo_Ability extends Ability {
         // Explicit ID lookup: the common "SEO of this one page" case. Post type is
         // widened to 'any' so callers don't have to know the item's type, and the
         // status filter is relaxed so an explicitly requested draft still returns.
+        // Query_Support::run() keeps only the IDs this account may read, and
+        // without "ids" it limits unpublished items to what the caller may list.
         if ( isset( $params['ids'] ) ) {
             $ids = array_values( array_filter( array_map( 'absint', (array) $params['ids'] ) ) );
             if ( ! $ids ) {

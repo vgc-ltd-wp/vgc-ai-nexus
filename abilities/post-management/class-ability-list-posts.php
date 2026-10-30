@@ -11,7 +11,7 @@ class List_Posts_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_posts';
         $this->label        = __( 'List Posts', 'mcp-abilities' );
-        $this->description  = 'List WordPress content of ANY registered post type (default "post" — use list_post_types to discover slugs like "product", "avada_portfolio", "event"). Filter by status, author, built-in category, or ANY taxonomy via taxonomy+terms (e.g. taxonomy "portfolio_category", terms ["automotive"]). Unknown post types or taxonomies return an explicit error listing the valid options. Supports pagination (offset or page + per_page), WPML language scoping, and inline meta fields for bulk reads. Returns items, total and total_pages.';
+        $this->description  = 'List WordPress content of ANY registered post type (default "post" — use list_post_types to discover slugs like "product", "avada_portfolio", "event"). Filter by status, author, built-in category, or ANY taxonomy via taxonomy+terms (e.g. taxonomy "portfolio_category", terms ["automotive"]). Unknown post types or taxonomies return an explicit error listing the valid options. Supports pagination (offset or page + per_page), WPML language scoping, and inline meta fields for bulk reads. Returns items, total and total_pages. Drafts, pending and private items of other authors are listed only for accounts that may edit them; anyone else gets their own (the result says so in "note").';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => [ 'object', 'array' ],
@@ -102,7 +102,7 @@ class List_Posts_Ability extends Ability {
             ];
             $item = Query_Support::with_wpml( $item, $post );
             if ( $meta_keys ) {
-                $item['meta'] = Query_Support::meta_block( $post->ID, $meta_keys );
+                $item = Query_Support::with_meta( $item, $post->ID, $meta_keys );
             }
             return $item;
         } ) );

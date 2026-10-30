@@ -188,7 +188,8 @@ VGC AI Nexus enforces WordPress's own permission system — every tool call is c
 Key protections:
 
 - **Capability checks** on every tool (`edit_posts`, `manage_options`, `upload_files`, etc.)
-- **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl` and other critical options are read- and write-protected
+- **Object-level checks** — each post, page and media item is checked against the user (`read_post`, `edit_post`, `delete_post`, `publish_post`): a Contributor reads only published content and their own drafts, cannot publish, and cannot read or write protected meta; media tools act only on attachments the user may edit
+- **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl`, the roles table, caches, OAuth tokens, this plugin's own settings and mail/payment credentials are read- and/or write-protected
 - **SSRF protection** on upload tools — URLs resolving to private IP ranges are rejected
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy; non-admins cannot create or modify administrator accounts

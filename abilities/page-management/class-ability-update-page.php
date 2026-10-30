@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -19,7 +20,7 @@ class Update_Page_Ability extends Ability {
                 'title'      => [ 'type' => 'string' ],
                 'slug'       => [ 'type' => 'string', 'description' => 'New page slug (post_name).' ],
                 'content'    => [ 'type' => 'string' ],
-                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the page; it needs a future date.' ],
+                'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the page; it needs a future date. "publish", "future" and "private" need the permission to publish this page; without it the page is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
                 'parent_id'  => [ 'type' => 'integer' ],
                 'template'   => [ 'type' => 'string' ],
@@ -50,10 +51,22 @@ class Update_Page_Ability extends Ability {
         $page       = get_post( $page_id );
         $old_status = $page->post_status;
         $old_date   = $page->post_date;
+
+        // Publish, schedule and private need publish_post; without it the page
+        // is saved as pending, as the WordPress editor does.
+        $status = Post_Access::update_status(
+            $page,
+            isset( $params['status'] ) ? sanitize_key( $params['status'] ) : null,
+            isset( $update['post_date'] )
+        );
+        if ( null !== $status['error'] ) {
+            return $this->error( $status['error'] );
+        }
+
         if ( isset( $params['title'] ) )      $update['post_title']   = sanitize_text_field( $params['title'] );
         if ( ! empty( $params['slug'] ) )     $update['post_name']    = sanitize_title( $params['slug'] );
         if ( isset( $params['content'] ) )    $update['post_content']  = wp_kses_post( $params['content'] );
-        if ( isset( $params['status'] ) )     $update['post_status']   = sanitize_key( $params['status'] );
+        if ( null !== $status['status'] )     $update['post_status']   = $status['status'];
         if ( isset( $params['parent_id'] ) )  $update['post_parent']   = absint( $params['parent_id'] );
         if ( isset( $params['menu_order'] ) ) $update['menu_order']    = (int) $params['menu_order'];
 
@@ -66,9 +79,13 @@ class Update_Page_Ability extends Ability {
             update_post_meta( $page_id, '_wp_page_template', sanitize_file_name( $params['template'] ) );
         }
 
-        return $this->success( "Page {$page_id} updated.", array_merge(
+        $extra = array_merge(
             [ 'page_id' => $page_id ],
             self::post_date_readback( $page_id, $old_status, $old_date )
-        ) );
+        );
+        if ( null !== $status['note'] ) {
+            $extra['status_note'] = $status['note'];
+        }
+        return $this->success( "Page {$page_id} updated.", $extra );
     }
 }

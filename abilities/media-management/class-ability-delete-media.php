@@ -26,6 +26,12 @@ class Delete_Media_Ability extends Ability {
         if ( ! get_post( $id ) ) {
             return $this->error( "Attachment {$id} not found." );
         }
+        if ( 'attachment' !== get_post_type( $id ) ) {
+            return $this->error( "Item {$id} is not a media attachment. Use delete_post or delete_page for other content." );
+        }
+        if ( ! current_user_can( 'delete_post', $id ) ) {
+            return $this->error( 'You do not have permission to delete this media item.' );
+        }
 
         $result = wp_delete_attachment( $id, true );
         if ( ! $result ) {

@@ -30,6 +30,12 @@ class Update_Media_Ability extends Ability {
         if ( ! get_post( $id ) ) {
             return $this->error( "Attachment {$id} not found." );
         }
+        if ( 'attachment' !== get_post_type( $id ) ) {
+            return $this->error( "Item {$id} is not a media attachment. Use update_post or update_page for other content." );
+        }
+        if ( ! current_user_can( 'edit_post', $id ) ) {
+            return $this->error( 'You do not have permission to edit this media item.' );
+        }
 
         $update = [ 'ID' => $id ];
         if ( isset( $params['title'] ) )       $update['post_title']   = sanitize_text_field( $params['title'] );

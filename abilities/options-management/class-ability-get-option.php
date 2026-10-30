@@ -21,6 +21,13 @@ class Get_Option_Ability extends Ability {
         // Who is connected, from where, and who approved it.
         'mcp_abilities_connection_approvals', 'mcp_abilities_approval_mail_times',
         'mcp_abilities_oauth_operators',
+
+        // Mail and service credentials stored under names the patterns miss.
+        'wp_mail_smtp', 'mailserver_pass', 'jetpack_private_options',
+        'woocommerce-ppcp-settings', 'fs_accounts',
+
+        // Apps allowed to connect (secret hashes, redirect URIs).
+        'vgc_cc_oauth_clients',
     ];
 
     /** Option name patterns blocked via prefix/substring match. */
@@ -30,7 +37,13 @@ class Get_Option_Ability extends Ability {
         'woocommerce_square',
         'woocommerce_braintree',
         'wc_connect_options',      // WC Services (contains API creds)
-        'smtp_',                   // SMTP passwords (various mailer plugins)
+        'smtp',                    // SMTP passwords (various mailer plugins, wp_mail_smtp)
+        '_pass',                   // passwords (mailserver_pass, *_password)
+        'token',                   // access / refresh tokens
+        'ppcp',                    // WooCommerce PayPal Payments
+        'jetpack_private',
+        'fs_accounts',             // Freemius accounts (licence + API keys)
+        'vgc_cc_',                 // AI Nexus OAuth: clients, tokens, policy
         'mailchimp',               // Mailchimp API keys
         'sendgrid',
         'postmark',

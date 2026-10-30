@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Post_Access;
 use MCP_Abilities\Wpml_Support;
 
 defined( 'ABSPATH' ) || exit;
@@ -11,7 +12,7 @@ class Get_Post_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'get_post';
         $this->label        = __( 'Get Post', 'mcp-abilities' );
-        $this->description  = 'Retrieve a single post by ID including content, meta, and taxonomy terms. Use "fields" (allowlist) or "exclude" (denylist) to control the payload — e.g. exclude ["content"] when auditing meta only.';
+        $this->description  = 'Retrieve a single post by ID including content, meta, and taxonomy terms. Use "fields" (allowlist) or "exclude" (denylist) to control the payload — e.g. exclude ["content"] when auditing meta only. Unpublished items need permission to edit them; protected meta keys (e.g. starting with "_") this account may not edit are left out and listed in meta_hidden.';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => 'object',
@@ -29,9 +30,14 @@ class Get_Post_Ability extends Ability {
         if ( ! $post ) {
             return $this->error( 'Post not found.' );
         }
+        if ( ! Post_Access::can_read( $post ) ) {
+            return $this->error( 'You do not have permission to read this item.' );
+        }
 
-        $categories = wp_get_post_categories( $post->ID, [ 'fields' => 'all' ] );
-        $tags       = wp_get_post_tags( $post->ID );
+        $categories  = wp_get_post_categories( $post->ID, [ 'fields' => 'all' ] );
+        $tags        = wp_get_post_tags( $post->ID );
+        $meta_hidden = [];
+        $meta        = Post_Access::readable_meta( $post->ID, (array) get_post_meta( $post->ID ), $meta_hidden );
 
         $data = [
             'id'             => $post->ID,
@@ -48,8 +54,11 @@ class Get_Post_Ability extends Ability {
             'featured_image' => get_the_post_thumbnail_url( $post->ID, 'full' ) ?: null,
             'categories'     => array_map( fn( $c ) => [ 'id' => $c->term_id, 'name' => $c->name, 'slug' => $c->slug ], $categories ),
             'tags'           => array_map( fn( $t ) => [ 'id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug ], $tags ),
-            'meta'           => get_post_meta( $post->ID ),
+            'meta'           => $meta,
         ];
+        if ( $meta_hidden ) {
+            $data['meta_hidden'] = $meta_hidden;
+        }
 
         if ( Wpml_Support::active() ) {
             $data['language'] = Wpml_Support::post_language( $post->ID );
@@ -60,6 +69,9 @@ class Get_Post_Ability extends Ability {
         if ( ! empty( $params['fields'] ) && is_array( $params['fields'] ) ) {
             $allow         = array_map( 'sanitize_text_field', $params['fields'] );
             $allow[]       = 'id';
+            if ( in_array( 'meta', $allow, true ) ) {
+                $allow[] = 'meta_hidden';
+            }
             $data          = array_intersect_key( $data, array_flip( $allow ) );
         }
         if ( ! empty( $params['exclude'] ) && is_array( $params['exclude'] ) ) {

@@ -44,14 +44,41 @@ class Update_Option_Ability extends Ability {
 
         // Custom code — must be managed via inject_css / inject_js abilities
         'mcp_custom_js_head', 'mcp_custom_js_footer',
+
+        // Admin email change in progress (confirmation hash and new address).
+        'adminhash', 'new_admin_email',
+
+        // Stored uninstall callbacks: run as PHP when a plugin is deleted.
+        'uninstall_plugins',
+
+        // Which widgets show where, and how URLs resolve.
+        'sidebars_widgets', 'rewrite_rules', 'permalink_structure',
     ];
 
     /** Option name prefixes that are blocked (matched with str_starts_with). */
     private const DENY_PREFIXES = [
-        'theme_mods_',   // per-theme customizer mods (can change templates/CSS)
-        'mcp_custom_',   // custom code storage
-        'widget_',       // widget content (markup injection vector)
+        'theme_mods_',      // per-theme customizer mods (can change templates/CSS)
+        'mcp_custom_',      // custom code storage
+        'widget_',          // widget content (markup injection vector)
+        'vgc_cc_',          // OAuth tokens, apps allowed to connect, registration policy
+        'mcp_abilities_',   // this plugin's own settings, guide conventions, connections
+        '_transient_',      // caches, incl. update and extension package URLs
+        '_site_transient_', // core update caches (package URLs)
+        'auto_update_',     // which plugins and themes update themselves
     ];
+
+    /**
+     * Exact keys that depend on the table prefix: the role → capability table.
+     *
+     * @return string[]
+     */
+    private static function deny_runtime(): array {
+        global $wpdb;
+        return array_unique( [
+            strtolower( $wpdb->prefix . 'user_roles' ),
+            strtolower( $wpdb->base_prefix . 'user_roles' ),
+        ] );
+    }
 
     protected function define_meta(): void {
         $this->key          = 'update_option';
@@ -72,7 +99,7 @@ class Update_Option_Ability extends Ability {
     public function execute( array $params ): array {
         $key = sanitize_key( $params['name'] );
 
-        if ( in_array( $key, self::DENYLIST, true ) ) {
+        if ( in_array( $key, self::DENYLIST, true ) || in_array( $key, self::deny_runtime(), true ) ) {
             return $this->error( "Option '{$key}' is protected and cannot be modified." );
         }
 
