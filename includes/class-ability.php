@@ -193,6 +193,161 @@ abstract class Ability {
         return $out;
     }
 
+    // ── Input validation ─────────────────────────────────────────────────────
+
+    /** JSON Schema types rest_validate_value_from_schema() understands. */
+    private const SCHEMA_TYPES = [ 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' ];
+
+    /**
+     * Check the caller's parameters against this ability's input schema and
+     * normalise them, before execute().
+     *
+     * The bundled MCP adapter calls tools through a handler, not through
+     * WP_Ability::execute(), so nothing else validates on that path. Checked:
+     * required fields, and the type and enum of every declared parameter (also
+     * of array items and object properties). Not checked: minimum/maximum,
+     * lengths, patterns and formats, which the abilities clamp or clean
+     * themselves. Lenient where callers commonly differ from the schema
+     * without meaning anything else: null, or "" for a number/boolean, counts
+     * as not sent; a number is accepted for a string; "5" and "true" are
+     * accepted for integers and booleans and passed on as 5 and true.
+     *
+     * Enums are enforced for AI Nexus's own abilities. An extension's enum can
+     * be a static sample of values its code takes from the site (WooCommerce
+     * order statuses include a shop's custom ones), so for abilities defined
+     * outside this plugin only types are checked, unless the filter
+     * `mcp_abilities_validate_enums` (bool, Ability) says otherwise. Filter
+     * `mcp_abilities_validate_input` (bool, Ability) turns the whole check off
+     * for one ability.
+     *
+     * @param array<string,mixed> $params
+     * @return array<string,mixed>|string Normalised params, or an error message.
+     */
+    public function validate_params( array $params ) {
+        if ( ! apply_filters( 'mcp_abilities_validate_input', true, $this ) ) {
+            return $params;
+        }
+        $enums = (bool) apply_filters( 'mcp_abilities_validate_enums', $this->is_core_ability(), $this );
+
+        $props = (array) ( $this->input_schema['properties'] ?? [] );
+        foreach ( $params as $name => $value ) {
+            $def = $props[ $name ] ?? null;
+            if ( ! is_array( $def ) ) {
+                continue;
+            }
+            $schema = self::validation_schema( $def, $enums );
+            if ( null === $schema ) {
+                continue;
+            }
+            $types = (array) $schema['type'];
+            if ( null === $value && ! in_array( 'null', $types, true ) ) {
+                unset( $params[ $name ] );
+                continue;
+            }
+            if ( '' === $value && ! array_intersect( $types, [ 'string', 'array', 'object', 'null' ] ) ) {
+                unset( $params[ $name ] );
+                continue;
+            }
+            $value = self::coerce_for_schema( $value, $schema );
+            $valid = rest_validate_value_from_schema( $value, $schema, (string) $name );
+            if ( is_wp_error( $valid ) ) {
+                return sprintf( 'Invalid parameter "%s": %s', $name, $valid->get_error_message() );
+            }
+            $params[ $name ] = rest_sanitize_value_from_schema( $value, $schema, (string) $name );
+        }
+
+        foreach ( (array) ( $this->input_schema['required'] ?? [] ) as $field ) {
+            if ( 'action' !== $field && ( ! isset( $params[ $field ] ) || '' === $params[ $field ] ) ) {
+                return sprintf( 'Missing required parameter "%s".', $field );
+            }
+        }
+        return $params;
+    }
+
+    /** Whether this ability's class is defined by AI Nexus itself (not an extension). */
+    private function is_core_ability(): bool {
+        static $core = [];
+        $class = static::class;
+        if ( ! isset( $core[ $class ] ) ) {
+            $file           = ( new \ReflectionClass( $this ) )->getFileName();
+            $core[ $class ] = is_string( $file ) && str_starts_with( wp_normalize_path( $file ), wp_normalize_path( MCP_ABILITIES_DIR ) );
+        }
+        return $core[ $class ];
+    }
+
+    /**
+     * The part of a property schema that is enforced: type, enum (when
+     * $enums), items, properties (nested the same way). Null when it has no
+     * usable type.
+     *
+     * @param array<string,mixed> $def
+     * @return array<string,mixed>|null
+     */
+    private static function validation_schema( array $def, bool $enums = true ): ?array {
+        $types = array_values( array_intersect( (array) ( $def['type'] ?? [] ), self::SCHEMA_TYPES ) );
+        if ( ! $types ) {
+            return null;
+        }
+        $out = [ 'type' => 1 === count( $types ) ? $types[0] : $types ];
+        if ( $enums && isset( $def['enum'] ) && is_array( $def['enum'] ) && $def['enum'] ) {
+            $out['enum'] = array_values( $def['enum'] );
+        }
+        if ( in_array( 'array', $types, true ) && isset( $def['items'] ) && is_array( $def['items'] ) ) {
+            $items = self::validation_schema( $def['items'], $enums );
+            if ( null !== $items ) {
+                $out['items'] = $items;
+            }
+        }
+        if ( in_array( 'object', $types, true ) && isset( $def['properties'] ) && is_array( $def['properties'] ) ) {
+            $nested = [];
+            foreach ( $def['properties'] as $key => $sub ) {
+                $sub = is_array( $sub ) ? self::validation_schema( $sub, $enums ) : null;
+                if ( null !== $sub ) {
+                    $nested[ $key ] = $sub;
+                }
+            }
+            if ( $nested ) {
+                $out['properties'] = $nested;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Accept numbers where the schema wants a string, and an enum value in
+     * other letter case ("asc" for "ASC"), also inside arrays and objects;
+     * leave everything else for the validator to judge.
+     *
+     * @param mixed               $value
+     * @param array<string,mixed> $schema From validation_schema().
+     * @return mixed
+     */
+    private static function coerce_for_schema( $value, array $schema ) {
+        if ( is_string( $value ) && isset( $schema['enum'] ) && ! in_array( $value, $schema['enum'], true ) ) {
+            foreach ( $schema['enum'] as $allowed ) {
+                if ( is_string( $allowed ) && 0 === strcasecmp( $allowed, $value ) ) {
+                    return $allowed;
+                }
+            }
+        }
+        $types = (array) $schema['type'];
+        if ( ( is_int( $value ) || is_float( $value ) ) && in_array( 'string', $types, true )
+            && ! array_intersect( $types, [ 'integer', 'number' ] ) ) {
+            return (string) $value;
+        }
+        if ( is_array( $value ) && isset( $schema['items'] ) && in_array( 'array', $types, true ) && wp_is_numeric_array( $value ) ) {
+            return array_map( fn( $item ) => self::coerce_for_schema( $item, $schema['items'] ), $value );
+        }
+        if ( is_array( $value ) && isset( $schema['properties'] ) && in_array( 'object', $types, true ) ) {
+            foreach ( $schema['properties'] as $key => $sub ) {
+                if ( array_key_exists( $key, $value ) ) {
+                    $value[ $key ] = self::coerce_for_schema( $value[ $key ], $sub );
+                }
+            }
+        }
+        return $value;
+    }
+
     // ── Ignored-parameter surfacing ──────────────────────────────────────────
 
     /**

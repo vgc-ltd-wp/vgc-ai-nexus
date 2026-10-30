@@ -75,6 +75,8 @@ final class Plugin {
             'class-crud-ability.php',
             'class-wpml-support.php',
             'class-post-access.php',
+            'class-term-access.php',
+            'class-user-access.php',
             'class-query-support.php',
             'class-revision-support.php',
             'class-revision-attribution.php',
@@ -352,6 +354,14 @@ final class Plugin {
         }
         if ( $ability->blocked_by_read_only() ) {
             return [ 'success' => false, 'error' => Read_Only::error_message( $ability->get_key() ) ];
+        }
+        // A dispatcher checks the selected action's own schema itself.
+        if ( ! $ability instanceof Crud_Ability ) {
+            $checked = $ability->validate_params( $params );
+            if ( is_string( $checked ) ) {
+                return [ 'success' => false, 'error' => $checked ];
+            }
+            $params = $checked;
         }
         $result = $ability->execute( $params );
         // Flag parameters the caller sent that this ability doesn't support, so a

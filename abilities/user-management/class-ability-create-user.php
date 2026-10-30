@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\User_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -18,7 +19,7 @@ class Create_User_Ability extends Ability {
                 'username'     => [ 'type' => 'string' ],
                 'email'        => [ 'type' => 'string' ],
                 'password'     => [ 'type' => 'string', 'description' => 'If omitted, a random password is generated.' ],
-                'role'         => [ 'type' => 'string', 'enum' => [ 'administrator', 'editor', 'author', 'contributor', 'subscriber' ], 'default' => 'subscriber', 'description' => 'Assigning administrator requires manage_options capability.' ],
+                'role'         => [ 'type' => 'string', 'default' => 'subscriber', 'description' => 'Role slug, e.g. subscriber, contributor, author, editor, administrator, or a site role such as customer or shop_manager. Only roles you may give: administrator needs manage_options; without it no role with permissions your account lacks; without promote_users only subscriber-level roles.' ],
                 'first_name'   => [ 'type' => 'string' ],
                 'last_name'    => [ 'type' => 'string' ],
                 'display_name' => [ 'type' => 'string' ],
@@ -31,10 +32,11 @@ class Create_User_Ability extends Ability {
     public function execute( array $params ): array {
         $role = sanitize_key( $params['role'] ?? 'subscriber' );
 
-        // Prevent privilege escalation: assigning roles above the current user's
-        // own highest role requires promote_users, just as the WP REST API enforces.
-        if ( ! $this->current_user_can_assign_role( $role ) ) {
-            return $this->error( "You do not have permission to create users with the '{$role}' role." );
+        // Prevent privilege escalation: only a role WordPress lets this user
+        // assign, and never one with more power than the caller (User_Access).
+        $role_error = User_Access::role_error( $role );
+        if ( null !== $role_error ) {
+            return $this->error( $role_error );
         }
 
         $user_id = wp_insert_user( [
@@ -59,25 +61,5 @@ class Create_User_Ability extends Ability {
             'id'    => $user_id,
             'login' => get_user_by( 'id', $user_id )->user_login,
         ] );
-    }
-
-    /**
-     * Mirrors the WP REST API role-assignment gate:
-     * - administrator role requires promote_users
-     * - any other editable role requires promote_users OR the role must not
-     *   exceed the current user's highest role in the WP hierarchy.
-     */
-    private function current_user_can_assign_role( string $role ): bool {
-        if ( ! current_user_can( 'promote_users' ) ) {
-            // Without promote_users only subscriber/contributor-level roles are safe.
-            $safe_roles = [ 'subscriber', 'customer' ]; // customer = WooCommerce subscriber equivalent
-            return in_array( $role, $safe_roles, true );
-        }
-        // promote_users holders can assign any role except administrator
-        // unless they are themselves an administrator.
-        if ( $role === 'administrator' && ! current_user_can( 'manage_options' ) ) {
-            return false;
-        }
-        return true;
     }
 }

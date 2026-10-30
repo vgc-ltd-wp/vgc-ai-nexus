@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Term_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -27,8 +28,9 @@ class Create_Term_Ability extends Ability {
 
     public function execute( array $params ): array {
         $taxonomy = sanitize_key( $params['taxonomy'] ?? 'category' );
-        if ( ! taxonomy_exists( $taxonomy ) ) {
-            return $this->error( "Taxonomy '{$taxonomy}' does not exist." );
+        $denied   = Term_Access::create_error( $taxonomy );
+        if ( null !== $denied ) {
+            return $this->error( $denied );
         }
 
         $args = [];

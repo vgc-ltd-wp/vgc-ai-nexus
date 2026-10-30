@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Term_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -83,6 +84,10 @@ class Update_Term_Seo_Ability extends Ability {
         $term = get_term( $term_id, $taxonomy );
         if ( ! $term || is_wp_error( $term ) ) {
             return $this->error( "Term {$term_id} was not found in taxonomy '{$taxonomy}'." );
+        }
+        $denied = Term_Access::term_error( $term_id, $taxonomy, 'edit_term' );
+        if ( null !== $denied ) {
+            return $this->error( $denied );
         }
 
         $values = [];

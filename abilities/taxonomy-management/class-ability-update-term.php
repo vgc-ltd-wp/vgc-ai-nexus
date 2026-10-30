@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Term_Access;
 use MCP_Abilities\Wpml_Support;
 
 defined( 'ABSPATH' ) || exit;
@@ -31,6 +32,10 @@ class Update_Term_Ability extends Ability {
     public function execute( array $params ): array {
         $term_id  = absint( $params['id'] );
         $taxonomy = sanitize_key( $params['taxonomy'] ?? 'category' );
+        $denied   = Term_Access::term_error( $term_id, $taxonomy, 'edit_term' );
+        if ( null !== $denied ) {
+            return $this->error( $denied );
+        }
 
         $args = [];
         if ( isset( $params['name'] ) )        $args['name']        = sanitize_text_field( $params['name'] );

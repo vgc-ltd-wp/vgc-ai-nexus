@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Term_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,8 +27,9 @@ class Delete_Term_Ability extends Ability {
         $term_id  = absint( $params['id'] );
         $taxonomy = sanitize_key( $params['taxonomy'] ?? 'category' );
 
-        if ( ! get_term( $term_id, $taxonomy ) ) {
-            return $this->error( "Term {$term_id} not found in taxonomy '{$taxonomy}'." );
+        $denied = Term_Access::term_error( $term_id, $taxonomy, 'delete_term' );
+        if ( null !== $denied ) {
+            return $this->error( $denied );
         }
 
         $result = wp_delete_term( $term_id, $taxonomy );

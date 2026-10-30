@@ -185,11 +185,24 @@ final class Crud_Ability extends Ability {
 			}
 		}
 
+		// Types and enums of the SELECTED operation's schema (the union schema the
+		// dispatcher advertises joins enums across actions). The adapter calls this
+		// through a handler, so nothing validated the input before.
+		// "action" is this dispatcher's selector here, not the op's own parameter
+		// of that name (moderate_comment has one), so it is not checked as such.
+		$to_check = $params;
+		unset( $to_check['action'] );
+		$checked = $op->validate_params( $to_check );
+		if ( is_string( $checked ) ) {
+			return $this->error( sprintf( 'Action "%s": %s', $action, $checked ) );
+		}
+		$checked['action'] = $params['action'];
+
 		// Validate against the SELECTED operation's schema, not the union schema the
 		// dispatcher advertises: a parameter that belongs to a different action (or
 		// to no action at all) is silently dropped otherwise, and the caller gets an
 		// unfiltered result that looks correctly filtered.
-		return $op->annotate_ignored_params( $op->execute( $params ), $params );
+		return $op->annotate_ignored_params( $op->execute( $checked ), $checked );
 	}
 
 	/**

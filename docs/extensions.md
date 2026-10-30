@@ -167,6 +167,10 @@ class My_Thing_Ability extends \MCP_Abilities\Ability {
 }
 ```
 
+### Input validation (core 2.34.0+)
+
+When your group is served as one consolidated tool, core's dispatcher checks each call against the selected ability's `input_schema` before `execute()`: required parameters and the declared **types** (also of array items and object properties). Declare types that match what `execute()` accepts — an `integer` parameter that also takes a slug must be `[ 'integer', 'string' ]`. Enums in extension schemas are not enforced (they are often a static sample of site data); return `true` from `mcp_abilities_validate_enums` for your ability to enforce them, or `false` from `mcp_abilities_validate_input` to skip validation for it. Abilities you execute through your own `execute_callback` are not validated by core; WordPress validates the Abilities API route itself. See [security.md](security.md#input-validation-since-2340).
+
 ### Ability return helpers
 
 | Method | Use when |

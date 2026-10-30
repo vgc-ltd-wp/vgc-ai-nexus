@@ -109,7 +109,29 @@ User tools are **disabled by default** and display a security warning when enabl
 - **Non-admins cannot create administrators** — assigning the `administrator` role requires `manage_options`.
 - **Non-admins cannot modify administrator accounts** — editing or deleting an account with a higher role is blocked.
 - **The last administrator cannot be deleted** — prevents accidental lockout.
-- **Role escalation is blocked** — `update_user` requires `promote_users` to change any role; `manage_options` to assign `administrator`.
+- **Role escalation is blocked** (since 2.34.0, `includes/class-user-access.php`) — the role must be one WordPress lets the caller assign (`get_editable_roles()`, filter `editable_roles`); an unknown role is refused, so `update_user` can no longer leave a user with no role. `update_user` requires `promote_users` to change any role. Administrators (`manage_options`) may give any of those roles. With `promote_users` but without `manage_options`, a role that carries any capability the caller lacks is refused (so a custom role with `manage_options` cannot be handed out). Without `promote_users`, `create_user` gives only roles with nothing beyond `read` (subscriber, WooCommerce customer).
+
+---
+
+## Taxonomy Protections (since 2.34.0)
+
+`create_term`, `update_term`, `delete_term` and `update_term_seo` check the taxonomy's own capabilities on top of the tool gate (`manage_categories`), as WordPress's term screens and REST API do (`includes/class-term-access.php`):
+
+- Taxonomies without an admin screen (`show_ui` false: menus, block template areas, themes, WooCommerce product types and visibility) are refused; menus have their own tools.
+- Create needs the taxonomy's `manage_terms` and `edit_terms` (e.g. WooCommerce's `manage_product_terms` / `edit_product_terms` for product categories, which Editors do not have).
+- Update needs `edit_term` and delete needs `delete_term` on the term itself (the default category can never be deleted). The term must exist in the taxonomy named.
+
+---
+
+## Input Validation (since 2.34.0)
+
+The bundled MCP adapter calls tools through a handler, not through `WP_Ability::execute()`, so before 2.34.0 nothing checked the input against the tool's schema on that path. Now every call is checked against the schema of the action actually run (`Ability::validate_params()`, called from the group dispatcher and the single-tool path):
+
+- Required parameters, and the **type** of every declared parameter (also array items and object properties): `id: "abc"` or `id: [5]` for an integer, or a string for an object, is refused with a message naming the parameter.
+- **Enums** of AI Nexus's own tools (statuses, order, modes). An extension's enum may be a static sample of values its code reads from the site (WooCommerce order statuses include a shop's custom ones), so for extension tools only types are checked, unless the filter `mcp_abilities_validate_enums` returns true for that ability.
+- Lenient where clients commonly differ without meaning anything else: `null` (or `""` for a number or boolean) counts as not sent; a number is accepted for a string; `"5"` and `"true"` are accepted for integers and booleans and passed on as 5 and true; an enum value in other letter case (`asc`) is accepted.
+- Not checked: minimum/maximum, lengths, patterns and formats; the tools clamp or clean those themselves.
+- The filter `mcp_abilities_validate_input` (bool, `Ability`) turns validation off for one ability.
 
 ---
 

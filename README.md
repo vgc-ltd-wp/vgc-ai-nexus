@@ -189,10 +189,11 @@ Key protections:
 
 - **Capability checks** on every tool (`edit_posts`, `manage_options`, `upload_files`, etc.)
 - **Object-level checks** — each post, page and media item is checked against the user (`read_post`, `edit_post`, `delete_post`, `publish_post`): a Contributor reads only published content and their own drafts, cannot publish, and cannot read or write protected meta; media tools act only on attachments the user may edit
+- **Input validation** — every call is checked against the tool's schema (required fields, types, and the enums of core tools) before it runs
 - **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl`, the roles table, caches, OAuth tokens, this plugin's own settings and mail/payment credentials are read- and/or write-protected
 - **SSRF protection** on upload tools — URLs resolving to private IP ranges are rejected
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
-- **Privilege escalation prevention** — user tools enforce role hierarchy; non-admins cannot create or modify administrator accounts
+- **Privilege escalation prevention** — user tools enforce role hierarchy; non-admins cannot create or modify administrator accounts or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
 
 See [docs/security.md](docs/security.md) for a full breakdown.

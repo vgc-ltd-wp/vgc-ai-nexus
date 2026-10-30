@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\User_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -17,7 +18,7 @@ class Update_User_Ability extends Ability {
             'properties' => [
                 'id'           => [ 'type' => 'integer' ],
                 'email'        => [ 'type' => 'string' ],
-                'role'         => [ 'type' => 'string', 'enum' => [ 'administrator', 'editor', 'author', 'contributor', 'subscriber' ], 'description' => 'Requires promote_users capability. Assigning administrator requires manage_options.' ],
+                'role'         => [ 'type' => 'string', 'description' => 'Role slug, e.g. subscriber, contributor, author, editor, administrator, or a site role such as customer or shop_manager. Requires promote_users; administrator needs manage_options; without it no role with permissions your account lacks.' ],
                 'first_name'   => [ 'type' => 'string' ],
                 'last_name'    => [ 'type' => 'string' ],
                 'display_name' => [ 'type' => 'string' ],
@@ -47,8 +48,11 @@ class Update_User_Ability extends Ability {
             if ( ! current_user_can( 'promote_users' ) ) {
                 return $this->error( 'You do not have permission to change user roles.' );
             }
-            if ( $new_role === 'administrator' && ! current_user_can( 'manage_options' ) ) {
-                return $this->error( "You cannot promote users to the 'administrator' role." );
+            // A role WordPress lets this user assign, never one with more power
+            // than the caller; an unknown role would leave the user with none.
+            $role_error = User_Access::role_error( $new_role );
+            if ( null !== $role_error ) {
+                return $this->error( $role_error );
             }
         }
 
@@ -62,7 +66,7 @@ class Update_User_Ability extends Ability {
 
         $data = [ 'ID' => $user_id ];
         if ( isset( $params['email'] ) )        $data['user_email']   = sanitize_email( $params['email'] );
-        if ( isset( $params['role'] ) )          $data['role']          = sanitize_key( $params['role'] );
+        if ( isset( $params['role'] ) )          $data['role']          = $new_role;
         if ( isset( $params['first_name'] ) )    $data['first_name']    = sanitize_text_field( $params['first_name'] );
         if ( isset( $params['last_name'] ) )     $data['last_name']     = sanitize_text_field( $params['last_name'] );
         if ( isset( $params['display_name'] ) )  $data['display_name']  = sanitize_text_field( $params['display_name'] );
