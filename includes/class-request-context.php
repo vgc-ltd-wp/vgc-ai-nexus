@@ -331,6 +331,70 @@ final class Request_Context {
         return (string) apply_filters( 'mcp_abilities_actor_label', $label, $actor );
     }
 
+    /**
+     * What a recorder stores: the actor snapshot plus the time. Revisions,
+     * comments and orders all store this shape (schema ACTOR_SCHEMA).
+     *
+     * @param array|null $actor An actor() array; the current one when null.
+     */
+    public static function record( ?array $actor = null ): array {
+        $actor = $actor ?? self::actor();
+        return [
+            'v'              => self::ACTOR_SCHEMA,
+            'user_id'        => (int) ( $actor['user_id'] ?? 0 ),
+            'user_name'      => (string) ( $actor['user_name'] ?? '' ),
+            'app'            => (string) ( $actor['app'] ?? '' ),
+            'auth'           => (string) ( $actor['auth'] ?? '' ),
+            'client_id'      => (string) ( $actor['client_id'] ?? '' ),
+            'app_pass_uuid'  => (string) ( $actor['app_pass_uuid'] ?? '' ),
+            'app_pass_name'  => (string) ( $actor['app_pass_name'] ?? '' ),
+            'client_name'    => (string) ( $actor['client_name'] ?? '' ),
+            'client_version' => (string) ( $actor['client_version'] ?? '' ),
+            'session'        => (string) ( $actor['session'] ?? '' ),
+            'transport'      => (string) ( $actor['transport'] ?? '' ),
+            'ability'        => (string) ( $actor['ability'] ?? '' ),
+            'time'           => gmdate( 'Y-m-d H:i:s' ),
+            'log_id'         => 0,
+        ];
+    }
+
+    /** The fields of a stored record that a REST response may show. */
+    public static function public_record( array $record ): array {
+        return [
+            'label'     => self::label( $record ),
+            'user_id'   => (int) ( $record['user_id'] ?? 0 ),
+            'user_name' => (string) ( $record['user_name'] ?? '' ),
+            'app'       => (string) ( $record['app'] ?? '' ),
+            'auth'      => (string) ( $record['auth'] ?? '' ),
+            'ability'   => (string) ( $record['ability'] ?? '' ),
+            'action'    => (string) ( $record['action'] ?? '' ),
+            'time'      => (string) ( $record['time'] ?? '' ),
+            'log_id'    => (int) ( $record['log_id'] ?? 0 ),
+        ];
+    }
+
+    /**
+     * Store a record as JSON metadata (post, comment, …). Slashed, because
+     * metadata writes unslash their value. update_metadata(), not
+     * update_post_meta(): that one moves a revision's meta to its parent.
+     */
+    public static function put_meta_json( string $meta_type, int $object_id, string $key, array $data ): void {
+        $json = wp_json_encode( $data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+        if ( false !== $json && $object_id > 0 ) {
+            update_metadata( $meta_type, $object_id, $key, wp_slash( $json ) );
+        }
+    }
+
+    /** A record stored by put_meta_json(), or null. */
+    public static function get_meta_json( string $meta_type, int $object_id, string $key ): ?array {
+        $raw = $object_id > 0 ? get_metadata( $meta_type, $object_id, $key, true ) : '';
+        if ( ! is_string( $raw ) || '' === $raw ) {
+            return null;
+        }
+        $data = json_decode( $raw, true );
+        return is_array( $data ) ? $data : null;
+    }
+
     /** Human words for a sign-in method. */
     public static function auth_label( string $auth ): string {
         switch ( $auth ) {

@@ -844,6 +844,11 @@
     font-family: "SF Mono", Consolas, monospace;
 }
 .mcp-log-object__rev { font-size: 11px; white-space: nowrap; }
+.mcp-log-object__action {
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--mcp-muted);
+}
 .mcp-log-single { margin: 0 0 12px; font-size: 13px; }
 .mcp-log-row:target td { background: rgba(108,99,255,.08); }
 

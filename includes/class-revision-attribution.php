@@ -40,8 +40,9 @@ final class Revision_Attribution {
     const META_ACTOR = '_mcp_abilities_actor';
     const META_LAST  = '_mcp_abilities_last_change';
 
-    /** Post types that are not content. */
-    private const SKIP_TYPES = [ 'revision', 'oembed_cache', 'customize_changeset', 'user_request' ];
+    /** Post types that are not content. WooCommerce orders stored as posts are
+     *  recorded as orders by Order_Attribution (both order storages alike). */
+    private const SKIP_TYPES = [ 'revision', 'oembed_cache', 'customize_changeset', 'user_request', 'shop_order', 'shop_order_refund', 'shop_order_placehold' ];
 
     /** Meta that WordPress or builders write as a cache or lock, not a change. */
     private const UNTRACKED_KEYS = [
@@ -334,49 +335,22 @@ final class Revision_Attribution {
         }
     }
 
-    /** What is stored: the actor snapshot plus the time. */
+    /** What is stored: the actor snapshot plus the time (shared shape). */
     private static function record( array $actor ): array {
-        return [
-            'v'              => Request_Context::ACTOR_SCHEMA,
-            'user_id'        => (int) $actor['user_id'],
-            'user_name'      => (string) $actor['user_name'],
-            'app'            => (string) $actor['app'],
-            'auth'           => (string) $actor['auth'],
-            'client_id'      => (string) $actor['client_id'],
-            'app_pass_uuid'  => (string) $actor['app_pass_uuid'],
-            'app_pass_name'  => (string) $actor['app_pass_name'],
-            'client_name'    => (string) $actor['client_name'],
-            'client_version' => (string) $actor['client_version'],
-            'session'        => (string) $actor['session'],
-            'transport'      => (string) $actor['transport'],
-            'ability'        => (string) $actor['ability'],
-            'time'           => gmdate( 'Y-m-d H:i:s' ),
-            'log_id'         => 0,
-        ];
+        return Request_Context::record( $actor );
     }
 
     // ── Meta storage (JSON, slashed: meta writes unslash their value) ────────
 
     private static function put_json( int $object_id, string $key, array $data ): void {
-        $json = wp_json_encode( $data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
-        if ( false === $json ) {
-            return;
-        }
         $was           = self::$writing;
         self::$writing = true;
-        // update_metadata, not update_post_meta: that one moves a revision's
-        // meta to its parent.
-        update_metadata( 'post', $object_id, $key, wp_slash( $json ) );
+        Request_Context::put_meta_json( 'post', $object_id, $key, $data );
         self::$writing = $was;
     }
 
     private static function get_json( int $object_id, string $key ): ?array {
-        $raw = get_metadata( 'post', $object_id, $key, true );
-        if ( ! is_string( $raw ) || '' === $raw ) {
-            return null;
-        }
-        $data = json_decode( $raw, true );
-        return is_array( $data ) ? $data : null;
+        return Request_Context::get_meta_json( 'post', $object_id, $key );
     }
 
     /** The actor stored on a revision, or null. */

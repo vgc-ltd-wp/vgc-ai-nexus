@@ -18,7 +18,8 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Links to what a log row changed: the post, and the revision it got.
+ * Links to what a log row changed: posts (and their revisions), comments,
+ * order notes and orders. Built by Connections_Page::object_html().
  *
  * @param object $row
  */
@@ -30,31 +31,7 @@ function mcp_log_objects_html( $row ): string {
     }
     $items = [];
     foreach ( array_slice( $objects, 0, 5 ) as $object ) {
-        $id   = (int) ( $object['id'] ?? 0 );
-        $type = (string) ( $object['type'] ?? '' );
-        if ( 'post' !== $type || ! $id ) {
-            $items[] = '<span class="mcp-log-object">' . esc_html( $type . ' #' . $id ) . '</span>';
-            continue;
-        }
-        $post = get_post( $id );
-        if ( ! $post || ! empty( $object['deleted'] ) ) {
-            /* translators: %d: post ID */
-            $items[] = '<span class="mcp-log-object mcp-muted">' . esc_html( sprintf( __( '#%d (deleted)', 'mcp-abilities' ), $id ) ) . '</span>';
-            continue;
-        }
-        $title = get_the_title( $post );
-        $title = '' !== trim( $title ) ? wp_html_excerpt( $title, 40, '…' ) : sprintf( '#%d', $id );
-        $edit  = get_edit_post_link( $post, 'raw' );
-        $html  = $edit && current_user_can( 'edit_post', $id )
-            ? '<a href="' . esc_url( $edit ) . '">' . esc_html( $title ) . '</a>'
-            : esc_html( $title );
-        $html .= ' <span class="mcp-log-object__type">' . esc_html( $post->post_type ) . '</span>';
-        $rev   = (int) ( $object['revision'] ?? 0 );
-        if ( $rev && wp_get_post_revision( $rev ) ) {
-            /* translators: %d: revision ID */
-            $html .= ' <a class="mcp-log-object__rev" href="' . esc_url( admin_url( 'revision.php?revision=' . $rev ) ) . '">' . esc_html( sprintf( __( 'revision %d', 'mcp-abilities' ), $rev ) ) . '</a>';
-        }
-        $items[] = '<span class="mcp-log-object">' . $html . '</span>';
+        $items[] = \MCP_Abilities\Admin\Connections_Page::object_html( $object );
     }
     if ( count( $objects ) > 5 ) {
         /* translators: %d: number of further objects */

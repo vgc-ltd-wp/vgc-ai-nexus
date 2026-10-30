@@ -44,6 +44,11 @@ final class Plugin {
         // "last edited by", for every change an AI makes through MCP.
         Revision_Attribution::init();
 
+        // The same for comments (order notes included) and, with WooCommerce,
+        // for orders and the "added by" of their notes.
+        Comment_Attribution::init();
+        Order_Attribution::init();
+
         if ( is_admin() ) {
             $admin = new Admin\Settings_Page( $this->registry );
             $admin->init();
@@ -71,6 +76,8 @@ final class Plugin {
             'class-query-support.php',
             'class-revision-support.php',
             'class-revision-attribution.php',
+            'class-comment-attribution.php',
+            'class-order-attribution.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
             'admin/class-connections-page.php',

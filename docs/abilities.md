@@ -255,8 +255,8 @@ Download a document or media file from a URL and import it into the Media Librar
 ### `moderate_comment`
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `comment_id` | integer | **Yes** | Comment ID |
-| `action` | string | **Yes** | `approve`, `hold`, `spam`, `trash`, `delete` |
+| `id` | integer | **Yes** | Comment ID |
+| `moderation` | string | **Yes** | `approve`, `hold`, `spam`, `trash`, `delete` (through the group tool, `action` names the operation, so the moderation goes here; a direct call may also send it as `action`) |
 
 ---
 

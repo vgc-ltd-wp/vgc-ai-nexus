@@ -228,8 +228,10 @@ updates it itself on every save.
 Writes are capability-checked against the connected WordPress user, and each
 group can be disabled per site in WP Admin → AI Nexus → Abilities.
 
-Your changes are labelled as AI changes: the revision history shows them as
-"User Name — via MCP (Your App)", and the AI Nexus activity log records each call.
+Your changes are labelled as AI changes: revisions, comments and WooCommerce
+order notes show them to the site's staff as "User Name — via MCP (Your App)",
+and the AI Nexus activity log records each call. Customers never see the label:
+a customer note and its email carry exactly the text you wrote.
 MD;
     }
 
