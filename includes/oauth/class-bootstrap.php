@@ -164,6 +164,18 @@ final class Bootstrap {
 					},
 					$u['users']
 				) ) ),
+				// Per signed-in user: login + "who is connecting" (Operators).
+				'people'        => array_values( array_filter( array_map(
+					static function ( $id ) use ( $client_id ) {
+						$user = get_user_by( 'id', (int) $id );
+						return $user ? array(
+							'user_id'  => (int) $user->ID,
+							'login'    => (string) $user->user_login,
+							'operator' => Operators::get( (string) $client_id, (int) $user->ID ),
+						) : null;
+					},
+					$u['users']
+				) ) ),
 			);
 		}
 		usort( $apps, static fn( $a, $b ) => $b['created_at'] <=> $a['created_at'] );
@@ -177,6 +189,7 @@ final class Bootstrap {
 		}
 		Token_Store::delete_for_client( $client_id );
 		Client_Manager::delete( $client_id );
+		Operators::delete_for_client( $client_id );
 		Server::log( sprintf( 'app revoked by admin user_id=%d client=%s', get_current_user_id(), $client_id ) );
 		return true;
 	}

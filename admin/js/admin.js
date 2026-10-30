@@ -349,6 +349,63 @@
             } );
     } );
 
+    // ── Connect: "who is connecting" for a claude.ai connection ─────────────
+    // The name is set with .text() / .val() only: it is typed by people.
+
+    $( document ).on( 'click', '.mcp-oauth-operator-edit', function () {
+        const $person = $( this ).closest( '.mcp-oauth-user' );
+        $( this ).prop( 'hidden', true );
+        $person.find( '.mcp-oauth-operator-form' ).prop( 'hidden', false ).find( 'input' ).trigger( 'focus' );
+    } );
+
+    $( document ).on( 'click', '.mcp-oauth-operator-cancel', function () {
+        const $person = $( this ).closest( '.mcp-oauth-user' );
+        const current = $person.find( '.mcp-oauth-operator-name' ).text();
+        $person.find( '.mcp-oauth-operator-form' ).prop( 'hidden', true ).find( 'input' ).val( current );
+        $person.find( '.mcp-oauth-operator-edit' ).prop( 'hidden', false );
+    } );
+
+    $( document ).on( 'keydown', '.mcp-oauth-operator-form input', function ( e ) {
+        if ( 'Enter' === e.key ) {
+            e.preventDefault();
+            $( this ).closest( '.mcp-oauth-operator-form' ).find( '.mcp-oauth-operator-save' ).trigger( 'click' );
+        } else if ( 'Escape' === e.key ) {
+            $( this ).closest( '.mcp-oauth-operator-form' ).find( '.mcp-oauth-operator-cancel' ).trigger( 'click' );
+        }
+    } );
+
+    $( document ).on( 'click', '.mcp-oauth-operator-save', function () {
+        const $person = $( this ).closest( '.mcp-oauth-user' );
+        const $status = $( '#mcp-oauth-status' );
+        const client  = $person.closest( 'tr' ).attr( 'data-client' );
+        const userId  = $person.attr( 'data-user' );
+        const $btn    = $( this ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, {
+            action: 'mcp_oauth_operator',
+            nonce: mcpAbilities.nonce,
+            client_id: client,
+            user_id: userId,
+            name: $person.find( '.mcp-oauth-operator-form input' ).val()
+        } )
+            .done( function ( res ) {
+                if ( res.success ) {
+                    const name = ( res.data && res.data.name ) || '';
+                    $person.find( '.mcp-oauth-operator-name' ).text( name ).prop( 'hidden', '' === name );
+                    $person.find( '.mcp-oauth-operator-none' ).prop( 'hidden', '' !== name );
+                    $person.find( '.mcp-oauth-operator-form' ).prop( 'hidden', true ).find( 'input' ).val( name );
+                    $person.find( '.mcp-oauth-operator-edit' ).prop( 'hidden', false );
+                    $status.addClass( 'is-success' ).text( ( res.data && res.data.message ) || 'Saved.' );
+                } else {
+                    $status.addClass( 'is-error' ).text( ( res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } )
+            .always( function () { $btn.prop( 'disabled', false ); } );
+    } );
+
     // ── Connect: revoke a stored connection ──────────────────────────────────
 
     $( document ).on( 'click', '.mcp-revoke-conn', function () {

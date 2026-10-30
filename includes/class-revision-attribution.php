@@ -478,7 +478,9 @@ final class Revision_Attribution {
         if ( ! $user || (string) $user->display_name !== (string) $name ) {
             return $name;
         }
-        return Request_Context::label( $last );
+        // Escaped: the_modified_author() prints this as it is, and the label
+        // carries text a person typed ("who is connecting").
+        return esc_html( Request_Context::label( $last ) );
     }
 
     /**
@@ -539,6 +541,7 @@ final class Revision_Attribution {
             'user_id'   => (int) ( $actor['user_id'] ?? 0 ),
             'user_name' => (string) ( $actor['user_name'] ?? '' ),
             'app'       => (string) ( $actor['app'] ?? '' ),
+            'operator'  => (string) ( $actor['operator'] ?? '' ),
             'auth'      => (string) ( $actor['auth'] ?? '' ),
             'ability'   => (string) ( $actor['ability'] ?? '' ),
             'time'      => (string) ( $actor['time'] ?? '' ),

@@ -878,7 +878,11 @@ final class Server {
 
 	// ── Authorization endpoint (HTML consent page) ─────────────────────────
 
-	private static function render_authorize_page(): void {
+	/**
+	 * @param string $error    Shown above the buttons (a refused Approve).
+	 * @param string $operator "Who is connecting?" as typed, kept after a refusal.
+	 */
+	private static function render_authorize_page( string $error = '', string $operator = '' ): void {
 		$params = self::parse_authorize_params();
 		if ( is_wp_error( $params ) ) {
 			self::render_error_page( $params->get_error_message() );
@@ -912,9 +916,20 @@ final class Server {
 				<input type="hidden" name="vgc_cc_state"                 value="<?php echo esc_attr( $params['state'] ); ?>">
 				<input type="hidden" name="vgc_cc_code_challenge"        value="<?php echo esc_attr( $params['code_challenge'] ?? '' ); ?>">
 				<input type="hidden" name="vgc_cc_code_challenge_method" value="<?php echo esc_attr( $params['code_challenge_method'] ?? '' ); ?>">
+				<?php $required = Operators::required(); ?>
+				<div class="vgc-cc-field">
+					<label for="vgc_cc_operator"><?php echo $required ? esc_html__( 'Who is connecting?', 'mcp-abilities' ) : esc_html__( 'Who is connecting? (optional)', 'mcp-abilities' ); ?></label>
+					<input type="text" id="vgc_cc_operator" name="vgc_cc_operator" maxlength="<?php echo (int) Operators::MAX; ?>" autocomplete="email"
+						placeholder="<?php echo esc_attr__( 'maria@company.com', 'mcp-abilities' ); ?>" value="<?php echo esc_attr( $operator ); ?>"
+						aria-describedby="vgc_cc_operator_help"<?php echo $required ? ' required' : ''; ?><?php echo '' !== $error ? ' aria-invalid="true"' : ''; ?>>
+					<p id="vgc_cc_operator_help" class="vgc-cc-help"><?php esc_html_e( "Your name or email. It's shown with every change made through this connection, so your team can tell who asked the AI. It isn't checked.", 'mcp-abilities' ); ?></p>
+					<?php if ( '' !== $error ) : ?>
+						<p class="vgc-cc-error" role="alert"><?php echo esc_html( $error ); ?></p>
+					<?php endif; ?>
+				</div>
 				<div class="vgc-cc-actions">
 					<button type="submit" name="vgc_cc_decision" value="approve" class="vgc-cc-btn vgc-cc-btn--primary"><?php esc_html_e( 'Approve', 'mcp-abilities' ); ?></button>
-					<button type="submit" name="vgc_cc_decision" value="deny"    class="vgc-cc-btn vgc-cc-btn--secondary"><?php esc_html_e( 'Deny', 'mcp-abilities' ); ?></button>
+					<button type="submit" name="vgc_cc_decision" value="deny"    class="vgc-cc-btn vgc-cc-btn--secondary" formnovalidate><?php esc_html_e( 'Deny', 'mcp-abilities' ); ?></button>
 				</div>
 			</form>
 		</div>
@@ -960,6 +975,7 @@ final class Server {
 		$decision              = isset( $_POST['vgc_cc_decision'] )              ? sanitize_text_field( wp_unslash( $_POST['vgc_cc_decision'] ) )              : '';
 		$code_challenge        = isset( $_POST['vgc_cc_code_challenge'] )        ? sanitize_text_field( wp_unslash( $_POST['vgc_cc_code_challenge'] ) )        : '';
 		$code_challenge_method = isset( $_POST['vgc_cc_code_challenge_method'] ) ? sanitize_text_field( wp_unslash( $_POST['vgc_cc_code_challenge_method'] ) ) : '';
+		$operator              = isset( $_POST['vgc_cc_operator'] )              ? Operators::sanitize( wp_unslash( $_POST['vgc_cc_operator'] ) )              : '';
 
 		self::log( sprintf(
 			'consent POST: user_id=%d client_id=%s decision=%s nonce_present=%s redirect_uri=%s',
@@ -997,6 +1013,17 @@ final class Server {
 		if ( 'deny' === $decision ) {
 			wp_redirect( self::build_callback_url( $redirect_uri, array( 'error' => 'access_denied', 'state' => $state, 'iss' => self::as_issuer() ) ) ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect
 			exit;
+		}
+
+		// "Who is connecting?" — only kept on Approve (Deny returned above).
+		if ( '' === $operator && Operators::required() ) {
+			self::log( 'consent POST: Approve without the required "Who is connecting?" — page shown again, no code issued' );
+			self::render_authorize_page( __( 'Please say who is connecting (your name or email) before you approve.', 'mcp-abilities' ) );
+			return;
+		}
+		if ( '' !== $operator ) {
+			// An empty field leaves a name set earlier (e.g. by an administrator) as it is.
+			Operators::set( $client_id, get_current_user_id(), $operator, get_current_user_id() );
 		}
 
 		$code     = Client_Manager::generate_token( 32 );
@@ -1210,6 +1237,11 @@ h1{font-size:1.4em;text-align:center;margin-bottom:16px;color:#1d2327}
 p{color:#3c434a;margin-bottom:12px;line-height:1.5}
 .vgc-cc-user{background:#f6f7f7;border:1px solid #c3c4c7;border-radius:4px;padding:10px 14px;font-size:.9em}
 .vgc-cc-scope-intro{margin-top:16px;font-size:.9em;color:#646970}
+.vgc-cc-field{margin-top:18px}
+.vgc-cc-field label{display:block;font-weight:600;font-size:.9em;margin-bottom:6px}
+.vgc-cc-field input{width:100%;box-sizing:border-box;padding:8px 10px;font-size:1em;border:1px solid #8c8f94;border-radius:4px}
+.vgc-cc-field input:focus{border-color:#2271b1;outline:2px solid transparent;box-shadow:0 0 0 1px #2271b1}
+.vgc-cc-help{margin:6px 0 0;font-size:.85em;color:#646970}
 .vgc-cc-actions{display:flex;gap:12px;justify-content:center;margin-top:24px}
 .vgc-cc-btn{padding:10px 28px;border-radius:4px;border:none;cursor:pointer;font-size:.95em;font-weight:600}
 .vgc-cc-btn--primary{background:#2271b1;color:#fff}

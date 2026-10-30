@@ -98,7 +98,7 @@ $adapter_ok  = Connect::adapter_active();
                         <tr>
                             <th><?php esc_html_e( 'App', 'mcp-abilities' ); ?></th>
                             <th><?php esc_html_e( 'Registered', 'mcp-abilities' ); ?></th>
-                            <th><?php esc_html_e( 'Signed in as', 'mcp-abilities' ); ?></th>
+                            <th><?php esc_html_e( 'Signed in as · who is connecting', 'mcp-abilities' ); ?></th>
                             <th><?php esc_html_e( 'Status', 'mcp-abilities' ); ?></th>
                             <th></th>
                         </tr>
@@ -109,7 +109,23 @@ $adapter_ok  = Connect::adapter_active();
                             <td><strong><?php echo esc_html( $app['name'] ?: __( 'Unnamed app', 'mcp-abilities' ) ); ?></strong>
                                 <?php if ( $app['hosts'] ) : ?><br><span class="mcp-section-sub"><?php echo esc_html( implode( ', ', $app['hosts'] ) ); ?></span><?php endif; ?></td>
                             <td><?php echo $app['created_at'] ? esc_html( wp_date( $date_fmt, $app['created_at'] ) ) : '&mdash;'; ?></td>
-                            <td><?php echo $app['users'] ? esc_html( implode( ', ', $app['users'] ) ) : '&mdash;'; ?></td>
+                            <td>
+                                <?php if ( empty( $app['people'] ) ) : ?>&mdash;<?php endif; ?>
+                                <?php foreach ( (array) ( $app['people'] ?? [] ) as $person ) : ?>
+                                    <span class="mcp-oauth-user" data-user="<?php echo (int) $person['user_id']; ?>">
+                                        <?php echo esc_html( $person['login'] ); ?> &middot;
+                                        <span class="mcp-oauth-operator-name"<?php echo '' === $person['operator'] ? ' hidden' : ''; ?>><?php echo esc_html( $person['operator'] ); ?></span>
+                                        <span class="mcp-oauth-operator-none"<?php echo '' !== $person['operator'] ? ' hidden' : ''; ?>><?php esc_html_e( 'no name given', 'mcp-abilities' ); ?></span>
+                                        <button type="button" class="mcp-btn mcp-btn--link mcp-oauth-operator-edit" title="<?php esc_attr_e( 'Who is at the keyboard of this connection. Shown with every change made through it; not checked.', 'mcp-abilities' ); ?>"><?php esc_html_e( 'Edit name', 'mcp-abilities' ); ?></button>
+                                        <span class="mcp-oauth-operator-form" hidden>
+                                            <input type="text" class="regular-text" maxlength="<?php echo (int) \MCP_Abilities\OAuth\Operators::MAX; ?>" value="<?php echo esc_attr( $person['operator'] ); ?>"
+                                                placeholder="<?php esc_attr_e( 'maria@company.com', 'mcp-abilities' ); ?>" aria-label="<?php esc_attr_e( 'Who is connecting', 'mcp-abilities' ); ?>">
+                                            <button type="button" class="mcp-btn mcp-btn--primary mcp-oauth-operator-save"><?php esc_html_e( 'Save', 'mcp-abilities' ); ?></button>
+                                            <button type="button" class="mcp-btn mcp-btn--link mcp-oauth-operator-cancel"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
+                                        </span>
+                                    </span>
+                                <?php endforeach; ?>
+                            </td>
                             <td><?php
                                 echo $app['connected']
                                     ? esc_html( sprintf( /* translators: %s: date */ __( 'Connected (renews until %s)', 'mcp-abilities' ), wp_date( get_option( 'date_format' ), $app['refresh_until'] ) ) )

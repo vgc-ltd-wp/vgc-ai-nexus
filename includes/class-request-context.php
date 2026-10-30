@@ -188,7 +188,7 @@ final class Request_Context {
     /**
      * The acting user and app, plus the ability being run.
      *
-     * @return array{v:int,user_id:int,user_name:string,app:string,auth:string,client_id:string,app_pass_uuid:string,app_pass_name:string,client_name:string,client_version:string,session:string,transport:string,ability:string}
+     * @return array{v:int,user_id:int,user_name:string,app:string,auth:string,client_id:string,app_pass_uuid:string,app_pass_name:string,client_name:string,client_version:string,session:string,transport:string,ability:string,operator:string}
      */
     public static function actor(): array {
         $user_id = get_current_user_id();
@@ -216,6 +216,7 @@ final class Request_Context {
             'session'        => '' !== self::$session_id ? substr( self::$session_id, 0, 12 ) : '',
             'transport'      => self::$transport,
             'ability'        => '',
+            'operator'       => '',
         ];
         $oauth_name = '';
 
@@ -239,6 +240,11 @@ final class Request_Context {
             if ( '' !== $client_id && class_exists( OAuth\Client_Manager::class ) ) {
                 $client     = OAuth\Client_Manager::get( $client_id );
                 $oauth_name = is_array( $client ) ? (string) ( $client['name'] ?? '' ) : '';
+            }
+            // Who said they are connecting, on the consent page or as set by an
+            // administrator (OAuth\Operators). Not checked; it only labels.
+            if ( '' !== $client_id && class_exists( OAuth\Operators::class ) ) {
+                $actor['operator'] = OAuth\Operators::get( $client_id, $user_id );
             }
         } elseif ( defined( 'WP_CLI' ) && WP_CLI ) {
             $actor['auth'] = 'cli';
@@ -319,8 +325,17 @@ final class Request_Context {
         if ( '' === $app ) {
             $app = __( 'AI assistant', 'mcp-abilities' );
         }
-        /* translators: 1: user display name, 2: the AI app, e.g. "Claude". */
-        $label = sprintf( __( '%1$s — via MCP (%2$s)', 'mcp-abilities' ), $name, $app );
+        $operator = trim( (string) ( $actor['operator'] ?? '' ) );
+        if ( '' !== $operator && self::operator_is_user( $operator, $actor, $name ) ) {
+            $operator = '';
+        }
+        if ( '' !== $operator ) {
+            /* translators: 1: user display name, 2: who is connecting, as they typed it (e.g. an email), 3: the AI app, e.g. "Claude". */
+            $label = sprintf( __( '%1$s (%2$s) — via MCP (%3$s)', 'mcp-abilities' ), $name, $operator, $app );
+        } else {
+            /* translators: 1: user display name, 2: the AI app, e.g. "Claude". */
+            $label = sprintf( __( '%1$s — via MCP (%2$s)', 'mcp-abilities' ), $name, $app );
+        }
 
         /**
          * Filters the label that marks a change made by an AI through MCP.
@@ -329,6 +344,28 @@ final class Request_Context {
          * @param array  $actor The actor (see Request_Context::actor()).
          */
         return (string) apply_filters( 'mcp_abilities_actor_label', $label, $actor );
+    }
+
+    /**
+     * Whether a typed "who is connecting" just names the WordPress user again
+     * (display name, login or email, any letter case): then no brackets.
+     */
+    private static function operator_is_user( string $operator, array $actor, string $display ): bool {
+        $lower = static fn( string $s ): string => function_exists( 'mb_strtolower' ) ? mb_strtolower( trim( $s ) ) : strtolower( trim( $s ) );
+        $same  = [ $display, (string) ( $actor['user_name'] ?? '' ) ];
+        $user  = ! empty( $actor['user_id'] ) ? get_userdata( (int) $actor['user_id'] ) : null;
+        if ( $user ) {
+            $same[] = (string) $user->display_name;
+            $same[] = (string) $user->user_login;
+            $same[] = (string) $user->user_email;
+        }
+        $op = $lower( html_entity_decode( $operator, ENT_QUOTES, 'UTF-8' ) );
+        foreach ( $same as $candidate ) {
+            if ( '' !== trim( $candidate ) && $lower( $candidate ) === $op ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -353,6 +390,7 @@ final class Request_Context {
             'session'        => (string) ( $actor['session'] ?? '' ),
             'transport'      => (string) ( $actor['transport'] ?? '' ),
             'ability'        => (string) ( $actor['ability'] ?? '' ),
+            'operator'       => (string) ( $actor['operator'] ?? '' ),
             'time'           => gmdate( 'Y-m-d H:i:s' ),
             'log_id'         => 0,
         ];
@@ -365,6 +403,7 @@ final class Request_Context {
             'user_id'   => (int) ( $record['user_id'] ?? 0 ),
             'user_name' => (string) ( $record['user_name'] ?? '' ),
             'app'       => (string) ( $record['app'] ?? '' ),
+            'operator'  => (string) ( $record['operator'] ?? '' ),
             'auth'      => (string) ( $record['auth'] ?? '' ),
             'ability'   => (string) ( $record['ability'] ?? '' ),
             'action'    => (string) ( $record['action'] ?? '' ),
@@ -413,7 +452,7 @@ final class Request_Context {
     /**
      * Fields for an activity-log row.
      *
-     * @return array{user_id:int,auth_method:string,client_label:string,oauth_client_id:string,session_id:string,app_pass_name:string,app_pass_uuid:string,client_name:string,client_version:string}
+     * @return array{user_id:int,auth_method:string,client_label:string,oauth_client_id:string,session_id:string,app_pass_name:string,app_pass_uuid:string,client_name:string,client_version:string,operator:string}
      */
     public static function log_fields(): array {
         $a = self::actor();
@@ -427,6 +466,7 @@ final class Request_Context {
             'app_pass_uuid'   => $a['app_pass_uuid'],
             'client_name'     => $a['client_name'],
             'client_version'  => $a['client_version'],
+            'operator'        => $a['operator'],
         ];
     }
 

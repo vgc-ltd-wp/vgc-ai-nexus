@@ -23,11 +23,12 @@ defined( 'ABSPATH' ) || exit;
  *   - Caller IP
  *   - Status (success / error) + error message
  *   - Objects changed: JSON [ { type:"post", id, revision } ]    (v2)
+ *   - Who said they were connecting (OAuth consent, not checked) (v3)
  */
 class Logger {
 
     const TABLE_VERSION_OPTION = 'mcp_abilities_log_table_version';
-    const TABLE_VERSION        = 2;
+    const TABLE_VERSION        = 3;
     const LOG_RETENTION_DAYS   = 90;
 
     // ── Bootstrap ───────────────────────────────────────────────────────────
@@ -154,6 +155,7 @@ class Logger {
                 'app_pass_name'   => '' !== $ctx['app_pass_name'] ? substr( $ctx['app_pass_name'], 0, 200 ) : null,
                 'app_pass_uuid'   => '' !== $ctx['app_pass_uuid'] ? substr( $ctx['app_pass_uuid'], 0, 36 ) : null,
                 'session_id'      => '' !== $ctx['session_id'] ? substr( $ctx['session_id'], 0, 12 ) : null,
+                'operator'        => '' !== $ctx['operator'] ? mb_substr( $ctx['operator'], 0, 191 ) : null,
                 'client_name'     => $client['name']    !== '' ? substr( $client['name'],    0, 100 ) : null,
                 'client_version'  => $client['version'] !== '' ? substr( $client['version'], 0, 50  ) : null,
                 'ip'              => self::get_ip(),
@@ -161,7 +163,7 @@ class Logger {
                 'error_message'   => $error,
                 'objects'         => $objects_json,
             ],
-            [ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
+            [ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
         );
 
         return $ok ? (int) $wpdb->insert_id : 0;
@@ -371,6 +373,7 @@ class Logger {
      * column and turns a comment into a broken ALTER. One space between a
      * column's name and type, or dbDelta re-issues CHANGE COLUMN every run.
      * v2 columns: auth_method, client_label, oauth_client_id, session_id, objects.
+     * v3 column: operator.
      */
     public static function create_table(): void {
         global $wpdb;
@@ -388,6 +391,7 @@ oauth_client_id varchar(64) DEFAULT NULL,
 app_pass_name varchar(200) DEFAULT NULL,
 app_pass_uuid varchar(36) DEFAULT NULL,
 session_id varchar(12) DEFAULT NULL,
+operator varchar(191) DEFAULT NULL,
 client_name varchar(100) DEFAULT NULL,
 client_version varchar(50) DEFAULT NULL,
 ip varchar(45) DEFAULT NULL,

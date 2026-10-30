@@ -21,6 +21,7 @@ class Connect {
         add_action( 'wp_ajax_mcp_revoke_connection',     [ $this, 'ajax_revoke' ] );
         add_action( 'wp_ajax_mcp_oauth_policy',          [ $this, 'ajax_oauth_policy' ] );
         add_action( 'wp_ajax_mcp_oauth_revoke',          [ $this, 'ajax_oauth_revoke' ] );
+        add_action( 'wp_ajax_mcp_oauth_operator',        [ $this, 'ajax_oauth_operator' ] );
     }
 
     /** AJAX: who may register as a claude.ai-style OAuth app (restricted/open/closed). */
@@ -47,6 +48,31 @@ class Connect {
             wp_send_json_error( [ 'message' => __( 'That app is not registered.', 'mcp-abilities' ) ] );
         }
         wp_send_json_success( [ 'message' => __( 'Disconnected. Claude will need to connect again.', 'mcp-abilities' ) ] );
+    }
+
+    /**
+     * AJAX: add, change or clear "who is connecting" for one claude.ai
+     * connection (app + signed-in user). Labels later changes only; existing
+     * revisions, comments and orders keep the name they were made with.
+     */
+    public function ajax_oauth_operator(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $client_id = isset( $_POST['client_id'] ) ? sanitize_text_field( wp_unslash( $_POST['client_id'] ) ) : '';
+        $user_id   = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0;
+        $name      = isset( $_POST['name'] ) ? \MCP_Abilities\OAuth\Operators::sanitize( wp_unslash( $_POST['name'] ) ) : '';
+        if ( '' === $client_id || null === \MCP_Abilities\OAuth\Client_Manager::get( $client_id ) || ! $user_id || ! get_userdata( $user_id ) ) {
+            wp_send_json_error( [ 'message' => __( 'That connection does not exist.', 'mcp-abilities' ) ] );
+        }
+        \MCP_Abilities\OAuth\Operators::set( $client_id, $user_id, $name, get_current_user_id() );
+        wp_send_json_success( [
+            'name'    => $name,
+            'message' => '' !== $name
+                ? __( 'Saved. Changes made through this connection from now on show this name.', 'mcp-abilities' )
+                : __( 'Name removed.', 'mcp-abilities' ),
+        ] );
     }
 
     /** The bundled MCP server's REST URL. */

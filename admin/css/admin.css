@@ -817,6 +817,19 @@
     color: var(--mcp-primary);
     margin-top: 1px;
 }
+.mcp-user-operator {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+/* Connect page: who is at the keyboard of each claude.ai connection */
+.mcp-oauth-user { display: block; margin: 2px 0; overflow-wrap: anywhere; }
+.mcp-oauth-operator-name { font-weight: 600; }
+.mcp-oauth-operator-none { color: var(--mcp-muted); font-style: italic; }
+.mcp-oauth-operator-form { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.mcp-oauth-operator-form input { min-width: 180px; max-width: 100%; }
+.mcp-oauth-operator-form[hidden] { display: none !important; }
 .mcp-auth {
     display: inline-block;
     font-size: 11px;

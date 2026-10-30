@@ -329,7 +329,7 @@ MD;
             : 'off — reads and writes allowed (subject to per-tool permissions).' );
         $oauth  = \MCP_Abilities\OAuth\Bootstrap::mode();
         $out[]  = '- **Remote access (claude.ai web, mobile, scheduled tasks):** ' . ( 'core' === $oauth
-            ? 'OAuth sign-in served by AI Nexus — add ' . Admin\Connect::server_url() . ' as a custom connector in claude.ai.'
+            ? 'OAuth sign-in served by AI Nexus — add ' . Admin\Connect::server_url() . ' as a custom connector in claude.ai. The sign-in page asks, optionally, who is connecting; that name is shown with every change made through the connection (it is not checked).'
             : ( 'connector' === $oauth ? 'OAuth sign-in served by the VGC MCP Claude Connector plugin.' : 'OAuth sign-in is switched off.' ) );
 
         // The money data: real post type slugs with their taxonomies.

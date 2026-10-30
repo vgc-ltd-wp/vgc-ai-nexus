@@ -253,8 +253,12 @@ function mcp_time_ago( string $utc_datetime ): string {
                                 <a href="<?php echo esc_url( get_edit_user_link( $user->ID ) ); ?>" class="mcp-user-link">
                                     <?php echo esc_html( $user->display_name ); ?>
                                 </a>
+                                <?php $operator = isset( $row->operator ) ? (string) $row->operator : ''; ?>
+                                <?php if ( '' !== $operator ) : ?>
+                                    <span class="mcp-user-operator" title="<?php esc_attr_e( 'Who said they were connecting (not checked)', 'mcp-abilities' ); ?>"><?php echo esc_html( $operator ); ?></span>
+                                <?php endif; ?>
                                 <?php if ( isset( $row->auth_method ) && '' !== (string) $row->auth_method ) : ?>
-                                    <span class="mcp-user-label" title="<?php echo esc_attr( \MCP_Abilities\Request_Context::label( [ 'user_id' => (int) $user->ID, 'user_name' => $user->display_name, 'app' => $app, 'auth' => $auth ] ) ); ?>"><?php
+                                    <span class="mcp-user-label" title="<?php echo esc_attr( \MCP_Abilities\Request_Context::label( [ 'user_id' => (int) $user->ID, 'user_name' => $user->display_name, 'app' => $app, 'auth' => $auth, 'operator' => $operator ] ) ); ?>"><?php
                                         /* translators: %s: the AI app, e.g. "Claude" */
                                         echo esc_html( sprintf( __( 'via MCP (%s)', 'mcp-abilities' ), '' !== $app ? $app : __( 'AI assistant', 'mcp-abilities' ) ) );
                                     ?></span>
