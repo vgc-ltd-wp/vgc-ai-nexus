@@ -59,12 +59,15 @@ class Connections_Page {
         $filter_date_from = isset( $_GET['filter_date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['filter_date_from'] ) ) : '';
         $filter_date_to   = isset( $_GET['filter_date_to'] )   ? sanitize_text_field( wp_unslash( $_GET['filter_date_to'] ) )   : '';
         $paged            = isset( $_GET['paged'] )            ? max( 1, absint( $_GET['paged'] ) )                             : 1;
+        // One entry, linked from a revision ("activity log").
+        $filter_id        = isset( $_GET['log_id'] )           ? absint( $_GET['log_id'] )                                      : 0;
 
         // ── Fetch data ────────────────────────────────────────────────────────
         $summary = Logger::get_summary();
         $result  = Logger::get_log( [
             'per_page'  => 50,
             'page'      => $paged,
+            'id'        => $filter_id,
             'tool'      => $filter_tool,
             'user_id'   => $filter_user,
             'status'    => $filter_status,

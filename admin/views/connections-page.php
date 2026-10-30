@@ -11,10 +11,58 @@
  *   $filter_status    string
  *   $filter_date_from string
  *   $filter_date_to   string
+ *   $filter_id        int    — one entry (linked from a revision), 0 = all
  *   $paged            int
  */
 
 defined( 'ABSPATH' ) || exit;
+
+/**
+ * Links to what a log row changed: the post, and the revision it got.
+ *
+ * @param object $row
+ */
+if ( ! function_exists( 'mcp_log_objects_html' ) ) :
+function mcp_log_objects_html( $row ): string {
+    $objects = \MCP_Abilities\Logger::row_objects( $row );
+    if ( ! $objects ) {
+        return '<span class="mcp-muted">—</span>';
+    }
+    $items = [];
+    foreach ( array_slice( $objects, 0, 5 ) as $object ) {
+        $id   = (int) ( $object['id'] ?? 0 );
+        $type = (string) ( $object['type'] ?? '' );
+        if ( 'post' !== $type || ! $id ) {
+            $items[] = '<span class="mcp-log-object">' . esc_html( $type . ' #' . $id ) . '</span>';
+            continue;
+        }
+        $post = get_post( $id );
+        if ( ! $post || ! empty( $object['deleted'] ) ) {
+            /* translators: %d: post ID */
+            $items[] = '<span class="mcp-log-object mcp-muted">' . esc_html( sprintf( __( '#%d (deleted)', 'mcp-abilities' ), $id ) ) . '</span>';
+            continue;
+        }
+        $title = get_the_title( $post );
+        $title = '' !== trim( $title ) ? wp_html_excerpt( $title, 40, '…' ) : sprintf( '#%d', $id );
+        $edit  = get_edit_post_link( $post, 'raw' );
+        $html  = $edit && current_user_can( 'edit_post', $id )
+            ? '<a href="' . esc_url( $edit ) . '">' . esc_html( $title ) . '</a>'
+            : esc_html( $title );
+        $html .= ' <span class="mcp-log-object__type">' . esc_html( $post->post_type ) . '</span>';
+        $rev   = (int) ( $object['revision'] ?? 0 );
+        if ( $rev && wp_get_post_revision( $rev ) ) {
+            /* translators: %d: revision ID */
+            $html .= ' <a class="mcp-log-object__rev" href="' . esc_url( admin_url( 'revision.php?revision=' . $rev ) ) . '">' . esc_html( sprintf( __( 'revision %d', 'mcp-abilities' ), $rev ) ) . '</a>';
+        }
+        $items[] = '<span class="mcp-log-object">' . $html . '</span>';
+    }
+    if ( count( $objects ) > 5 ) {
+        /* translators: %d: number of further objects */
+        $items[] = '<span class="mcp-muted">' . esc_html( sprintf( __( '+%d more', 'mcp-abilities' ), count( $objects ) - 5 ) ) . '</span>';
+    }
+    return implode( '', $items );
+}
+endif;
 
 // Build base URL for pagination / filter links.
 $base_url = add_query_arg( [ 'page' => \MCP_Abilities\Admin\Connections_Page::PAGE_SLUG ], admin_url( 'admin.php' ) );
@@ -142,7 +190,7 @@ function mcp_time_ago( string $utc_datetime ): string {
             <?php esc_html_e( 'Filter', 'mcp-abilities' ); ?>
         </button>
 
-        <?php if ( $filter_tool || $filter_user || $filter_status || $filter_date_from || $filter_date_to ) : ?>
+        <?php if ( $filter_tool || $filter_user || $filter_status || $filter_date_from || $filter_date_to || $filter_id ) : ?>
             <a href="<?php echo esc_url( $base_url ); ?>" class="mcp-btn mcp-btn--ghost">
                 <?php esc_html_e( 'Clear', 'mcp-abilities' ); ?>
             </a>
@@ -156,13 +204,34 @@ function mcp_time_ago( string $utc_datetime ): string {
         </span>
     </form>
 
+    <?php if ( $filter_id ) : ?>
+        <p class="mcp-log-single">
+            <?php
+            /* translators: %d: activity log entry ID */
+            printf( esc_html__( 'Showing activity log entry #%d.', 'mcp-abilities' ), (int) $filter_id );
+            ?>
+            <a href="<?php echo esc_url( $base_url ); ?>"><?php esc_html_e( 'Show all entries', 'mcp-abilities' ); ?></a>
+        </p>
+    <?php endif; ?>
+
     <!-- ── Activity log table ─────────────────────────────────────────────── -->
     <div class="mcp-log-wrap">
         <?php if ( empty( $result['rows'] ) ) : ?>
             <div class="mcp-empty-state">
                 <span class="mcp-empty-state__icon dashicons dashicons-list-view"></span>
-                <h2><?php esc_html_e( 'No activity yet', 'mcp-abilities' ); ?></h2>
-                <p><?php esc_html_e( 'Tool calls from AI agents will appear here automatically.', 'mcp-abilities' ); ?></p>
+                <?php if ( $filter_id ) : ?>
+                    <h2><?php esc_html_e( 'This entry is no longer in the log', 'mcp-abilities' ); ?></h2>
+                    <p><?php
+                        printf(
+                            /* translators: %d: days */
+                            esc_html__( 'Log entries are pruned after %d days. The revision still records who made the change and through which app.', 'mcp-abilities' ),
+                            (int) \MCP_Abilities\Logger::LOG_RETENTION_DAYS
+                        );
+                    ?></p>
+                <?php else : ?>
+                    <h2><?php esc_html_e( 'No activity yet', 'mcp-abilities' ); ?></h2>
+                    <p><?php esc_html_e( 'Tool calls from AI agents will appear here automatically.', 'mcp-abilities' ); ?></p>
+                <?php endif; ?>
             </div>
         <?php else : ?>
             <table class="mcp-log-table">
@@ -171,8 +240,9 @@ function mcp_time_ago( string $utc_datetime ): string {
                         <th class="mcp-col-when"><?php esc_html_e( 'When', 'mcp-abilities' ); ?></th>
                         <th class="mcp-col-tool"><?php esc_html_e( 'Tool', 'mcp-abilities' ); ?></th>
                         <th class="mcp-col-user"><?php esc_html_e( 'User', 'mcp-abilities' ); ?></th>
-                        <th class="mcp-col-pass"><?php esc_html_e( 'App Password', 'mcp-abilities' ); ?></th>
+                        <th class="mcp-col-pass"><?php esc_html_e( 'Sign-in', 'mcp-abilities' ); ?></th>
                         <th class="mcp-col-client"><?php esc_html_e( 'Client', 'mcp-abilities' ); ?></th>
+                        <th class="mcp-col-objects"><?php esc_html_e( 'Changed', 'mcp-abilities' ); ?></th>
                         <th class="mcp-col-ip"><?php esc_html_e( 'IP', 'mcp-abilities' ); ?></th>
                         <th class="mcp-col-status"><?php esc_html_e( 'Status', 'mcp-abilities' ); ?></th>
                     </tr>
@@ -181,12 +251,18 @@ function mcp_time_ago( string $utc_datetime ): string {
                 <?php foreach ( $result['rows'] as $row ) :
                     $user     = $row->user_id ? get_userdata( (int) $row->user_id ) : null;
                     $is_error = 'error' === $row->status;
+                    $auth     = isset( $row->auth_method ) ? (string) $row->auth_method : '';
+                    if ( '' === $auth && ! empty( $row->app_pass_name ) ) {
+                        $auth = 'app_password'; // rows logged before 2.29.0
+                    }
+                    $app      = isset( $row->client_label ) ? (string) $row->client_label : '';
                 ?>
-                    <tr class="mcp-log-row <?php echo $is_error ? 'mcp-log-row--error' : ''; ?>">
+                    <tr id="mcp-log-<?php echo (int) $row->id; ?>" class="mcp-log-row <?php echo $is_error ? 'mcp-log-row--error' : ''; ?>">
 
                         <!-- When -->
                         <td class="mcp-col-when" title="<?php echo esc_attr( $row->logged_at . ' UTC' ); ?>">
                             <?php echo esc_html( mcp_time_ago( $row->logged_at ) ); ?>
+                            <span class="mcp-log-id">#<?php echo (int) $row->id; ?></span>
                         </td>
 
                         <!-- Tool -->
@@ -194,12 +270,18 @@ function mcp_time_ago( string $utc_datetime ): string {
                             <code class="mcp-tool-key"><?php echo esc_html( $row->tool ); ?></code>
                         </td>
 
-                        <!-- User -->
+                        <!-- User: the label the revisions show -->
                         <td class="mcp-col-user">
                             <?php if ( $user ) : ?>
                                 <a href="<?php echo esc_url( get_edit_user_link( $user->ID ) ); ?>" class="mcp-user-link">
                                     <?php echo esc_html( $user->display_name ); ?>
                                 </a>
+                                <?php if ( isset( $row->auth_method ) && '' !== (string) $row->auth_method ) : ?>
+                                    <span class="mcp-user-label" title="<?php echo esc_attr( \MCP_Abilities\Request_Context::label( [ 'user_id' => (int) $user->ID, 'user_name' => $user->display_name, 'app' => $app, 'auth' => $auth ] ) ); ?>"><?php
+                                        /* translators: %s: the AI app, e.g. "Claude" */
+                                        echo esc_html( sprintf( __( 'via MCP (%s)', 'mcp-abilities' ), '' !== $app ? $app : __( 'AI assistant', 'mcp-abilities' ) ) );
+                                    ?></span>
+                                <?php endif; ?>
                                 <span class="mcp-user-role"><?php
                                     $roles = (array) $user->roles;
                                     echo esc_html( ! empty( $roles ) ? ucfirst( $roles[0] ) : '' );
@@ -209,13 +291,22 @@ function mcp_time_ago( string $utc_datetime ): string {
                             <?php endif; ?>
                         </td>
 
-                        <!-- App Password -->
+                        <!-- Sign-in method: OAuth app / Application Password / browser -->
                         <td class="mcp-col-pass">
-                            <?php if ( $row->app_pass_name ) : ?>
-                                <span class="mcp-pass-name"><?php echo esc_html( $row->app_pass_name ); ?></span>
-                                <?php if ( $user && $row->app_pass_uuid ) : ?>
-                                    <a href="<?php echo esc_url( get_edit_user_link( $user->ID ) . '#application-passwords-section' ); ?>"
-                                       class="mcp-pass-link" title="<?php esc_attr_e( 'Manage application passwords', 'mcp-abilities' ); ?>">
+                            <?php if ( '' !== $auth ) : ?>
+                                <span class="mcp-auth mcp-auth--<?php echo esc_attr( $auth ); ?>"><?php echo esc_html( \MCP_Abilities\Request_Context::auth_label( $auth ) ?: $auth ); ?></span>
+                                <?php if ( 'app_password' === $auth && $row->app_pass_name ) : ?>
+                                    <span class="mcp-pass-name"><?php echo esc_html( $row->app_pass_name ); ?></span>
+                                    <?php if ( $user && $row->app_pass_uuid ) : ?>
+                                        <a href="<?php echo esc_url( get_edit_user_link( $user->ID ) . '#application-passwords-section' ); ?>"
+                                           class="mcp-pass-link" title="<?php esc_attr_e( 'Manage application passwords', 'mcp-abilities' ); ?>">
+                                            <span class="dashicons dashicons-external"></span>
+                                        </a>
+                                    <?php endif; ?>
+                                <?php elseif ( 'oauth' === $auth ) : ?>
+                                    <span class="mcp-pass-name" title="<?php echo esc_attr( ! empty( $row->oauth_client_id ) ? 'client_id ' . $row->oauth_client_id : '' ); ?>"><?php echo esc_html( '' !== $app ? $app : __( 'Unknown app', 'mcp-abilities' ) ); ?></span>
+                                    <a href="<?php echo esc_url( admin_url( 'admin.php?page=mcp-abilities-connect' ) ); ?>"
+                                       class="mcp-pass-link" title="<?php esc_attr_e( 'Connected apps', 'mcp-abilities' ); ?>">
                                         <span class="dashicons dashicons-external"></span>
                                     </a>
                                 <?php endif; ?>
@@ -234,6 +325,14 @@ function mcp_time_ago( string $utc_datetime ): string {
                             <?php else : ?>
                                 <span class="mcp-muted">—</span>
                             <?php endif; ?>
+                            <?php if ( ! empty( $row->session_id ) ) : ?>
+                                <span class="mcp-client-session" title="<?php esc_attr_e( 'MCP session (first 12 characters)', 'mcp-abilities' ); ?>"><?php echo esc_html( $row->session_id ); ?></span>
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Changed: posts and their revisions -->
+                        <td class="mcp-col-objects">
+                            <?php echo mcp_log_objects_html( $row ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped while built ?>
                         </td>
 
                         <!-- IP -->

@@ -40,6 +40,10 @@ final class Plugin {
         // Attribute + tag WordPress revisions created by ability updates.
         Revision_Support::init();
 
+        // "Name — via MCP (App)" in the revision history, the activity log and
+        // "last edited by", for every change an AI makes through MCP.
+        Revision_Attribution::init();
+
         if ( is_admin() ) {
             $admin = new Admin\Settings_Page( $this->registry );
             $admin->init();
@@ -57,6 +61,7 @@ final class Plugin {
     private function load_dependencies(): void {
         $files = [
             'class-installer.php',
+            'class-request-context.php',
             'class-logger.php',
             'class-registry.php',
             'class-ability-group.php',
@@ -65,6 +70,7 @@ final class Plugin {
             'class-wpml-support.php',
             'class-query-support.php',
             'class-revision-support.php',
+            'class-revision-attribution.php',
             'class-custom-code.php',
             'admin/class-settings-page.php',
             'admin/class-connections-page.php',
@@ -76,7 +82,11 @@ final class Plugin {
         // Register frontend CSS/JS output hooks as early as possible.
         Custom_Code::init();
 
-        // Start the activity logger (hooks app-password capture + cron pruning).
+        // Who is acting and through which app, and one frame per ability call
+        // (MCP detection, app-password / OAuth capture, the call's log row).
+        Request_Context::init();
+
+        // Start the activity logger (table upgrade + cron pruning).
         Logger::init();
     }
 
@@ -298,9 +308,22 @@ final class Plugin {
     }
 
     /**
-     * Execute an ability and log the call to the activity log.
+     * Execute an ability inside a call frame. The activity-log row is written
+     * when the outermost frame of the call closes (Request_Context), so a call
+     * is logged once whichever path reached it.
      */
     private function run_ability( Ability $ability, Ability_Group $group, array $params ): array {
+        $token  = Request_Context::begin_call( $ability->get_key(), Request_Context::RANK_ABILITY, $ability->is_write() );
+        $result = null;
+        try {
+            $result = $this->run_ability_inner( $ability, $group, $params );
+            return $result;
+        } finally {
+            Request_Context::end_call( $token, $result ?? new \WP_Error( 'mcp_abilities_exception', 'The ability stopped with an exception.' ) );
+        }
+    }
+
+    private function run_ability_inner( Ability $ability, Ability_Group $group, array $params ): array {
         if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
             return $this->disabled_tool_response( $ability );
         }
@@ -310,9 +333,7 @@ final class Plugin {
         $result = $ability->execute( $params );
         // Flag parameters the caller sent that this ability doesn't support, so a
         // dropped filter can't masquerade as a successful, correctly-filtered call.
-        $result = $ability->annotate_ignored_params( $result, $params );
-        Logger::log( $ability->get_key(), $result );
-        return $result;
+        return $ability->annotate_ignored_params( $result, $params );
     }
 
     /**

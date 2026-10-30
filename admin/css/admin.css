@@ -692,7 +692,10 @@
     border: 1px solid var(--mcp-border);
     border-radius: var(--mcp-radius);
     box-shadow: var(--mcp-shadow);
-    overflow: hidden;
+    /* Scroll, never clip, when the columns are wider than the screen
+       (phones get the stacked layout below instead). */
+    overflow-x: auto;
+    overflow-y: hidden;
     margin-bottom: 16px;
 }
 
@@ -799,6 +802,50 @@
 
 .mcp-muted { color: var(--mcp-muted); }
 .mcp-ip { font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+
+/* MCP attribution (2.29.0): label, sign-in method, what changed */
+.mcp-col-objects { min-width: 180px; }
+.mcp-log-id {
+    display: block;
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--mcp-muted);
+}
+.mcp-user-label {
+    display: block;
+    font-size: 12px;
+    color: var(--mcp-primary);
+    margin-top: 1px;
+}
+.mcp-auth {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--mcp-bg);
+    border: 1px solid var(--mcp-border);
+    color: var(--mcp-muted);
+    margin: 0 4px 2px 0;
+}
+.mcp-auth--oauth        { background: rgba(108,99,255,.08); color: #4338ca; border-color: rgba(108,99,255,.25); }
+.mcp-auth--app_password { background: rgba(16,185,129,.08); color: #065f46; border-color: rgba(16,185,129,.25); }
+.mcp-client-session {
+    display: block;
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--mcp-muted);
+    margin-top: 2px;
+}
+.mcp-log-object { display: block; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mcp-log-object__type {
+    font-size: 11px;
+    color: var(--mcp-muted);
+    font-family: "SF Mono", Consolas, monospace;
+}
+.mcp-log-object__rev { font-size: 11px; white-space: nowrap; }
+.mcp-log-single { margin: 0 0 12px; font-size: 13px; }
+.mcp-log-row:target td { background: rgba(108,99,255,.08); }
 
 /* ── Connections: Pagination ─────────────────────────────────────────────── */
 
@@ -1224,6 +1271,36 @@
     .mcp-ability-row td.mcp-tool-desc { grid-column: 1 / -1; max-width: none; margin-top: 6px; }
     .mcp-ability-row td:nth-child(3) { grid-column: 1 / -1; margin-top: 6px; }
     .mcp-tool-key { max-width: 100%; overflow-wrap: anywhere; }
+
+    /* Activity log: one stacked block per entry, no sideways scroll. */
+    .mcp-log-table,
+    .mcp-log-table tbody { display: block; }
+    .mcp-log-table thead { display: none; }
+    .mcp-log-table .mcp-log-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 12px;
+        row-gap: 4px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--mcp-border);
+    }
+    .mcp-log-table .mcp-log-row:last-child { border-bottom: none; }
+    .mcp-log-table .mcp-log-row td {
+        display: block;
+        width: auto;
+        padding: 0;
+        border-bottom: none;
+        background: none;
+        min-width: 0;
+    }
+    .mcp-log-row td.mcp-col-tool   { grid-column: 1; grid-row: 1; }
+    .mcp-log-row td.mcp-col-status { grid-column: 2; grid-row: 1; }
+    .mcp-log-row td.mcp-col-when   { grid-column: 2; grid-row: 2; text-align: right; }
+    .mcp-log-row td.mcp-col-user   { grid-column: 1; grid-row: 2; }
+    .mcp-log-row td.mcp-col-pass,
+    .mcp-log-row td.mcp-col-client,
+    .mcp-log-row td.mcp-col-objects,
+    .mcp-log-row td.mcp-col-ip     { grid-column: 1 / -1; }
 }
 
 /* ── VGC icons (Icons::svg / Icons::logo) ───────────────────────────────── */

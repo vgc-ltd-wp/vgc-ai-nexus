@@ -227,6 +227,9 @@ updates it itself on every save.
 
 Writes are capability-checked against the connected WordPress user, and each
 group can be disabled per site in WP Admin → AI Nexus → Abilities.
+
+Your changes are labelled as AI changes: the revision history shows them as
+"User Name — via MCP (Your App)", and the AI Nexus activity log records each call.
 MD;
     }
 

@@ -4,33 +4,37 @@ namespace MCP_Abilities;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Activity logger — records every ability execution to the mcp_ability_log table.
+ * Activity logger — one row per ability call, in the mcp_ability_log table.
+ *
+ * Request_Context writes the row when a call ends, so every call is logged
+ * once, whichever path ran it (core tools, extension tools, the adapter's
+ * execute-ability tool, the Abilities REST route).
  *
  * Data captured per call:
  *   - Timestamp (UTC)
- *   - Tool (ability key)
- *   - WP user ID (from app-password auth or current_user)
- *   - App-password name + UUID (from wp_application_password_did_authenticate)
- *   - Client name/version (parsed from User-Agent)
+ *   - Tool (the most specific ability name: "update_post", not the dispatcher)
+ *   - WP user ID
+ *   - Sign-in method: oauth | app_password | cookie | cli        (v2)
+ *   - The app as the revision label shows it ("Claude")          (v2)
+ *   - OAuth client_id (a public identifier, never a token)       (v2)
+ *   - App-password name + UUID
+ *   - MCP session id, first 12 characters                        (v2)
+ *   - Client name/version (the session's clientInfo, else the User-Agent)
  *   - Caller IP
  *   - Status (success / error) + error message
+ *   - Objects changed: JSON [ { type:"post", id, revision } ]    (v2)
  */
 class Logger {
 
     const TABLE_VERSION_OPTION = 'mcp_abilities_log_table_version';
-    const TABLE_VERSION        = 1;
+    const TABLE_VERSION        = 2;
     const LOG_RETENTION_DAYS   = 90;
-
-    // Stored per-request by the app-password hook.
-    private static ?int    $req_user_id     = null;
-    private static ?string $req_pass_name   = null;
-    private static ?string $req_pass_uuid   = null;
 
     // ── Bootstrap ───────────────────────────────────────────────────────────
 
     public static function init(): void {
-        // Capture app-password data as early in the request lifecycle as possible.
-        add_action( 'wp_application_password_did_authenticate', [ __CLASS__, 'capture_app_pass' ], 10, 2 );
+        // A site updated in place never runs the activation hook: upgrade here.
+        self::maybe_upgrade();
 
         // Daily pruning via WP Cron.
         if ( ! wp_next_scheduled( 'mcp_abilities_prune_log' ) ) {
@@ -39,18 +43,24 @@ class Logger {
         add_action( 'mcp_abilities_prune_log', [ __CLASS__, 'prune_old_entries' ] );
     }
 
+    /** Bring the table to TABLE_VERSION when the stored version is lower. */
+    public static function maybe_upgrade(): void {
+        if ( (int) get_option( self::TABLE_VERSION_OPTION, 0 ) < self::TABLE_VERSION ) {
+            self::create_table();
+        }
+    }
+
     // ── Data capture ────────────────────────────────────────────────────────
 
     /**
-     * Fired by WP after a successful application-password authentication.
+     * Kept for callers of the old API: Request_Context now captures the
+     * Application Password on wp_application_password_did_authenticate.
      *
-     * @param \WP_User $user Authenticated user.
-     * @param array    $item App-password item (name, uuid, last_used, last_ip …).
+     * @param \WP_User $user
+     * @param array    $item
      */
     public static function capture_app_pass( \WP_User $user, array $item ): void {
-        self::$req_user_id   = $user->ID;
-        self::$req_pass_name = $item['name'] ?? null;
-        self::$req_pass_uuid = $item['uuid'] ?? null;
+        Request_Context::capture_app_pass( $user, $item );
     }
 
     /**
@@ -110,35 +120,69 @@ class Logger {
     /**
      * Write one log row after an ability call completes.
      *
-     * @param string $tool   Ability key (e.g. 'update_post').
-     * @param array  $result The array returned by the ability's execute() method.
+     * @param string     $tool    Ability key (e.g. 'update_post').
+     * @param mixed      $result  What the call returned: an array (an error is
+     *                            {success:false, error}), or a WP_Error.
+     * @param array|null $objects What the call changed: [ { type, id, revision? }, … ].
+     * @return int The new row's id (0 when the insert failed).
      */
-    public static function log( string $tool, array $result ): void {
+    public static function log( string $tool, $result, ?array $objects = null ): int {
         global $wpdb;
 
-        $is_error = isset( $result['success'] ) && false === $result['success'];
-        $status   = $is_error ? 'error' : 'success';
-        $error    = $is_error ? substr( (string) ( $result['error'] ?? '' ), 0, 500 ) : null;
+        [ $status, $error ] = self::status_of( $result );
 
-        $user_id  = self::$req_user_id ?? get_current_user_id() ?: null;
-        $client   = self::detect_client();
+        $ctx    = Request_Context::log_fields();
+        $client = '' !== $ctx['client_name']
+            ? [ 'name' => $ctx['client_name'], 'version' => $ctx['client_version'] ]
+            : self::detect_client();
 
-        $wpdb->insert(
+        $objects_json = null;
+        if ( $objects ) {
+            $encoded      = wp_json_encode( array_values( $objects ), JSON_UNESCAPED_SLASHES );
+            $objects_json = false === $encoded ? null : $encoded;
+        }
+
+        $ok = $wpdb->insert(
             $wpdb->prefix . 'mcp_ability_log',
             [
-                'logged_at'      => current_time( 'mysql', true ),   // UTC
-                'tool'           => substr( $tool, 0, 100 ),
-                'user_id'        => $user_id,
-                'app_pass_name'  => self::$req_pass_name ? substr( self::$req_pass_name, 0, 200 ) : null,
-                'app_pass_uuid'  => self::$req_pass_uuid,
-                'client_name'    => $client['name']    !== '' ? substr( $client['name'],    0, 100 ) : null,
-                'client_version' => $client['version'] !== '' ? substr( $client['version'], 0, 50  ) : null,
-                'ip'             => self::get_ip(),
-                'status'         => $status,
-                'error_message'  => $error,
+                'logged_at'       => current_time( 'mysql', true ),   // UTC
+                'tool'            => substr( $tool, 0, 100 ),
+                'user_id'         => $ctx['user_id'] ?: null,
+                'auth_method'     => '' !== $ctx['auth_method'] ? substr( $ctx['auth_method'], 0, 20 ) : null,
+                'client_label'    => '' !== $ctx['client_label'] ? substr( $ctx['client_label'], 0, 200 ) : null,
+                'oauth_client_id' => '' !== $ctx['oauth_client_id'] ? substr( $ctx['oauth_client_id'], 0, 64 ) : null,
+                'app_pass_name'   => '' !== $ctx['app_pass_name'] ? substr( $ctx['app_pass_name'], 0, 200 ) : null,
+                'app_pass_uuid'   => '' !== $ctx['app_pass_uuid'] ? substr( $ctx['app_pass_uuid'], 0, 36 ) : null,
+                'session_id'      => '' !== $ctx['session_id'] ? substr( $ctx['session_id'], 0, 12 ) : null,
+                'client_name'     => $client['name']    !== '' ? substr( $client['name'],    0, 100 ) : null,
+                'client_version'  => $client['version'] !== '' ? substr( $client['version'], 0, 50  ) : null,
+                'ip'              => self::get_ip(),
+                'status'          => $status,
+                'error_message'   => $error,
+                'objects'         => $objects_json,
             ],
-            [ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
+            [ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
         );
+
+        return $ok ? (int) $wpdb->insert_id : 0;
+    }
+
+    /**
+     * @param mixed $result
+     * @return array{0:string,1:?string} [ status, error message ]
+     */
+    private static function status_of( $result ): array {
+        if ( is_wp_error( $result ) ) {
+            return [ 'error', substr( $result->get_error_message(), 0, 500 ) ];
+        }
+        if ( is_array( $result ) && array_key_exists( 'success', $result ) && false === $result['success'] ) {
+            $error = $result['error'] ?? '';
+            if ( is_array( $error ) ) {
+                $error = isset( $error['message'] ) && is_string( $error['message'] ) ? $error['message'] : (string) wp_json_encode( $error );
+            }
+            return [ 'error', substr( (string) $error, 0, 500 ) ];
+        }
+        return [ 'success', null ];
     }
 
     // ── Read ─────────────────────────────────────────────────────────────────
@@ -149,6 +193,7 @@ class Logger {
      * @param array $args {
      *   @type int    $per_page  Rows per page. Default 50.
      *   @type int    $page      1-based page number. Default 1.
+     *   @type int    $id        One row by id (from a revision's link).
      *   @type string $tool      Filter by exact tool name.
      *   @type int    $user_id   Filter by WP user ID.
      *   @type string $status    'success' | 'error'
@@ -164,6 +209,7 @@ class Logger {
         $args = wp_parse_args( $args, [
             'per_page'  => 50,
             'page'      => 1,
+            'id'        => 0,
             'tool'      => '',
             'user_id'   => 0,
             'status'    => '',
@@ -174,6 +220,10 @@ class Logger {
         $conditions    = [ '1=1' ];
         $filter_values = [];
 
+        if ( $args['id'] ) {
+            $conditions[]    = 'id = %d';
+            $filter_values[] = (int) $args['id'];
+        }
         if ( $args['tool'] ) {
             $conditions[]    = 'tool = %s';
             $filter_values[] = $args['tool'];
@@ -200,7 +250,7 @@ class Logger {
         $offset = max( 0, ( (int) $args['page'] - 1 ) ) * $limit;
 
         // Main query with pagination.
-        $main_sql = "SELECT * FROM {$table} WHERE {$where} ORDER BY logged_at DESC LIMIT %d OFFSET %d";
+        $main_sql = "SELECT * FROM {$table} WHERE {$where} ORDER BY logged_at DESC, id DESC LIMIT %d OFFSET %d";
         $all_values = array_merge( $filter_values, [ $limit, $offset ] );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -223,6 +273,21 @@ class Logger {
             'page'     => (int) $args['page'],
             'pages'    => (int) ceil( $total / $limit ) ?: 1,
         ];
+    }
+
+    /**
+     * The objects a row lists, decoded.
+     *
+     * @param object $row A row from get_log().
+     * @return array<int, array{type:string,id:int,revision?:int|null,deleted?:bool}>
+     */
+    public static function row_objects( $row ): array {
+        $raw = is_object( $row ) && isset( $row->objects ) ? (string) $row->objects : '';
+        if ( '' === $raw ) {
+            return [];
+        }
+        $data = json_decode( $raw, true );
+        return is_array( $data ) ? array_values( array_filter( $data, 'is_array' ) ) : [];
     }
 
     /**
@@ -286,6 +351,7 @@ class Logger {
 
     /**
      * Remove log entries older than LOG_RETENTION_DAYS. Called by WP Cron.
+     * Revisions keep their own copy of who made them (_mcp_abilities_actor).
      */
     public static function prune_old_entries(): void {
         global $wpdb;
@@ -298,7 +364,13 @@ class Logger {
 
     /**
      * Create (or update) the log table using dbDelta.
-     * Safe to call on every activation — dbDelta is idempotent.
+     * Safe to call on every activation — dbDelta is idempotent, and adds the
+     * v2 columns to a v1 table without touching its rows.
+     *
+     * No SQL comments inside the CREATE TABLE: dbDelta reads every line as a
+     * column and turns a comment into a broken ALTER. One space between a
+     * column's name and type, or dbDelta re-issues CHANGE COLUMN every run.
+     * v2 columns: auth_method, client_label, oauth_client_id, session_id, objects.
      */
     public static function create_table(): void {
         global $wpdb;
@@ -306,22 +378,27 @@ class Logger {
         $charset_collate = $wpdb->get_charset_collate();
 
         $sql = "CREATE TABLE {$table} (
-            id             bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-            logged_at      datetime             NOT NULL,
-            tool           varchar(100)         NOT NULL DEFAULT '',
-            user_id        bigint(20) UNSIGNED  DEFAULT NULL,
-            app_pass_name  varchar(200)         DEFAULT NULL,
-            app_pass_uuid  varchar(36)          DEFAULT NULL,
-            client_name    varchar(100)         DEFAULT NULL,
-            client_version varchar(50)          DEFAULT NULL,
-            ip             varchar(45)          DEFAULT NULL,
-            status         varchar(10)          NOT NULL DEFAULT 'success',
-            error_message  text                 DEFAULT NULL,
-            PRIMARY KEY  (id),
-            KEY idx_logged_at (logged_at),
-            KEY idx_user_id   (user_id),
-            KEY idx_tool      (tool)
-        ) {$charset_collate};";
+id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+logged_at datetime NOT NULL,
+tool varchar(100) NOT NULL DEFAULT '',
+user_id bigint(20) unsigned DEFAULT NULL,
+auth_method varchar(20) DEFAULT NULL,
+client_label varchar(200) DEFAULT NULL,
+oauth_client_id varchar(64) DEFAULT NULL,
+app_pass_name varchar(200) DEFAULT NULL,
+app_pass_uuid varchar(36) DEFAULT NULL,
+session_id varchar(12) DEFAULT NULL,
+client_name varchar(100) DEFAULT NULL,
+client_version varchar(50) DEFAULT NULL,
+ip varchar(45) DEFAULT NULL,
+status varchar(10) NOT NULL DEFAULT 'success',
+error_message text DEFAULT NULL,
+objects text DEFAULT NULL,
+PRIMARY KEY  (id),
+KEY idx_logged_at (logged_at),
+KEY idx_user_id (user_id),
+KEY idx_tool (tool)
+) {$charset_collate};";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta( $sql );

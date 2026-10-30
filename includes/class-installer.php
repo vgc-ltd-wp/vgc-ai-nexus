@@ -27,6 +27,12 @@ class Installer {
 
     /**
      * Full cleanup on uninstall — called from uninstall.php.
+     *
+     * Deliberately KEPT: the MCP attribution meta, which is the audit trail of
+     * what an AI changed (Revision_Attribution) — revision meta
+     * _mcp_abilities_actor and post meta _mcp_abilities_last_change, plus the
+     * older _vgc_mcp* revision tags. Revisions outlive the plugin; so does the
+     * record of who made them and through which app.
      */
     public static function uninstall(): void {
         Logger::drop_table();

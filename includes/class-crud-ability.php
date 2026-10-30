@@ -140,6 +140,11 @@ final class Crud_Ability extends Ability {
 
 		$op = $this->ops[ $action ];
 
+		// The call is "update_post", not "post_management": for the activity
+		// log, the revision label and whether the call writes. Extensions'
+		// dispatchers are this class too, so their actions are named as well.
+		Request_Context::note_ability( $action, Request_Context::RANK_ACTION, $op->is_write() );
+
 		if ( $op->blocked_by_read_only() ) {
 			return $this->error( Read_Only::error_message( $action ) );
 		}

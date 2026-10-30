@@ -34,6 +34,14 @@ final class Server {
 	const REFRESH_GRACE  = 120;
 	const REST_NAMESPACE = 'vgc-cc/v1';
 
+	/**
+	 * The client and user of the bearer token this request signed in with
+	 * (client_id is a public identifier; the token itself is never kept).
+	 *
+	 * @var array{client_id:string,user_id:int}|null
+	 */
+	private static ?array $authenticated = null;
+
 	// ── Boot ───────────────────────────────────────────────────────────────
 
 	public static function init(): void {
@@ -1092,7 +1100,26 @@ final class Server {
 		}
 
 		self::debug( sprintf( 'bearer validation: OK user_id=%d token_hash=%s', (int) $data['user_id'], substr( hash( 'sha256', $token ), 0, 12 ) ) );
+		self::$authenticated = array(
+			'client_id' => (string) ( $data['client_id'] ?? '' ),
+			'user_id'   => (int) $data['user_id'],
+		);
 		return (int) $data['user_id'];
+	}
+
+	/**
+	 * The OAuth app this request signed in through, for MCP attribution
+	 * (Request_Context). Null when no bearer token was accepted.
+	 *
+	 * @return array{client_id:string,user_id:int}|null
+	 */
+	public static function authenticated_client(): ?array {
+		return self::$authenticated;
+	}
+
+	/** Tests that simulate several requests in one process. */
+	public static function forget_authenticated_client(): void {
+		self::$authenticated = null;
 	}
 
 	/**
