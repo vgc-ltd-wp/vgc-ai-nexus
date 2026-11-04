@@ -273,11 +273,7 @@ final class McpResource implements McpComponentInterface {
 			try {
 				return $this->ability->execute();
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_execution_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_execution_failed', 'The resource stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -285,11 +281,7 @@ final class McpResource implements McpComponentInterface {
 			try {
 				return call_user_func( $this->handler, $arguments );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_execution_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_execution_failed', 'The resource stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -309,11 +301,7 @@ final class McpResource implements McpComponentInterface {
 			try {
 				return $this->ability->check_permissions();
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_permission_check_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_permission_check_failed', 'The permission check stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -323,11 +311,7 @@ final class McpResource implements McpComponentInterface {
 
 				return $result instanceof WP_Error ? $result : (bool) $result;
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_permission_check_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_permission_check_failed', 'The permission check stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -336,6 +320,33 @@ final class McpResource implements McpComponentInterface {
 			'Access denied.',
 			array( 'failure_reason' => FailureReason::NO_PERMISSION_STRATEGY )
 		);
+	}
+
+	/**
+	 * VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: an exception's or
+	 * TypeError's text can carry server paths, and the AI is not trusted with
+	 * them. The whole of it goes to the PHP error log, the client gets a fixed
+	 * line. A resource's own WP_Error is not touched: it never comes through here.
+	 *
+	 * @param \Throwable $throwable What was thrown.
+	 * @param string     $code      WP_Error code.
+	 * @param string     $message   What the client is told.
+	 *
+	 * @return \WP_Error
+	 */
+	private function logged_failure( \Throwable $throwable, string $code, string $message ): WP_Error {
+		error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			sprintf(
+				'MCP resource %s: %s: %s in %s:%d',
+				(string) $this->mcp_resource_dto->getUri(),
+				get_class( $throwable ),
+				$throwable->getMessage(),
+				$throwable->getFile(),
+				$throwable->getLine()
+			)
+		);
+
+		return new WP_Error( $code, $message, array( 'error_type' => get_class( $throwable ) ) );
 	}
 
 	/**

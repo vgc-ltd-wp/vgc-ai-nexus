@@ -144,9 +144,16 @@ final class ExecuteAbilityAbility {
 				'data'    => $result,
 			);
 		} catch ( \Throwable $e ) {
+			// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: an exception's or
+			// TypeError's text can carry server paths. It goes to the log, not the client.
+			error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+				sprintf( 'MCP ability %s: %s: %s in %s:%d', $ability_name, get_class( $e ), $e->getMessage(), $e->getFile(), $e->getLine() )
+			);
+
+			/** This filter is documented in includes/Domain/Tools/McpTool.php */
 			return array(
 				'success' => false,
-				'error'   => $e->getMessage(),
+				'error'   => (string) apply_filters( 'mcp_adapter_tool_exception_message', 'The ability stopped with an unexpected error on the server. The details are in the site\'s error log.', $e, $ability_name ),
 			);
 		}
 	}

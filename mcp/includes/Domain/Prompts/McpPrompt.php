@@ -327,31 +327,19 @@ final class McpPrompt implements McpComponentInterface {
 			try {
 				$result = $this->ability->execute( $args );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_execution_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_execution_failed', 'The prompt stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		} elseif ( null !== $this->builder ) {
 			try {
 				$result = $this->builder->handle( $args );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_execution_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_execution_failed', 'The prompt stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		} elseif ( null !== $this->handler ) {
 			try {
 				$result = call_user_func( $this->handler, $args );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_execution_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_execution_failed', 'The prompt stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		} else {
 			return new WP_Error( 'mcp_prompt_no_handler', 'No prompt execution strategy configured.' );
@@ -366,6 +354,33 @@ final class McpPrompt implements McpComponentInterface {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: an exception's or
+	 * TypeError's text can carry server paths, and the AI is not trusted with
+	 * them. The whole of it goes to the PHP error log, the client gets a fixed
+	 * line. A prompt's own WP_Error is not touched: it never comes through here.
+	 *
+	 * @param \Throwable $throwable What was thrown.
+	 * @param string     $code      WP_Error code.
+	 * @param string     $message   What the client is told.
+	 *
+	 * @return \WP_Error
+	 */
+	private function logged_failure( \Throwable $throwable, string $code, string $message ): WP_Error {
+		error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			sprintf(
+				'MCP prompt %s: %s: %s in %s:%d',
+				$this->prompt->getName(),
+				get_class( $throwable ),
+				$throwable->getMessage(),
+				$throwable->getFile(),
+				$throwable->getLine()
+			)
+		);
+
+		return new WP_Error( $code, $message, array( 'error_type' => get_class( $throwable ) ) );
 	}
 
 	/**
@@ -405,11 +420,7 @@ final class McpPrompt implements McpComponentInterface {
 			try {
 				return $this->ability->check_permissions( $args );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_permission_check_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_permission_check_failed', 'The permission check stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -417,11 +428,7 @@ final class McpPrompt implements McpComponentInterface {
 			try {
 				return $this->builder->has_permission( $args );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_permission_check_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_permission_check_failed', 'The permission check stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 
@@ -431,11 +438,7 @@ final class McpPrompt implements McpComponentInterface {
 
 				return $result instanceof WP_Error ? $result : (bool) $result;
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error(
-					'mcp_permission_check_failed',
-					$throwable->getMessage(),
-					array( 'error_type' => get_class( $throwable ) )
-				);
+				return $this->logged_failure( $throwable, 'mcp_permission_check_failed', 'The permission check stopped with an unexpected error on the server. The details are in the site\'s error log.' );
 			}
 		}
 

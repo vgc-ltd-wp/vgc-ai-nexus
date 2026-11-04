@@ -17,6 +17,7 @@ defined( 'ABSPATH' ) || exit;
  *       "name": "VGC AI Nexus",
  *       "version": "2.11.1",
  *       "download_url": "https://.../vgc-ai-nexus-2.11.1.zip",
+ *       "sha256": "<hash of the zip, optional>",
  *       "requires": "6.0", "requires_php": "8.0", "tested": "6.7",
  *       "last_updated": "2026-06-30", "homepage": "https://tools.vgc-ltd.com",
  *       "sections": { "changelog": "<h4>2.11.1</h4>..." }
@@ -51,7 +52,99 @@ class VGC_Plugin_Updater {
         add_filter( 'site_transient_update_plugins', [ $this, 'inject_update' ] );
         add_filter( 'plugins_api', [ $this, 'plugin_info' ], 20, 3 );
         add_filter( 'upgrader_source_selection', [ $this, 'fix_source_dir' ], 10, 4 );
+        add_filter( 'upgrader_pre_download', [ $this, 'guard_package' ], 10, 4 );
         add_action( 'upgrader_process_complete', [ $this, 'flush_cache' ], 10, 0 );
+    }
+
+    /**
+     * upgrader_pre_download: an update of THIS plugin only comes from the update
+     * channel, and matches the manifest's sha256 when it gives one (Package_Guard).
+     * Any other plugin, and an uploaded zip, go past untouched.
+     *
+     * @param mixed $reply      false, or what an earlier filter decided.
+     * @param mixed $package    The package WordPress is about to download.
+     * @param mixed $upgrader   The running WP_Upgrader.
+     * @param mixed $hook_extra 'plugin' names the plugin being updated.
+     * @return mixed false to let WordPress download it, a file path, or a WP_Error.
+     */
+    public function guard_package( $reply, $package, $upgrader = null, $hook_extra = [] ) {
+        if ( false !== $reply || ! is_string( $package ) || '' === $package
+            || ! is_array( $hook_extra ) || ( $hook_extra['plugin'] ?? '' ) !== $this->basename ) {
+            return $reply;
+        }
+        try {
+            if ( ! Package_Guard::enabled( $package, $this->slug ) ) {
+                return $reply;
+            }
+            $info = $this->entry();
+            $name = isset( $info['name'] ) && is_string( $info['name'] ) ? $info['name'] : $this->slug;
+
+            $refused = Package_Guard::url_error( $package, $name );
+            if ( null !== $refused ) {
+                return $refused;
+            }
+
+            // The hash goes with the address it was published for. A cached entry that
+            // names another address is older than the package: ask the manifest.
+            if ( ! $this->entry_is_for( $info, $package ) ) {
+                $info = $this->fresh_entry();
+            }
+            $expected = $this->entry_is_for( $info, $package ) ? (string) ( $info['sha256'] ?? '' ) : '';
+
+            return Package_Guard::download(
+                $package,
+                $expected,
+                $name,
+                $upgrader,
+                function () use ( $package ) {
+                    $now = $this->fresh_entry();
+                    return $this->entry_is_for( $now, $package ) ? (string) ( $now['sha256'] ?? '' ) : '';
+                }
+            );
+        } catch ( \Throwable $e ) {
+            // Never let this check be what stops every site updating.
+            error_log( 'AI Nexus: the package check stopped with ' . get_class( $e ) . ': ' . $e->getMessage() . '; WordPress downloads the update itself.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            return $reply;
+        }
+    }
+
+    /** @param array<string,mixed> $info A manifest entry. */
+    private function entry_is_for( array $info, string $package ): bool {
+        return ! empty( $info['download_url'] ) && esc_url_raw( (string) $info['download_url'] ) === $package;
+    }
+
+    /**
+     * The manifest entry as it is now, skipping the cache. A failed fetch leaves the
+     * cached entry alone.
+     *
+     * @return array<string,mixed>
+     */
+    private function fresh_entry(): array {
+        $entry = $this->fetch_entry();
+        if ( null === $entry ) {
+            return is_array( $this->entry ) ? $this->entry : [];
+        }
+        set_transient( $this->cache_key, $entry, HOUR_IN_SECONDS );
+        return $this->entry = $entry;
+    }
+
+    /**
+     * This plugin's entry in the manifest.
+     *
+     * @return array<string,mixed>|null Null when the manifest could not be read.
+     */
+    private function fetch_entry(): ?array {
+        $res = wp_remote_get( $this->manifest_url, [
+            'timeout' => 15,
+            'headers' => [ 'Accept' => 'application/json' ],
+        ] );
+        if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+            return null;
+        }
+        $data = json_decode( wp_remote_retrieve_body( $res ), true );
+        return ( is_array( $data ) && isset( $data[ $this->slug ] ) && is_array( $data[ $this->slug ] ) )
+            ? $data[ $this->slug ]
+            : [];
     }
 
     /** Fetch this plugin's manifest entry (cached; bypassed on a manual "Check again"). */
@@ -69,19 +162,12 @@ class VGC_Plugin_Updater {
             }
         }
 
-        $res = wp_remote_get( $this->manifest_url, [
-            'timeout' => 15,
-            'headers' => [ 'Accept' => 'application/json' ],
-        ] );
-        if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+        $entry = $this->fetch_entry();
+        if ( null === $entry ) {
             // Cache an empty result briefly so a flaky network doesn't stall every page load.
             set_transient( $this->cache_key, [], 15 * MINUTE_IN_SECONDS );
             return $this->entry = [];
         }
-        $data  = json_decode( wp_remote_retrieve_body( $res ), true );
-        $entry = ( is_array( $data ) && isset( $data[ $this->slug ] ) && is_array( $data[ $this->slug ] ) )
-            ? $data[ $this->slug ]
-            : [];
 
         set_transient( $this->cache_key, $entry, HOUR_IN_SECONDS );
         return $this->entry = $entry;

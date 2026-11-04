@@ -37,15 +37,21 @@ class Update_User_Ability extends Ability {
         }
 
         // Prevent modifying accounts that outrank the current user.
-        if ( $this->target_outranks_current_user( $target ) ) {
+        if ( User_Access::outranks( $target ) ) {
             return $this->error( 'You cannot modify a user with a higher privilege level than your own.' );
         }
 
-        // Role changes require promote_users and the new role must not
-        // exceed the current user's own privilege level.
+        // edit_users above says the tool may be used at all; this asks about this
+        // account, so WooCommerce's and multisite's rules apply.
+        if ( ! User_Access::can_on( 'edit_user', $target ) ) {
+            return $this->error( 'You do not have permission to edit this user.' );
+        }
+
+        // Role changes require promote_user on this account, and the new role
+        // must not exceed the current user's own privilege level.
         if ( isset( $params['role'] ) ) {
             $new_role = sanitize_key( $params['role'] );
-            if ( ! current_user_can( 'promote_users' ) ) {
+            if ( ! User_Access::can_on( 'promote_user', $target ) ) {
                 return $this->error( 'You do not have permission to change user roles.' );
             }
             // A role WordPress lets this user assign, never one with more power
@@ -53,14 +59,6 @@ class Update_User_Ability extends Ability {
             $role_error = User_Access::role_error( $new_role );
             if ( null !== $role_error ) {
                 return $this->error( $role_error );
-            }
-        }
-
-        // Password changes for other users require edit_users; additionally
-        // you cannot change the password of a higher-ranked account (already blocked above).
-        if ( isset( $params['password'] ) && $user_id !== get_current_user_id() ) {
-            if ( ! current_user_can( 'edit_users' ) ) {
-                return $this->error( 'You do not have permission to change another user\'s password.' );
             }
         }
 
@@ -79,14 +77,5 @@ class Update_User_Ability extends Ability {
         }
 
         return $this->success( "User {$user_id} updated." );
-    }
-
-    /**
-     * Returns true if the target user has the administrator role and the
-     * current user does not — i.e. the target outranks the caller.
-     */
-    private function target_outranks_current_user( \WP_User $target ): bool {
-        return in_array( 'administrator', (array) $target->roles, true )
-            && ! current_user_can( 'manage_options' );
     }
 }

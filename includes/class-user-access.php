@@ -18,6 +18,37 @@ defined( 'ABSPATH' ) || exit;
 final class User_Access {
 
     /**
+     * Whether an account holds more than the current user: it can manage_options
+     * (whatever its role is called) and the current user cannot.
+     */
+    public static function outranks( \WP_User $target ): bool {
+        return user_can( $target, 'manage_options' ) && ! current_user_can( 'manage_options' );
+    }
+
+    /**
+     * Whether the current user may do this to this account: a meta capability
+     * (edit_user, promote_user, delete_user) with the account's id, so that
+     * map_meta_cap filters run: WooCommerce's (a shop manager edits customers
+     * only) and multisite's (super admins).
+     */
+    public static function can_on( string $meta_cap, \WP_User $target ): bool {
+        return current_user_can( $meta_cap, $target->ID );
+    }
+
+    /**
+     * Whether removing this account would leave nobody who can manage the site:
+     * it is the last with the administrator role, or the last with manage_options.
+     */
+    public static function is_last_admin( \WP_User $target ): bool {
+        if ( in_array( 'administrator', (array) $target->roles, true )
+            && count( get_users( [ 'role' => 'administrator', 'fields' => 'ID', 'number' => 2 ] ) ) <= 1 ) {
+            return true;
+        }
+        return user_can( $target, 'manage_options' )
+            && ! get_users( [ 'capability' => 'manage_options', 'exclude' => [ $target->ID ], 'fields' => 'ID', 'number' => 1 ] );
+    }
+
+    /**
      * Why the current user may not assign this role, or null when they may.
      */
     public static function role_error( string $role ): ?string {

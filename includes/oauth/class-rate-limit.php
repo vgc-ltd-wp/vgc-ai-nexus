@@ -17,7 +17,8 @@ defined( 'ABSPATH' ) || exit;
  * hour, all from a few Anthropic addresses).
  *
  * Counters are transients: losing one (a cache flush) only resets a window.
- * The address is REMOTE_ADDR; X-Forwarded-For can be set by the caller.
+ * The address comes from Client_Ip: REMOTE_ADDR, as X-Forwarded-For can be set
+ * by the caller, unless the site names its proxies.
  */
 final class Rate_Limit {
 
@@ -69,15 +70,16 @@ final class Rate_Limit {
 		return $wait;
 	}
 
-	/** The caller's address as the web server saw it. */
+	/** The caller's address as the web server (or a proxy the site trusts) saw it. */
 	public static function ip(): string {
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$ip = false !== filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : 'unknown';
+		$ip = \MCP_Abilities\Client_Ip::get();
+		$ip = '' !== $ip ? $ip : 'unknown';
 		/**
-		 * Filters the address the limits count by, for a site behind a proxy
-		 * that does not set REMOTE_ADDR to the visitor's address.
+		 * Filters the address the limits count by. For a site behind a proxy,
+		 * mcp_abilities_trusted_proxies covers these limits and the activity log
+		 * together; this one is for the limits alone.
 		 *
-		 * @param string $ip REMOTE_ADDR, or 'unknown'.
+		 * @param string $ip The caller's address (Client_Ip), or 'unknown'.
 		 */
 		return (string) apply_filters( 'mcp_abilities_oauth_client_ip', $ip );
 	}

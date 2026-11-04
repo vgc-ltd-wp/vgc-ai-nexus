@@ -17,6 +17,25 @@ defined( 'ABSPATH' ) || exit;
 final class Term_Access {
 
     /**
+     * Why the terms of this taxonomy are not listed through a tool, or null.
+     *
+     * A taxonomy with an admin screen is listed, and so is one with public archives
+     * (post_format has no screen, but its terms are on the front end). What is left
+     * is internal to WordPress or a plugin: menus, block template areas, WooCommerce
+     * product types and visibility, a plugin's bookkeeping.
+     */
+    public static function read_error( string $taxonomy ): ?string {
+        $tax = get_taxonomy( $taxonomy );
+        if ( ! $tax ) {
+            return sprintf( 'Taxonomy "%s" does not exist.', $taxonomy );
+        }
+        if ( ! $tax->show_ui && ! is_taxonomy_viewable( $tax ) ) {
+            return sprintf( 'Taxonomy "%s" is internal: it has no admin screen and no public archives, so its terms are not listed with this tool (menus have their own tools).', $taxonomy );
+        }
+        return null;
+    }
+
+    /**
      * The taxonomy, or why it cannot be edited through a tool.
      *
      * @return \WP_Taxonomy|string

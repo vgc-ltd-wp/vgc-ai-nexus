@@ -5,6 +5,29 @@ use MCP_Abilities\Ability;
 
 defined( 'ABSPATH' ) || exit;
 
+// ── Widget types ───────────────────────────────────────────────────────────────
+
+final class Widget_Types {
+
+    /** Why this is not a widget type on this site, or null when it is. */
+    public static function error( string $type ): ?string {
+        global $wp_registered_widget_updates, $wp_widget_factory;
+
+        $registered = array_keys( (array) $wp_registered_widget_updates );
+        if ( $wp_widget_factory instanceof \WP_Widget_Factory ) {
+            foreach ( $wp_widget_factory->widgets as $widget ) {
+                $registered[] = (string) $widget->id_base;
+            }
+        }
+        $registered = array_values( array_unique( $registered ) );
+        if ( in_array( $type, $registered, true ) ) {
+            return null;
+        }
+        sort( $registered );
+        return sprintf( 'Widget type "%s" is not registered on this site. Registered types: %s.', $type, implode( ', ', $registered ) );
+    }
+}
+
 // ── List Widget Areas ──────────────────────────────────────────────────────────
 
 class List_Widget_Areas_Ability extends Ability {
@@ -121,13 +144,13 @@ class Add_Widget_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'add_widget';
         $this->label        = __( 'Add Widget', 'mcp-abilities' );
-        $this->description  = 'Add a widget to a widget area. Use list_widgets on an existing area to see what settings a widget type expects, then replicate the structure for "settings". Common widget types: text, html (Custom HTML), search, recent-posts, archives, categories, tag-cloud, navigation-menu, pages, calendar, meta.';
+        $this->description  = 'Add a widget to a widget area. Use list_widgets on an existing area to see what settings a widget type expects, then replicate the structure for "settings". Common widget types: text, custom_html, search, recent-posts, archives, categories, tag_cloud, nav_menu, pages, calendar, meta, block. A type that is not registered on this site is refused, and the error lists the ones that are.';
         $this->required_cap = 'edit_theme_options';
         $this->input_schema = [
             'type'       => 'object',
             'properties' => [
                 'area_id'     => [ 'type' => 'string', 'description' => 'Widget area ID to add the widget to.' ],
-                'widget_type' => [ 'type' => 'string', 'description' => 'Widget base ID (e.g. "text", "search", "recent-posts", "navigation-menu").' ],
+                'widget_type' => [ 'type' => 'string', 'description' => 'Widget base ID (e.g. "text", "search", "recent-posts", "nav_menu").' ],
                 'settings'    => [ 'type' => 'object', 'description' => 'Widget-specific settings object (e.g. {"title": "My Text", "text": "Hello world"} for a text widget).' ],
                 'position'    => [ 'type' => 'integer', 'description' => 'Position index within the area (0-based). Appends to end if omitted.' ],
             ],
@@ -136,13 +159,18 @@ class Add_Widget_Ability extends Ability {
     }
 
     public function execute( array $params ): array {
-        global $wp_registered_sidebars, $wp_registered_widget_updates;
+        global $wp_registered_sidebars;
 
         $area_id     = sanitize_key( $params['area_id'] );
         $widget_type = sanitize_text_field( $params['widget_type'] );
 
         if ( ! isset( $wp_registered_sidebars[ $area_id ] ) ) {
             return $this->error( "Widget area \"{$area_id}\" not found." );
+        }
+
+        $type_error = Widget_Types::error( $widget_type );
+        if ( null !== $type_error ) {
+            return $this->error( $type_error );
         }
 
         // Determine the next instance number.
@@ -233,6 +261,14 @@ class Update_Widget_Ability extends Ability {
 
         $widget_type  = $m[1];
         $instance_num = (int) $m[2];
+
+        // The option name is built from the caller's text, and update_option refuses
+        // widget_* because this tool is the way in: only a real widget type gets here.
+        $type_error = Widget_Types::error( $widget_type );
+        if ( null !== $type_error ) {
+            return $this->error( $type_error );
+        }
+
         $option_key   = 'widget_' . $widget_type;
         $instances    = get_option( $option_key, [] );
 

@@ -180,11 +180,47 @@ final class Post_Access {
                 $skipped[ $key ] = 'WordPress manages this attachment key itself; it is never set from a tool.';
             } elseif ( ! self::can_use_meta_key( $post_id, $key ) ) {
                 $skipped[ $key ] = 'Protected meta key: needs permission to edit this key (or other authors\' content of this type).';
+            } elseif ( '_wp_page_template' === $key && null !== ( $template_error = self::page_template_error( $value, get_post( $post_id ) ) ) ) {
+                $skipped[ $key ] = $template_error;
             } else {
                 $ok[ $key ] = $value;
             }
         }
         return [ $ok, $skipped ];
+    }
+
+    /**
+     * Why this page template cannot be set, or null when it can.
+     *
+     * The list is the one wp_insert_post() and WordPress's REST API check:
+     * WP_Theme::get_page_templates(), which holds the theme's template files, a block
+     * theme's custom templates, and whatever plugins add through theme_page_templates
+     * or theme_{post_type}_templates (Elementor's elementor_canvas, for one). "default"
+     * and empty always pass.
+     *
+     * @param mixed         $template  What the caller sent.
+     * @param \WP_Post|null $post      The post, when it exists already.
+     * @param string        $post_type The post type, when it does not.
+     */
+    public static function page_template_error( $template, ?\WP_Post $post = null, string $post_type = 'page' ): ?string {
+        if ( ! is_string( $template ) ) {
+            return 'The page template must be a string.';
+        }
+        $template = self::page_template_value( $template );
+        if ( 'default' === $template ) {
+            return null;
+        }
+        $templates = wp_get_theme()->get_page_templates( $post, $post_type );
+        if ( isset( $templates[ $template ] ) ) {
+            return null;
+        }
+        return sprintf( 'Unknown page template "%s". Page templates on this site: %s.', $template, implode( ', ', array_merge( [ 'default' ], array_map( 'strval', array_keys( $templates ) ) ) ) );
+    }
+
+    /** The value to store for a page template that passed page_template_error(). */
+    public static function page_template_value( string $template ): string {
+        $template = trim( $template );
+        return '' === $template ? 'default' : $template;
     }
 
     /**

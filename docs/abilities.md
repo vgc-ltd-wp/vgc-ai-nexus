@@ -133,6 +133,7 @@ Retrieve the full content of a specific revision.
 | `content` | string | No | Page body |
 | `status` | string | No | `publish`, `draft`, `pending`, `private` (default: `draft`) |
 | `parent_id` | integer | No | Parent page ID |
+| `template` | string | No | A page template of this site, or `default`. An unknown one is refused, and the error lists what there is |
 | `menu_order` | integer | No | Sort order |
 
 ---
@@ -145,6 +146,7 @@ Retrieve the full content of a specific revision.
 | `content` | string | No | New body |
 | `status` | string | No | `publish`, `draft`, `pending`, `private`, `trash` |
 | `parent_id` | integer | No | New parent page ID |
+| `template` | string | No | A page template of this site, or `default` (empty means `default`). An unknown one is refused |
 | `menu_order` | integer | No | New sort order |
 
 ---
@@ -256,7 +258,7 @@ Download a document or media file from a URL and import it into the Media Librar
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `id` | integer | **Yes** | Comment ID |
-| `moderation` | string | **Yes** | `approve`, `hold`, `spam`, `trash`, `delete` (through the group tool, `action` names the operation, so the moderation goes here; a direct call may also send it as `action`) |
+| `moderation` | string | **Yes** | `approve`, `hold`, `spam`, `trash`, `delete` (through the group tool, `action` names the operation, so the moderation goes here; a direct call may also send it as `action`). `delete` also needs `edit_comment` on the comment |
 
 ---
 
@@ -265,7 +267,7 @@ Download a document or media file from a URL and import it into the Media Librar
 ### `list_terms`
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `taxonomy` | string | **Yes** | Taxonomy slug (e.g. `category`, `post_tag`) |
+| `taxonomy` | string | **Yes** | Taxonomy slug (e.g. `category`, `post_tag`). One with an admin screen or public archives; internal ones such as menus are refused |
 | `search` | string | No | Filter by name |
 | `per_page` | integer | No | Max 100 (default: 50) |
 
@@ -311,7 +313,8 @@ No parameters. Returns all registered nav menus with their assigned locations.
 ### `get_menu_items`
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `menu_id` | integer | **Yes** | Menu ID |
+| `id` | integer | One of the two | Menu ID |
+| `slug` | string | One of the two | Menu slug |
 
 **Returns:** Flat list of menu items with ID, title, URL, type, order, and parent ID.
 
@@ -408,7 +411,7 @@ Assigning `administrator` requires `manage_options` capability.
 | `role` | string | No | New role |
 | `password` | string | No | New password |
 
-Cannot modify administrator accounts unless you are an administrator.
+Needs `edit_user` on that account, and `promote_user` for a role change. Cannot modify an account that holds `manage_options` unless you hold it too.
 
 ---
 
@@ -418,4 +421,4 @@ Cannot modify administrator accounts unless you are an administrator.
 | `id` | integer | **Yes** | User ID |
 | `reassign_id` | integer | No | Transfer content to this user ID before deletion |
 
-Cannot delete administrator accounts unless you are an administrator. Cannot delete the last administrator account.
+Needs `delete_user` on that account. Cannot delete an account that holds `manage_options` unless you hold it too. Cannot delete the last administrator account, nor the last account that holds `manage_options`.

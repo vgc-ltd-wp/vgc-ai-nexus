@@ -23,6 +23,8 @@ final class Upload_Links {
     public const TTL       = 15 * MINUTE_IN_SECONDS;
     public const NAMESPACE = 'mcp-abilities/v1';
 
+    private const GONE = 'This upload link is invalid, already used or expired (links last 15 minutes and work once). Ask for a new one with create_upload_link.';
+
     /** @return array{url:string, expires_at:string} */
     public static function create( int $user_id, array $meta ): array {
         $token = bin2hex( random_bytes( 32 ) );
@@ -52,9 +54,14 @@ final class Upload_Links {
 
         if ( ! is_array( $record ) || (int) $record['expires'] < time() ) {
             delete_option( $key );
-            return self::reply( 410, 'This upload link is invalid, already used or expired (links last 15 minutes and work once). Ask for a new one with create_upload_link.' );
+            return self::reply( 410, self::GONE );
         }
-        delete_option( $key ); // single use, even if the upload below fails
+        // Single use, even if the upload below fails. Only the request whose delete
+        // removed the row owns the link: two at the same moment both read the record
+        // above, and the database lets one of them delete it.
+        if ( false === delete_option( $key ) ) {
+            return self::reply( 410, self::GONE );
+        }
 
         if ( Read_Only::active() ) {
             return self::reply( 403, Read_Only::error_message( 'create_upload_link' ) );

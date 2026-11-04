@@ -99,24 +99,6 @@ class Logger {
         return [ 'name' => '', 'version' => '' ];
     }
 
-    /**
-     * Resolve the best available caller IP address.
-     */
-    private static function get_ip(): string {
-        $forwarded = isset( $_SERVER['HTTP_X_FORWARDED_FOR'] )
-            ? (string) $_SERVER['HTTP_X_FORWARDED_FOR']
-            : '';
-
-        if ( $forwarded !== '' ) {
-            $ip = trim( explode( ',', $forwarded )[0] );
-            if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-                return $ip;
-            }
-        }
-
-        return isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-    }
-
     // ── Write ────────────────────────────────────────────────────────────────
 
     /**
@@ -159,7 +141,7 @@ class Logger {
                 'operator'        => '' !== $ctx['operator'] ? mb_substr( $ctx['operator'], 0, 191 ) : null,
                 'client_name'     => $client['name']    !== '' ? substr( $client['name'],    0, 100 ) : null,
                 'client_version'  => $client['version'] !== '' ? substr( $client['version'], 0, 50  ) : null,
-                'ip'              => self::get_ip(),
+                'ip'              => Client_Ip::get(),
                 'status'          => $status,
                 'error_message'   => $error,
                 'objects'         => $objects_json,

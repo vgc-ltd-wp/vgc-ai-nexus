@@ -23,7 +23,7 @@ class Update_Page_Ability extends Ability {
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the page; it needs a future date. "publish", "future" and "private" need the permission to publish this page; without it the page is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
                 'parent_id'  => [ 'type' => 'integer' ],
-                'template'   => [ 'type' => 'string' ],
+                'template'   => [ 'type' => 'string', 'description' => 'A page template of this site (e.g. template-full-width.php, elementor_canvas), or "default". An unknown template is refused, and the error lists the ones there are.' ],
                 'menu_order' => [ 'type' => 'integer' ],
             ],
             'required' => [ 'id' ],
@@ -41,6 +41,12 @@ class Update_Page_Ability extends Ability {
         }
         if ( ! current_user_can( 'edit_post', $page_id ) ) {
             return $this->error( 'You do not have permission to edit this page.' );
+        }
+        if ( isset( $params['template'] ) ) {
+            $template_error = Post_Access::page_template_error( $params['template'], $page );
+            if ( null !== $template_error ) {
+                return $this->error( $template_error );
+            }
         }
 
         $update = [ 'ID' => $page_id ];
@@ -69,14 +75,13 @@ class Update_Page_Ability extends Ability {
         if ( null !== $status['status'] )     $update['post_status']   = $status['status'];
         if ( isset( $params['parent_id'] ) )  $update['post_parent']   = absint( $params['parent_id'] );
         if ( isset( $params['menu_order'] ) ) $update['menu_order']    = (int) $params['menu_order'];
+        // Through wp_update_post(), which writes it: it refuses any update of a page
+        // whose stored template has gone, so this is also how such a page gets a new one.
+        if ( isset( $params['template'] ) )   $update['page_template'] = Post_Access::page_template_value( $params['template'] );
 
         $result = wp_update_post( $update, true );
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
-        }
-
-        if ( isset( $params['template'] ) ) {
-            update_post_meta( $page_id, '_wp_page_template', sanitize_file_name( $params['template'] ) );
         }
 
         $extra = array_merge(

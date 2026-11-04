@@ -182,3 +182,5 @@ When your group is served as one consolidated tool, core's dispatcher checks eac
 | `$this->success( 'message' )` | Simple confirmation with no data |
 | `$this->error( 'message' )` | Validation or runtime failure |
 | `$this->json_result( array $data )` | Returning structured data |
+
+Report a failure the AI should read with `$this->error()` or a `WP_Error`: both reach it unchanged. Since core 2.37.0 an uncaught exception or TypeError does not: its text can carry server paths, so it goes to the PHP error log and the AI is told only that an unexpected error happened. Catch what you expect and turn it into `$this->error()`. WooCommerce's `WC_Data_Exception` is passed on as it is; the filter `mcp_adapter_tool_exception_message` does the same for another class. See [security.md](security.md#when-a-tool-fails-since-2370).

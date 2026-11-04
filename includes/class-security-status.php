@@ -23,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Security_Status {
 
-    private const PROBE_TRANSIENT = 'mcp_abilities_security_probe';
+    public const PROBE_TRANSIENT = 'mcp_abilities_security_probe';
     private const PROBE_TTL       = 6 * HOUR_IN_SECONDS;
 
     /**

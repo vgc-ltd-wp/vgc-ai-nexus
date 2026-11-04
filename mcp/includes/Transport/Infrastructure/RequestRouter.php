@@ -167,6 +167,18 @@ class RequestRouter {
 			);
 			$this->context->observability_handler->record_event( 'mcp.request', $tags, $duration );
 
+			// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: the client gets a fixed
+			// line below, and the observability handler is a no-op by default, so without
+			// this the error would not be recorded anywhere.
+			$this->context->error_handler->log(
+				'Unexpected error handling a request',
+				array(
+					'method' => $method,
+					'error'  => get_class( $exception ) . ': ' . $exception->getMessage(),
+					'where'  => $exception->getFile() . ':' . $exception->getLine(),
+				)
+			);
+
 			// Create error response from exception.
 			$unexpected_error = McpErrorFactory::internal_error( $request_id, 'Handler error occurred' );
 

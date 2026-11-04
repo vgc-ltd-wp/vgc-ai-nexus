@@ -33,6 +33,7 @@ class Extension_Installer {
         foreach ( $catalog as $slug => &$entry ) {
             $entry['version']      = $manifest[ $slug ]['version'] ?? '';
             $entry['download_url'] = $manifest[ $slug ]['download_url'] ?? '';
+            $entry['sha256']       = $manifest[ $slug ]['sha256'] ?? '';
         }
         unset( $entry );
 
@@ -119,9 +120,23 @@ class Extension_Installer {
             wp_send_json_success( [ 'message' => __( 'Extension activated.', 'mcp-abilities' ), 'slug' => $slug ] );
         }
 
-        $package = $catalog[ $slug ]['download_url'] ?? '';
-        if ( empty( $package ) ) {
+        // The manifest as it is now: the catalog is cached for hours, and a sha256 goes
+        // with the address it was published for.
+        $fresh   = (array) $this->fetch_json( self::MANIFEST_URL );
+        $source  = ! empty( $fresh[ $slug ]['download_url'] ) ? (array) $fresh[ $slug ] : (array) $catalog[ $slug ];
+        $package = esc_url_raw( (string) ( $source['download_url'] ?? '' ) );
+        if ( '' === $package ) {
             wp_send_json_error( [ 'message' => __( 'No download is available for this extension yet.', 'mcp-abilities' ) ] );
+        }
+        $name = (string) ( $catalog[ $slug ]['name'] ?? $slug );
+
+        // Only from the update channel, and matching the manifest's sha256 if it gives one.
+        $guarded = \MCP_Abilities\Package_Guard::enabled( $package, $slug );
+        if ( $guarded ) {
+            $refused = \MCP_Abilities\Package_Guard::url_error( $package, $name );
+            if ( null !== $refused ) {
+                wp_send_json_error( [ 'message' => $refused->get_error_message() ] );
+            }
         }
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -131,8 +146,34 @@ class Extension_Installer {
 
         $skin     = new \Automatic_Upgrader_Skin();
         $upgrader = new \Plugin_Upgrader( $skin );
-        $result   = $upgrader->install( esc_url_raw( $package ) );
 
+        // This one download only. The skin keeps no errors, so the refusal is kept
+        // here: the message below would otherwise blame the file system.
+        $download_error = null;
+        $check          = static function ( $reply, $url, $running = null ) use ( $package, $name, $source, &$download_error ) {
+            if ( false !== $reply || $url !== $package ) {
+                return $reply;
+            }
+            try {
+                $file = \MCP_Abilities\Package_Guard::download( $package, (string) ( $source['sha256'] ?? '' ), $name, $running );
+            } catch ( \Throwable $e ) {
+                error_log( 'AI Nexus: the package check stopped with ' . get_class( $e ) . ': ' . $e->getMessage() . '; WordPress downloads the extension itself.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                return $reply;
+            }
+            if ( is_wp_error( $file ) ) {
+                $download_error = $file;
+            }
+            return $file;
+        };
+        if ( $guarded ) {
+            add_filter( 'upgrader_pre_download', $check, 10, 3 );
+        }
+        $result = $upgrader->install( $package );
+        remove_filter( 'upgrader_pre_download', $check, 10 );
+
+        if ( is_wp_error( $download_error ) ) {
+            wp_send_json_error( [ 'message' => $download_error->get_error_message() ] );
+        }
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }

@@ -268,7 +268,9 @@ final class Order_Attribution {
         if ( 'system' === ( $note['added_by'] ?? '' ) ) {
             $note['mcp_system'] = true; // keeps the system-note look, see note_class()
         }
-        $note['added_by']  = Request_Context::label( $actor );
+        // Escaped as the comment and revision labels are. WooCommerce's template
+        // escapes it again, and esc_html() does not encode what is already encoded.
+        $note['added_by']  = esc_html( Request_Context::label( $actor ) );
         $note['mcp_actor'] = Request_Context::public_record( $actor );
         return $note;
     }

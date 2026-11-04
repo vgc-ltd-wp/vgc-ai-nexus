@@ -359,6 +359,13 @@ final class Plugin {
         try {
             $result = $this->run_ability_inner( $ability, $group, $params );
             return $result;
+        } catch ( \Throwable $e ) {
+            // The text of an exception or TypeError can carry server paths. It goes
+            // to the log; the caller gets a fixed line, whichever adapter serves.
+            error_log( sprintf( 'AI Nexus: %s stopped with %s: %s in %s:%d', $ability->get_key(), get_class( $e ), $e->getMessage(), $e->getFile(), $e->getLine() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            /** This filter is documented in mcp/includes/Domain/Tools/McpTool.php */
+            $result = [ 'success' => false, 'error' => (string) apply_filters( 'mcp_adapter_tool_exception_message', 'The tool stopped with an unexpected error on the server. The details are in the site\'s error log.', $e, $ability->get_key() ) ];
+            return $result;
         } finally {
             Request_Context::end_call( $token, $result ?? new \WP_Error( 'mcp_abilities_exception', 'The ability stopped with an exception.' ) );
         }

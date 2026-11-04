@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\User_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -30,17 +31,21 @@ class Delete_User_Ability extends Ability {
             return $this->error( 'You cannot delete yourself.' );
         }
 
-        // Prevent deleting accounts that outrank the current user.
         $target = get_user_by( 'id', $user_id );
-        if ( $target && in_array( 'administrator', (array) $target->roles, true )
-            && ! current_user_can( 'manage_options' ) ) {
-            return $this->error( 'You cannot delete an administrator account.' );
-        }
+        if ( $target ) {
+            // Prevent deleting accounts that outrank the current user.
+            if ( User_Access::outranks( $target ) ) {
+                return $this->error( 'You cannot delete an administrator account.' );
+            }
 
-        // Prevent deleting the last administrator — that would lock everyone out.
-        if ( $target && in_array( 'administrator', (array) $target->roles, true ) ) {
-            $admin_count = count( get_users( [ 'role' => 'administrator', 'fields' => 'ID', 'number' => 2 ] ) );
-            if ( $admin_count <= 1 ) {
+            // delete_users above says the tool may be used at all; this asks about
+            // this account, so WooCommerce's and multisite's rules apply.
+            if ( ! User_Access::can_on( 'delete_user', $target ) ) {
+                return $this->error( 'You do not have permission to delete this user.' );
+            }
+
+            // Prevent deleting the last administrator — that would lock everyone out.
+            if ( User_Access::is_last_admin( $target ) ) {
                 return $this->error( 'Cannot delete the last administrator account.' );
             }
         }

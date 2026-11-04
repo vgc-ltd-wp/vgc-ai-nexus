@@ -202,10 +202,16 @@ class HttpTransport implements McpRestTransportInterface {
 
 		if ( ! $user_has_capability ) {
 			$user_id = get_current_user_id();
-			$this->request_handler->get_transport_context()->error_handler->log(
-				sprintf( 'Permission denied for MCP API access. User ID %d does not have capability "%s"', $user_id, $user_capability ),
-				array( 'HttpTransport::check_permission' )
-			);
+			// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: a request without a
+			// sign-in is the normal first step of the claude.ai sign-in flow, and anyone can
+			// repeat it, so it must not write to the error log. A signed-in user who is
+			// refused is still logged.
+			if ( 0 !== $user_id ) {
+				$this->request_handler->get_transport_context()->error_handler->log(
+					sprintf( 'Permission denied for MCP API access. User ID %d does not have capability "%s"', $user_id, $user_capability ),
+					array( 'HttpTransport::check_permission' )
+				);
+			}
 		}
 
 		return $user_has_capability;

@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Term_Access;
 use MCP_Abilities\Wpml_Support;
 
 defined( 'ABSPATH' ) || exit;
@@ -11,7 +12,7 @@ class List_Terms_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_terms';
         $this->label        = __( 'List Terms', 'mcp-abilities' );
-        $this->description  = 'List taxonomy terms (categories, tags, or any registered taxonomy). On WPML sites pass "language" to list a specific language\'s terms (e.g. "de"), or "all" for every language — without it only the default language is returned and translated terms are invisible.';
+        $this->description  = 'List taxonomy terms (categories, tags, or any taxonomy with an admin screen or public archives; internal ones such as menus are refused). On WPML sites pass "language" to list a specific language\'s terms (e.g. "de"), or "all" for every language — without it only the default language is returned and translated terms are invisible.';
         $this->required_cap = 'manage_categories';
         $this->input_schema = [
             'type'       => 'object',
@@ -30,6 +31,10 @@ class List_Terms_Ability extends Ability {
         $taxonomy = sanitize_key( $params['taxonomy'] ?? 'category' );
         if ( ! taxonomy_exists( $taxonomy ) ) {
             return $this->error( "Taxonomy '{$taxonomy}' does not exist." );
+        }
+        $refused = Term_Access::read_error( $taxonomy );
+        if ( null !== $refused ) {
+            return $this->error( $refused );
         }
 
         $language = isset( $params['language'] ) && '' !== trim( (string) $params['language'] )

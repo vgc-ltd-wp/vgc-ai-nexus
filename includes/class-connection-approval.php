@@ -240,7 +240,7 @@ final class Connection_Approval {
             $record = self::create_pending( $conn );
         } elseif ( time() - (int) ( $record['last_seen'] ?? 0 ) >= self::TOUCH_EVERY ) {
             $record['last_seen']        = time();
-            $record['ip']               = self::ip();
+            $record['ip']               = Client_Ip::get();
             $records[ $conn['key'] ]    = $record;
             self::save( $records );
         }
@@ -295,7 +295,7 @@ final class Connection_Approval {
             'operator'      => OAuth\Operators::sanitize( (string) $conn['operator'] ),
             'first_seen'    => time(),
             'last_seen'     => time(),
-            'ip'            => self::ip(),
+            'ip'            => Client_Ip::get(),
             'decided_by'    => 0,
             'decided_at'    => 0,
             'note'          => '',
@@ -387,11 +387,6 @@ final class Connection_Approval {
             }
         }
         return (string) ( $record['operator'] ?? '' );
-    }
-
-    private static function ip(): string {
-        $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-        return filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '';
     }
 
     // ── Notification ─────────────────────────────────────────────────────────

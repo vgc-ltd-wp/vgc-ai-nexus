@@ -24,6 +24,15 @@ use WP\MCP\Transport\Infrastructure\SessionManager;
 class HttpRequestHandler {
 
 	/**
+	 * VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: messages one JSON-RPC
+	 * batch may hold. MCP clients send one message per request (the 2025-06-18
+	 * protocol dropped batches), so no real client comes near it.
+	 *
+	 * @var int
+	 */
+	private const DEFAULT_MAX_BATCH_SIZE = 100;
+
+	/**
 	 * The transport context.
 	 *
 	 * @var \WP\MCP\Transport\Infrastructure\McpTransportContext
@@ -159,6 +168,29 @@ class HttpRequestHandler {
 
 		$is_batch_request = JsonRpcResponseBuilder::is_batch_request( $context->body );
 		$messages         = JsonRpcResponseBuilder::normalize_messages( $context->body );
+
+		// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: one HTTP request must not
+		// run an unbounded number of tool calls. Refused whole, before any of them runs.
+		if ( $is_batch_request ) {
+			/**
+			 * Filters how many JSON-RPC messages one batch may hold.
+			 *
+			 * @param int $limit Default 100; 0 or less turns the limit off.
+			 */
+			$batch_limit = (int) apply_filters( 'mcp_adapter_max_batch_size', self::DEFAULT_MAX_BATCH_SIZE );
+			if ( $batch_limit > 0 && count( $messages ) > $batch_limit ) {
+				return new \WP_REST_Response(
+					JsonRpcResponseBuilder::create_error_response(
+						null,
+						McpErrorFactory::create_error(
+							McpErrorFactory::INVALID_REQUEST,
+							sprintf( 'Invalid Request: a batch of %d messages was refused, the limit is %d. Send fewer at a time.', count( $messages ), $batch_limit )
+						)->toArray()
+					),
+					400
+				);
+			}
+		}
 
 		$response_body = JsonRpcResponseBuilder::process_messages(
 			$messages,

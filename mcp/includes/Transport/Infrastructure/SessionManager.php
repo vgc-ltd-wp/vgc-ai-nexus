@@ -102,19 +102,53 @@ final class SessionManager {
 				$session_id = wp_generate_uuid4();
 				$now        = time();
 
-				$sessions[ $session_id ] = array(
-					'created_at'         => $now,
-					'last_activity'      => $now,
-					'client_params'      => $params,
-					'negotiated_version' => $negotiated_version,
-					'client_name'        => $client_info['name']    ?? null,
-					'client_version'     => $client_info['version'] ?? null,
-				);
+				$sessions[ $session_id ] = self::session_record( $now, $params, $negotiated_version, $client_info );
 
 				update_user_meta( $user_id, self::SESSION_META_KEY, $sessions );
 
 				return $session_id;
 			}
+		);
+	}
+
+	/**
+	 * What a session keeps of the client's initialize request.
+	 *
+	 * VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: the whole request used
+	 * to be stored (up to 32 sessions per user, all re-saved on every write), so a
+	 * client decided how much it took up. Now only the protocol version and the
+	 * client's name and version, in strings of a fixed length. client_params keeps
+	 * its shape for readers of older sessions.
+	 *
+	 * @param int         $now                Current time.
+	 * @param array       $params             Client parameters from initialize request.
+	 * @param string|null $negotiated_version Negotiated MCP protocol version.
+	 * @param array|null  $client_info        clientInfo from the initialize request.
+	 *
+	 * @return array<string, mixed> The session.
+	 */
+	private static function session_record( int $now, array $params, ?string $negotiated_version, ?array $client_info ): array {
+		$text = static function ( $value, int $max ): ?string {
+			return is_string( $value ) ? mb_substr( $value, 0, $max ) : null;
+		};
+
+		$client  = $client_info ?? ( is_array( $params['clientInfo'] ?? null ) ? $params['clientInfo'] : array() );
+		$name    = $text( $client['name'] ?? null, 200 );
+		$version = $text( $client['version'] ?? null, 100 );
+
+		return array(
+			'created_at'         => $now,
+			'last_activity'      => $now,
+			'client_params'      => array(
+				'protocolVersion' => $text( $params['protocolVersion'] ?? null, 32 ),
+				'clientInfo'      => array(
+					'name'    => $name,
+					'version' => $version,
+				),
+			),
+			'negotiated_version' => $negotiated_version,
+			'client_name'        => $name,
+			'client_version'     => $version,
 		);
 	}
 

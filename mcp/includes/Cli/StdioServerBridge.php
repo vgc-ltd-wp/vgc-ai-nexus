@@ -137,15 +137,14 @@ class StdioServerBridge {
 				// Log errors to stderr
 				$this->log_to_stderr( 'Error processing request: ' . $e->getMessage() );
 
+				// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: the text of an
+				// exception can carry server paths. It stays on stderr, not in the response.
 				$error_response = $this->encode_response(
 					JsonRpcResponseBuilder::create_error_response(
 						null,
 						array(
 							'code'    => McpErrorFactory::INTERNAL_ERROR,
 							'message' => 'Internal error',
-							'data'    => array(
-								'details' => $e->getMessage(),
-							),
 						)
 					)
 				);
@@ -247,12 +246,15 @@ class StdioServerBridge {
 			// Format the response
 			return $this->format_response( $result, $id );
 		} catch ( \Throwable $e ) {
+			// VGC patch (AI Nexus 2.37.0), keep it when re-vendoring: the text of an
+			// exception can carry server paths. It goes to stderr, not in the response.
+			$this->log_to_stderr( 'Error handling request: ' . $e->getMessage() );
+
 			// Handle unexpected errors
 			return $this->create_error_response(
 				null,
 				McpErrorFactory::INTERNAL_ERROR,
-				'Internal error',
-				$e->getMessage()
+				'Internal error'
 			);
 		}
 	}

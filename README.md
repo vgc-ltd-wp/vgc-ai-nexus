@@ -196,7 +196,10 @@ Key protections:
 - **Only what concerns them** — `tools/list` shows a user the tools they could call; versions, the theme and the security setup are for administrators only
 - **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
-- **Privilege escalation prevention** — user tools enforce role hierarchy; non-admins cannot create or modify administrator accounts or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
+- **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
+- **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
+- **Package checks** — AI Nexus's own update and the extension installer accept packages only from the VGC update channel, and verify the manifest's SHA-256 where it gives one
+- **Clean uninstall** — deleting the plugin (never deactivating) revokes the Application Passwords the Connect page made and removes its data on every site of a network, keeping what a still-installed legacy connector needs and the audit trail of what an AI changed
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
 
 See [docs/security.md](docs/security.md) for a full breakdown.

@@ -23,7 +23,7 @@ class Get_Menu_Items_Ability extends Ability {
 
     public function execute( array $params ): array {
         if ( ! empty( $params['id'] ) ) {
-            $menu = $params['id'];
+            $menu = is_numeric( $params['id'] ) ? absint( $params['id'] ) : 0;
         } elseif ( ! empty( $params['slug'] ) ) {
             $menu = sanitize_title( $params['slug'] );
         } else {

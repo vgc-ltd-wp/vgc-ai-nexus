@@ -40,6 +40,12 @@ class Moderate_Comment_Ability extends Ability {
             return $this->error( "Comment {$id} not found." );
         }
 
+        // Permanent removal needs the right to edit this comment too, as in
+        // WordPress's own REST API: moderate_comments alone only changes its status.
+        if ( 'delete' === $action && ! current_user_can( 'edit_comment', $id ) ) {
+            return $this->error( 'You do not have permission to permanently delete this comment. You can still approve, hold, spam or trash it.' );
+        }
+
         switch ( $action ) {
             case 'approve': wp_set_comment_status( $id, 'approve' ); break;
             case 'hold':    wp_set_comment_status( $id, 'hold' );    break;
