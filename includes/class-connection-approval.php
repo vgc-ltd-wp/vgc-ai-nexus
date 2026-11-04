@@ -462,7 +462,7 @@ final class Connection_Approval {
             $held = self::held();
             if ( null !== $held ) {
                 self::log_refusal( 'abilities-rest:' . $route, $held );
-                return new \WP_Error( self::ERROR_CODE, self::message( $held ), [ 'status' => 403 ] );
+                return self::rest_refusal( $held );
             }
             return $result;
         }
@@ -498,10 +498,20 @@ final class Connection_Approval {
         if ( 'oauth' === (string) Request_Context::actor()['auth'] && 0 !== strpos( $route, '/vgc-cc/' ) ) {
             $held = self::held();
             if ( null !== $held ) {
-                return new \WP_Error( self::ERROR_CODE, self::message( $held ), [ 'status' => 403 ] );
+                return self::rest_refusal( $held );
             }
         }
         return $result;
+    }
+
+    /**
+     * A response, not a WP_Error: on /batch/v1 WordPress hands what
+     * rest_pre_dispatch returned straight to rest_post_dispatch, where
+     * rest_send_allow_header() and WordPress 7.1's Connectors filter fatal on a
+     * WP_Error. Anywhere else WordPress would make this same response from it.
+     */
+    private static function rest_refusal( array $held ): \WP_REST_Response {
+        return rest_convert_error_to_response( new \WP_Error( self::ERROR_CODE, self::message( $held ), [ 'status' => 403 ] ) );
     }
 
     private static function log_refusal( string $tool, array $held ): void {
