@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Safe_Fetch;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -14,8 +15,8 @@ defined( 'ABSPATH' ) || exit;
  * Security measures:
  *  - Strict MIME allowlist — no executables, scripts, archives, or images.
  *  - MIME is verified AFTER download via finfo / mime_content_type(), not from HTTP headers.
- *  - SSRF prevention: the resolved IP must not be in private or reserved ranges.
- *  - File size is capped at 50 MB.
+ *  - SSRF prevention: Safe_Fetch (public addresses only, pinned connection, redirects re-checked).
+ *  - File size is capped at 50 MB; the transfer stops there.
  */
 class Upload_File_Ability extends Ability {
 
@@ -80,27 +81,15 @@ class Upload_File_Ability extends Ability {
             return $this->error( 'A valid URL is required.' );
         }
 
-        // ── SSRF guard ────────────────────────────────────────────────────────
-        $ssrf_error = $this->check_ssrf( $url );
-        if ( null !== $ssrf_error ) {
-            return $this->error( $ssrf_error );
-        }
-
-        // ── Download to temp file ─────────────────────────────────────────────
+        // ── Download to temp file (SSRF guard + 50 MB limit) ──────────────────
         require_once ABSPATH . 'wp-admin/includes/file.php';
         require_once ABSPATH . 'wp-admin/includes/media.php';
         require_once ABSPATH . 'wp-admin/includes/image.php';
 
-        $tmp = download_url( $url, 60 );
+        $tmp = Safe_Fetch::download( $url, self::MAX_BYTES, 60 );
 
         if ( is_wp_error( $tmp ) ) {
             return $this->error( 'Failed to download file: ' . $tmp->get_error_message() );
-        }
-
-        // ── File size check ───────────────────────────────────────────────────
-        if ( filesize( $tmp ) > self::MAX_BYTES ) {
-            @unlink( $tmp );
-            return $this->error( 'File exceeds the 50 MB size limit.' );
         }
 
         // ── MIME verification (post-download) ─────────────────────────────────
@@ -154,34 +143,6 @@ class Upload_File_Ability extends Ability {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Returns a non-null string if the URL resolves to a private/reserved IP (SSRF risk).
-     */
-    private function check_ssrf( string $url ): ?string {
-        $host = parse_url( $url, PHP_URL_HOST );
-
-        if ( ! $host ) {
-            return 'Could not parse host from URL.';
-        }
-
-        $scheme = strtolower( parse_url( $url, PHP_URL_SCHEME ) ?? '' );
-        if ( ! in_array( $scheme, [ 'http', 'https' ], true ) ) {
-            return 'Only http and https URLs are supported.';
-        }
-
-        $ip = gethostbyname( $host );
-
-        if ( $ip === $host && ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-            return 'Could not resolve host: ' . $host;
-        }
-
-        if ( ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
-            return 'Requests to private or reserved IP ranges are not allowed.';
-        }
-
-        return null;
-    }
 
     /**
      * Detect the real MIME type of a downloaded file using PHP's finfo extension,

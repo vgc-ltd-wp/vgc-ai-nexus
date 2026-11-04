@@ -3,6 +3,7 @@ namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
 use MCP_Abilities\Media_Import;
+use MCP_Abilities\Safe_Fetch;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -14,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Security measures:
  *  - MIME type is read from the file's bytes (Media_Import), never trusted from a URL, header or name.
- *  - SSRF prevention for URLs: the resolved IP of the host must not be in private or reserved ranges.
+ *  - SSRF prevention for URLs: Safe_Fetch (public addresses only, pinned connection, redirects re-checked).
  *  - Size capped at 10 MB (3 MB for inline base64, which travels through the model's context).
  */
 class Upload_Image_Ability extends Ability {
@@ -62,14 +63,9 @@ class Upload_Image_Ability extends Ability {
             if ( '' === $url || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
                 return $this->error( 'A valid URL is required.' );
             }
-            $ssrf_error = $this->check_ssrf( $url );
-            if ( null !== $ssrf_error ) {
-                return $this->error( $ssrf_error );
-            }
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-            $tmp = download_url( $url, 30 );
+            $tmp = Safe_Fetch::download( $url, Media_Import::MAX_BYTES, 30 );
             if ( is_wp_error( $tmp ) ) {
-                return $this->error( 'Failed to download image: ' . $tmp->get_error_message() );
+                return $this->error( 'Failed to download image: ' . $tmp->get_error_message() . ' For an image that is not on the public web, use create_upload_link or data_base64.' );
             }
             $filename = (string) ( $params['filename'] ?? '' ) ?: ( basename( (string) parse_url( $url, PHP_URL_PATH ) ) ?: 'image' );
         }
@@ -101,33 +97,5 @@ class Upload_Image_Ability extends Ability {
         }
         $tmp = Media_Import::temp_file_from_bytes( $bytes );
         return $tmp ?? 'Could not write a temporary file on the server.';
-    }
-
-    /**
-     * Returns a non-null string if the URL resolves to a private/reserved IP (SSRF risk).
-     */
-    private function check_ssrf( string $url ): ?string {
-        $host = parse_url( $url, PHP_URL_HOST );
-
-        if ( ! $host ) {
-            return 'Could not parse host from URL.';
-        }
-
-        $scheme = strtolower( parse_url( $url, PHP_URL_SCHEME ) ?? '' );
-        if ( ! in_array( $scheme, [ 'http', 'https' ], true ) ) {
-            return 'Only http and https URLs are supported.';
-        }
-
-        $ip = gethostbyname( $host );
-
-        if ( $ip === $host && ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-            return 'Could not resolve host: ' . $host;
-        }
-
-        if ( ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
-            return 'Requests to private or reserved IP ranges are not allowed.';
-        }
-
-        return null;
     }
 }

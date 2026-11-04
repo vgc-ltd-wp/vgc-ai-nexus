@@ -104,6 +104,10 @@ add_filter( 'mcp_adapter_default_server_config', function ( array $config ) use 
 } );
 ```
 
+Core (2.36.0+) shows a user only the tools whose `permission` callback lets them in, so that callback must answer without the call's arguments. Keep it `$ability->current_user_can()`; an ability that needs more than one capability overrides that method.
+
+An ability that fetches a URL the caller gave must not call `wp_remote_get()` or `download_url()` itself. `\MCP_Abilities\Safe_Fetch::download( $url, $max_bytes, $timeout )` returns a temporary file or a `WP_Error`, with the SSRF rules in [security.md](security.md#upload-security-ssrf-prevention).
+
 ---
 
 ## Ability Group Structure

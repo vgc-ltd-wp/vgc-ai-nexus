@@ -38,11 +38,35 @@ final class Read_Only {
         'export_options', 'bulk_audit_log', 'bulk_list_batches',
     ];
 
+    /** Set only inside aside(). */
+    private static bool $aside = false;
+
     public static function active(): bool {
+        if ( self::$aside ) {
+            return false;
+        }
         if ( self::forced() ) {
             return true;
         }
         return (bool) apply_filters( 'mcp_abilities_read_only', (bool) get_option( self::OPTION, false ) );
+    }
+
+    /**
+     * Run a check with the mode set aside: "does this user hold what the tool
+     * needs, the mode apart". Only for deciding what the tool list shows; a call
+     * never runs in here.
+     *
+     * @param callable $check
+     * @return mixed What $check returned.
+     */
+    public static function aside( callable $check ) {
+        $was         = self::$aside;
+        self::$aside = true;
+        try {
+            return $check();
+        } finally {
+            self::$aside = $was;
+        }
     }
 
     /** True when wp-config.php forces read-only on (the toggle is then locked). */

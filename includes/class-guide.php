@@ -54,6 +54,12 @@ class Guide {
         return implode( "\n", $lines );
     }
 
+    /** The orientation for an account below `edit_posts`: it has no guide tool, and few tools or none. */
+    public static function limited_orientation(): string {
+        return "VGC AI Nexus — WordPress management tools for this site.\n\n"
+            . 'This WordPress account has very few rights on this site, so few tools are listed, or none, and only listed tools can be used. Do not try workarounds. If the user needs more, tell them a site administrator has to give this account a higher role, or that they should connect with another account.';
+    }
+
     /**
      * All guide sections, keyed by topic slug.
      *
@@ -184,13 +190,16 @@ class Guide {
         return $rows;
     }
 
-    /** Stable-ish fingerprint so a cached/memorised copy can be checked. */
+    /**
+     * Stable-ish fingerprint so a cached/memorised copy can be checked. Carries
+     * the plugin's version only for someone who may read it (see site_facts()).
+     */
     public static function version(): string {
         $body = '';
         foreach ( self::sections() as $slug => $section ) {
             $body .= $slug . (string) ( $section['body'] ?? '' );
         }
-        return MCP_ABILITIES_VERSION . '-' . substr( md5( $body ), 0, 8 );
+        return ( current_user_can( 'manage_options' ) ? MCP_ABILITIES_VERSION : 'guide' ) . '-' . substr( md5( $body ), 0, 8 );
     }
 
     // ── Built-in sections ────────────────────────────────────────────────────
@@ -277,17 +286,29 @@ sessions already existed under a different tool than the one being tried.
 MD;
     }
 
+    /**
+     * Live facts. Everyone who gets the guide (`edit_posts`) needs what is useful
+     * for working: which post types, which builder, whether writes are on. What
+     * would help someone looking for a way in is only for `manage_options`:
+     * versions, the theme, the security plugin, whether REST is blocked, how
+     * connections work.
+     */
     private static function site_facts(): string {
-        $out = [];
+        $admin = current_user_can( 'manage_options' );
+        $out   = [];
 
-        $theme = wp_get_theme();
         $out[] = '- **Site:** ' . get_bloginfo( 'name' ) . ' (' . home_url() . ')';
-        $out[] = '- **WordPress:** ' . get_bloginfo( 'version' ) . ' · **Locale:** ' . get_locale();
-        $out[] = '- **Theme:** ' . $theme->get( 'Name' ) . ' ' . $theme->get( 'Version' );
+        if ( $admin ) {
+            $theme = wp_get_theme();
+            $out[] = '- **WordPress:** ' . get_bloginfo( 'version' ) . ' · **Locale:** ' . get_locale();
+            $out[] = '- **Theme:** ' . $theme->get( 'Name' ) . ' ' . $theme->get( 'Version' );
+        } else {
+            $out[] = '- **Locale:** ' . get_locale();
+        }
 
         $builders = [];
         if ( defined( 'ELEMENTOR_VERSION' ) ) {
-            $builders[] = 'Elementor ' . ELEMENTOR_VERSION . ( defined( 'ELEMENTOR_PRO_VERSION' ) ? ' + Pro' : '' );
+            $builders[] = 'Elementor' . ( $admin ? ' ' . ELEMENTOR_VERSION : '' ) . ( defined( 'ELEMENTOR_PRO_VERSION' ) ? ' + Pro' : '' );
         }
         if ( class_exists( 'FusionBuilder' ) ) {
             $builders[] = 'Avada / Fusion Builder';
@@ -302,36 +323,40 @@ MD;
             $out[] = '- **WPML:** active (list/read abilities accept a `language` parameter)';
         }
 
-        // Installed AI Nexus plugins and their versions.
-        if ( ! function_exists( 'get_plugins' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/plugin.php';
-        }
-        $vgc = [];
-        foreach ( (array) get_plugins() as $file => $data ) {
-            if ( 0 === strpos( $file, 'vgc-ai-nexus' ) && is_plugin_active( $file ) ) {
-                $vgc[] = $data['Name'] . ' ' . $data['Version'];
+        if ( $admin ) {
+            // Installed AI Nexus plugins and their versions.
+            if ( ! function_exists( 'get_plugins' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
             }
-        }
-        if ( $vgc ) {
-            $out[] = '- **AI Nexus components:** ' . implode( ', ', $vgc );
-        }
+            $vgc = [];
+            foreach ( (array) get_plugins() as $file => $data ) {
+                if ( 0 === strpos( $file, 'vgc-ai-nexus' ) && is_plugin_active( $file ) ) {
+                    $vgc[] = $data['Name'] . ' ' . $data['Version'];
+                }
+            }
+            if ( $vgc ) {
+                $out[] = '- **AI Nexus components:** ' . implode( ', ', $vgc );
+            }
 
-        // Which adapter is serving. Several plugins bundle the same library, and
-        // a foreign one winning changes which features are available — reported
-        // here so it is never something that has to be inferred.
-        $out[] = '- **MCP adapter:** ' . Adapter_Status::summary();
+            // Which adapter is serving. Several plugins bundle the same library, and
+            // a foreign one winning changes which features are available — reported
+            // here so it is never something that has to be inferred.
+            $out[] = '- **MCP adapter:** ' . Adapter_Status::summary();
 
-        // Security layers that can block REST (and thus every MCP connection)
-        // from outside — the most misdiagnosed failure in customer reports.
-        $out[] = '- **Security:** ' . Security_Status::summary();
-        $out[] = '- **Admin approval for new connections:** ' . Connection_Approval::guide_line();
+            // Security layers that can block REST (and thus every MCP connection)
+            // from outside — the most misdiagnosed failure in customer reports.
+            $out[] = '- **Security:** ' . Security_Status::summary();
+            $out[] = '- **Admin approval for new connections:** ' . Connection_Approval::guide_line();
+        }
         $out[] = '- **Read-only mode:** ' . ( Read_Only::active()
             ? 'ON — all write tools are disabled' . ( Read_Only::forced() ? ' (locked in wp-config.php)' : '' ) . '. Read, list and search only.'
             : 'off — reads and writes allowed (subject to per-tool permissions).' );
-        $oauth  = \MCP_Abilities\OAuth\Bootstrap::mode();
-        $out[]  = '- **Remote access (claude.ai web, mobile, scheduled tasks):** ' . ( 'core' === $oauth
-            ? 'OAuth sign-in served by AI Nexus — add ' . Admin\Connect::server_url() . ' as a custom connector in claude.ai. The sign-in page asks, optionally, who is connecting; that name is shown with every change made through the connection (it is not checked).'
-            : ( 'connector' === $oauth ? 'OAuth sign-in served by the VGC MCP Claude Connector plugin.' : 'OAuth sign-in is switched off.' ) );
+        if ( $admin ) {
+            $oauth = \MCP_Abilities\OAuth\Bootstrap::mode();
+            $out[] = '- **Remote access (claude.ai web, mobile, scheduled tasks):** ' . ( 'core' === $oauth
+                ? 'OAuth sign-in served by AI Nexus — add ' . Admin\Connect::server_url() . ' as a custom connector in claude.ai. The sign-in page asks, optionally, who is connecting; that name is shown with every change made through the connection (it is not checked).'
+                : ( 'connector' === $oauth ? 'OAuth sign-in served by the VGC MCP Claude Connector plugin.' : 'OAuth sign-in is switched off.' ) );
+        }
 
         // The money data: real post type slugs with their taxonomies.
         $rows = [];

@@ -43,8 +43,31 @@ Every ability defines a `required_cap` that is checked by WordPress's `current_u
 | Options Management | `edit_posts` to reach the tool (its `list_post_types` action declares it); every other action needs `manage_options` |
 | Theme Management | `edit_theme_options` |
 | User Management | `list_users` / `edit_users` |
+| Custom CSS & JS | `manage_options`; writing JavaScript (`inject_js`) also needs `unfiltered_html`, writing CSS (`inject_css`) also `edit_css` |
 
 With consolidation on (the default), each group is one tool whose gate is the lowest capability among its actions; the selected action's own capability is checked again before it runs. With consolidation off, each action is its own tool with its own capability.
+
+---
+
+## What a User Is Told Exists (since 2.36.0)
+
+Any signed-in user with `read` can reach the MCP endpoint. Every call has always been checked; since 2.36.0 they are also told only what concerns them (`includes/class-tool-visibility.php`).
+
+- **`tools/list`** shows a user the tools they could call. A Subscriber or WooCommerce customer gets a valid, empty list. A group tool stays listed for anyone with its lowest capability (Options Management for `edit_posts`, because of `list_post_types`), and its other actions are refused when called. An administrator sees everything, a switched-off group included: calling that one explains how to switch it on. Anyone without the capability is simply refused it.
+- **Read-only mode does not take tools off the list.** A write tool someone holds the capability for stays listed and is refused when called, so switching the mode off needs no reconnect. A connection waiting for approval still sees only the status tool.
+- **`mcp-adapter-discover-abilities` and `mcp-adapter-get-ability-info`** need `edit_posts` (they needed `read`). Set by the adapter's filters `mcp_adapter_discover_abilities_capability` and `mcp_adapter_get_ability_info_capability`; a site can set its own there. `mcp-adapter-execute-ability` still needs only `read`, because every ability checks its own permission, but it is listed only for someone who could run at least one ability.
+- **The usage guide** needs `edit_posts`. Everyone who gets it gets what is useful for working: post type and taxonomy slugs, the page builder's name, whether WooCommerce and WPML are active, read-only mode, what each extension does. Only `manage_options` also sees the WordPress version, the theme, the AI Nexus plugins with their versions, the adapter, the security plugin and whether REST is blocked, the approval setting and how remote connections work. `guide_version` carries the plugin's version only for them.
+- **`initialize`** gives an account below `edit_posts` a short note in place of the usual orientation, which would send it to tools it does not have.
+
+Another plugin's copy of the MCP adapter older than 0.5.0 has no list filter and shows every tool. The checks on each call still apply.
+
+---
+
+## Custom CSS & JS (since 2.36.0)
+
+`inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`: on multisite only super admins have them, and `DISALLOW_UNFILTERED_HTML` takes them from everyone. The dispatcher, the single tool and the ability itself all check.
+
+This gates writes only. Code already stored keeps running, `get_custom_code` still reads it and `clear_css` still removes CSS, for anyone with `manage_options`. The other ways to the same code are closed too: `update_option` refuses `mcp_custom_*`, the Additional CSS post needs `edit_css` to edit, and WordPress's own filter removes custom CSS from `update_global_styles` for someone without `unfiltered_html`.
 
 ---
 
@@ -151,11 +174,20 @@ The bundled MCP adapter calls tools through a handler, not through `WP_Ability::
 
 ## Upload Security (SSRF Prevention)
 
-Both `upload_image` and `upload_file` download files from external URLs. To prevent Server-Side Request Forgery:
+Both `upload_image` and `upload_file` download files from URLs a caller gives, and what they download becomes a public attachment. To prevent Server-Side Request Forgery, every such download goes through one guard (since 2.36.0, `includes/class-safe-fetch.php`):
 
-1. **Scheme check** — only `http` and `https` are accepted.
-2. **DNS resolution** — the hostname is resolved to an IP address before the request.
-3. **IP range check** — the resolved IP is validated against `FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE`. Requests to `10.x.x.x`, `192.168.x.x`, `172.16–31.x.x`, `127.x.x.x`, `169.254.x.x`, and reserved ranges are rejected.
+1. **URL** — `http` and `https` only, no user name or password in the URL. The host must be a normal name or a normal IP address: forms such as `2130706433`, `0x7f.0.0.1` or `127.1`, which different parsers read differently, are refused.
+2. **All addresses** — both A and AAAA records are read. One address that is not public refuses the URL, and so does a host that resolves to nothing. Refused: private, loopback, link-local and multicast, `0.0.0.0/8`, `100.64.0.0/10`, documentation and reserved ranges, cloud metadata addresses, the same in IPv6, and IPv4 inside IPv6 (`::ffff:127.0.0.1`).
+3. **Port** — 80, 443 and 8080, WordPress's own list (filter `http_allowed_safe_ports`).
+4. **Pin** — the connection is pinned to a checked address (`CURLOPT_RESOLVE`), so a second DNS answer cannot move it, and the address cURL connected to is compared afterwards. TLS is still checked against the host name.
+5. **Redirects** — never followed by the HTTP client. They are followed here, at most 3, and each hop goes through all of the above. A redirect to an internal address is refused.
+6. **Size** — the transfer stops at the limit (10 MB for images, 50 MB for files). A larger file is refused, not stored cut short.
+
+**No cURL, no download.** WordPress's other transport cannot be pinned, so without PHP's cURL extension a URL is refused rather than fetched unpinned. An outgoing proxy (`WP_PROXY_HOST`) looks up addresses itself and cannot be pinned either: such a download is refused too, unless the filter `mcp_abilities_safe_fetch_through_proxy` returns true.
+
+**Allowing an internal host on purpose:** the filter `mcp_abilities_safe_fetch_allow_host` (`false`, `$host`, `$url`) lets one host past the address and port checks. It is off by default and code-only; no tool can change it. Redirects are judged hop by hop, so an allowed host cannot redirect to one that is not.
+
+`data_base64` and one-time upload links fetch nothing and are unchanged. They are the way to add an image that is not on the public web.
 
 ---
 
@@ -186,7 +218,7 @@ When a tool group is disabled, the AI agent does not receive an opaque failure �
 The "Create User" tool is currently disabled. To use it, go to WordPress Admin → AI Nexus → Abilities and enable it.
 ```
 
-This prevents the AI from silently failing or guessing workarounds, and allows it to advise the user on how to proceed.
+This prevents the AI from silently failing or guessing workarounds, and allows it to advise the user on how to proceed. Since 2.36.0 this goes to a user who could otherwise use the tool; anyone else is simply refused, and does not see the tool listed.
 
 ---
 

@@ -434,6 +434,14 @@ abstract class Ability {
         return \current_user_can( $this->required_cap );
     }
 
+    /**
+     * Why this user may not use this ability, when there is more to say than
+     * "permission denied" (see Inject_Js_Ability). Null otherwise.
+     */
+    public function refusal_message(): ?string {
+        return null;
+    }
+
     // ── Getters / Setters ────────────────────────────────────────────────────
 
     public function get_key(): string          { return $this->key; }

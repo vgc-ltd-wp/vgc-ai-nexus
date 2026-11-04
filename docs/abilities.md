@@ -208,8 +208,8 @@ Download an image from a URL and import it into the Media Library.
 | `description` | string | No | Long description |
 
 **Allowed MIME types:** `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `image/avif`  
-**Max size:** 10 MB  
-**SSRF protection:** URLs resolving to private IPs are rejected.
+**Max size:** 10 MB; the download stops there  
+**SSRF protection:** only public addresses, checked on every redirect, with the connection pinned to the checked address. See [security.md](security.md#upload-security-ssrf-prevention).
 
 **Returns:** `{ id: N, url: "...", mime_type: "..." }`
 
@@ -226,7 +226,7 @@ Download a document or media file from a URL and import it into the Media Librar
 
 **Allowed types:** PDF, TXT, CSV, DOC, DOCX, XLS, XLSX, PPT, PPTX, MP3, WAV, OGG, M4A, MP4, WebM, MOV  
 **Not allowed:** Images (use `upload_image`), ZIP, PHP, JS, HTML, or any executable.  
-**Max size:** 50 MB  
+**Max size:** 50 MB; the download stops there  
 **SSRF protection:** Same as `upload_image`.
 
 **Returns:** `{ id: N, url: "...", filename: "...", mime_type: "..." }`

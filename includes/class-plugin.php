@@ -138,6 +138,9 @@ final class Plugin {
         // sub-domain's connector does not show the main domain's favicon.
         Site_Identity::init();
 
+        // tools/list shows a user the tools they could call; the discovery tools need more than `read`.
+        Tool_Visibility::init();
+
         // Make a foreign or failed adapter visible to administrators.
         add_action( 'admin_notices', [ Adapter_Status::class, 'maybe_admin_notice' ] );
 
@@ -163,17 +166,20 @@ final class Plugin {
             return $result;
         }
         try {
-            $data        = $result->toArray();
-            $existing    = trim( (string) ( $data['instructions'] ?? '' ) );
-            $orientation = Guide::orientation();
+            $data     = $result->toArray();
+            $existing = trim( (string) ( $data['instructions'] ?? '' ) );
 
-            // The server description already carries the orientation, and that is
-            // what the adapter reports as `instructions` — so on a healthy install
-            // this filter would otherwise duplicate it.
-            if ( '' !== $existing && false !== strpos( $existing, 'VGC AI Nexus' ) ) {
+            if ( ! current_user_can( 'edit_posts' ) ) {
+                // The usual text sends the AI to tools this account does not get.
+                $data['instructions'] = Guide::limited_orientation();
+            } elseif ( '' !== $existing && false !== strpos( $existing, 'VGC AI Nexus' ) ) {
+                // The server description already carries the orientation, and that is
+                // what the adapter reports as `instructions` — so on a healthy install
+                // this filter would otherwise duplicate it.
                 return $result;
+            } else {
+                $data['instructions'] = Guide::orientation() . ( '' !== $existing ? "\n\n" . $existing : '' );
             }
-            $data['instructions'] = $orientation . ( '' !== $existing ? "\n\n" . $existing : '' );
 
             $class = get_class( $result );
             if ( method_exists( $class, 'fromArray' ) ) {
@@ -225,12 +231,7 @@ final class Plugin {
                         'description'         => $ability->get_description(),
                         'input_schema'        => $wp_schema,
                         'permission_callback' => function() use ( $ability, $group ) {
-                            // Disabled tools are still reachable by logged-in users so
-                            // the execute callback can explain why the tool is unavailable.
-                            if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
-                                return is_user_logged_in();
-                            }
-                            return $ability->current_user_can();
+                            return $this->tool_permission( $ability, $group );
                         },
                         // Error arrays become WP_Error where needed in Tool_Errors,
                         // which wraps this callback as it is registered.
@@ -317,16 +318,34 @@ final class Plugin {
                 return Tool_Errors::for_adapter( $this->run_ability( $ability, $group, (array) $params ) );
             },
             'permission'  => function() use ( $ability, $group ) {
-                if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
-                    return is_user_logged_in();
-                }
-                return $ability->current_user_can();
+                return $this->tool_permission( $ability, $group );
             },
         ] );
 
         // Even if the DTO build fails, still expose the ability by name rather
         // than dropping the tool entirely.
         return $tool instanceof \WP_Error ? $ability_name : $tool;
+    }
+
+    /**
+     * Whether the current user may call a tool: its MCP permission check and its
+     * WordPress ability's, and with them what tools/list shows (Tool_Visibility).
+     *
+     * A switched-off tool still lets through whoever could otherwise use it, so
+     * the call can explain why it is unavailable. Anyone else is refused: a
+     * Subscriber has no business hearing about a switched-off admin tool.
+     *
+     * @return bool|\WP_Error
+     */
+    private function tool_permission( Ability $ability, Ability_Group $group ) {
+        if ( ! $group->is_enabled() || ! $ability->is_enabled() ) {
+            return current_user_can( $ability->get_required_cap() );
+        }
+        if ( $ability->current_user_can() ) {
+            return true;
+        }
+        $why = $ability->refusal_message();
+        return null === $why ? false : new \WP_Error( Tool_Visibility::REFUSED_CODE, $why );
     }
 
     /**

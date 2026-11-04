@@ -37,7 +37,29 @@ class Inject_Js_Ability extends Ability {
         ];
     }
 
+    /**
+     * Raw JavaScript for every visitor is what WordPress reserves for
+     * `unfiltered_html`, whatever else the account can do: on multisite only
+     * super admins have it, and DISALLOW_UNFILTERED_HTML takes it from everyone.
+     * This gates writes only: code already stored keeps running.
+     */
+    public function current_user_can(): bool {
+        return parent::current_user_can() && \current_user_can( 'unfiltered_html' );
+    }
+
+    public function refusal_message(): ?string {
+        return \current_user_can( 'unfiltered_html' )
+            ? null
+            : 'inject_js is refused: writing raw JavaScript to the site needs the "unfiltered_html" capability on top of "manage_options", and this WordPress account does not have it on this site (multisite gives it only to super admins; DISALLOW_UNFILTERED_HTML takes it from everyone). JavaScript already stored keeps running, and get_custom_code can still read it.';
+    }
+
     public function execute( array $params ): array {
+        // Here as well as in the gate: the group tool checks only the required capability.
+        $refused = $this->refusal_message();
+        if ( null !== $refused ) {
+            return $this->error( $refused );
+        }
+
         $js        = $params['js'] ?? '';
         $placement = in_array( $params['placement'] ?? 'footer', [ 'header', 'footer' ], true )
             ? ( $params['placement'] ?? 'footer' )
