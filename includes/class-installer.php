@@ -36,6 +36,11 @@ class Installer {
      * comments and orders outlive the plugin; so does the record of who made
      * them and through which app.
      *
+     * Deliberately KEPT: read-only mode and "require admin approval". Whoever
+     * deletes the plugin and uploads it again must not find a read-only site
+     * writable, or new connections let straight in, without anyone having
+     * decided that. Two small options left behind are a fair price.
+     *
      * Deliberately KEPT while the separate VGC MCP Claude Connector is on the
      * site, active or not: the OAuth apps and tokens, which that plugin serves
      * under the same names, the who-is-connecting names and approvals that go
@@ -77,7 +82,6 @@ class Installer {
             'mcp_abilities_oauth_rules',
             'mcp_abilities_loaded_version',
             'mcp_abilities_consolidate',
-            Read_Only::OPTION,
             Admin\Connect::OPTION_CONNECTIONS,
             Guide::CONVENTIONS_OPTION,
             Custom_Code::JS_HEAD_OPTION,
@@ -101,7 +105,7 @@ class Installer {
             // Including who-is-connecting names and connection approvals:
             // they belong to these connections.
             foreach ( [ OAuth\Options::CLIENTS, OAuth\Options::REG_POLICY, OAuth\Options::ALLOWED_ORIGINS, 'vgc_cc_dynamic_reg_user_id', OAuth\Operators::OPTION,
-                Connection_Approval::OPTION, Connection_Approval::RECORDS, Connection_Approval::MAIL_LOG ] as $opt ) {
+                Connection_Approval::RECORDS, Connection_Approval::MAIL_LOG ] as $opt ) {
                 delete_option( $opt );
             }
         }

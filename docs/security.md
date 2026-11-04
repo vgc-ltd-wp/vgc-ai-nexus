@@ -276,12 +276,12 @@ Filters: `mcp_abilities_verify_packages` (bool, `$package`, `$slug`; false skips
 Deactivating removes nothing. Deleting the plugin (Plugins → Delete, `wp plugin uninstall`) removes, on every site of a network:
 
 - the Application Passwords the Connect page recorded (only those; one someone made on their profile stays, even with the same name), so those connections stop working at once;
-- the activity log, all settings (tool switches, read-only mode, consolidation, approval), the guide's conventions, the custom JavaScript from `inject_js`, upload links, the plugin's caches and rate-limit counters;
+- the activity log, the settings (tool switches, consolidation), the guide's conventions, the custom JavaScript from `inject_js`, upload links, the plugin's caches and rate-limit counters;
 - the OAuth apps and tokens, who-is-connecting names, approval records and MCP sessions, **unless the VGC MCP Claude Connector is installed**, active or not: it serves the same connections under the same names.
 
-Kept: the MCP attribution meta on revisions, posts, comments, order notes and orders, which is the record of what an AI changed; custom CSS, which is WordPress's own Additional CSS; extensions' settings; `vgc_cc_connections` and the connector's other own settings.
+Kept: read-only mode and "require admin approval", so that deleting and uploading the plugin again never quietly makes a site less protected (two small options stay behind in the database; delete `mcp_abilities_read_only` and `mcp_abilities_require_approval` by hand if the plugin is gone for good); the MCP attribution meta on revisions, posts, comments, order notes and orders, which is the record of what an AI changed; custom CSS, which is WordPress's own Additional CSS; extensions' settings; `vgc_cc_connections` and the connector's other own settings.
 
-**So never delete the plugin to update it.** Deleting and uploading it again loses all of the above: every connection has to be made again, read-only mode is off until someone switches it back on, and JavaScript added with `inject_js` stops running for good. To install a zip by hand, upload it over the existing plugin (Plugins → Add New → Upload, "Replace current with uploaded").
+**So never delete the plugin to update it.** Deleting and uploading it again loses all of the above: every connection has to be made again, and tool switches are back to their defaults, and JavaScript added with `inject_js` stops running for good. To install a zip by hand, upload it over the existing plugin (Plugins → Add New → Upload, "Replace current with uploaded").
 
 ---
 

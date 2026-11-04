@@ -13,7 +13,9 @@
  *     the same connections;
  *   - kept: the MCP attribution meta on revisions, posts, comments, order
  *     notes and orders (_mcp_abilities_actor, _mcp_abilities_last_change):
- *     it is the audit trail of what an AI changed.
+ *     it is the audit trail of what an AI changed; and read-only mode and
+ *     "require admin approval", so that deleting and uploading the plugin again
+ *     never quietly makes a site less protected.
  *
  * Deactivating removes none of this.
  *
