@@ -58,6 +58,9 @@ final class Plugin {
 
             $guide_page = new Admin\Guide_Page();
             $guide_page->init();
+
+            $other_tools_page = new Admin\Other_Tools_Page();
+            $other_tools_page->init();
         }
 
         do_action( 'mcp_abilities_loaded', $this );
@@ -68,6 +71,7 @@ final class Plugin {
             'class-installer.php',
             'class-request-context.php',
             'class-connection-approval.php',
+            'class-other-tools.php',
             'class-logger.php',
             'class-registry.php',
             'class-ability-group.php',
@@ -100,6 +104,10 @@ final class Plugin {
         // "Require admin approval for new connections" (off by default): a
         // held connection gets one status tool and nothing else.
         Connection_Approval::init();
+
+        // Other plugins' AI tools and MCP servers: read-only mode covers them,
+        // and an administrator can turn each one off (AI Nexus → Other AI tools).
+        Other_Tools::init();
 
         // Start the activity logger (table upgrade + cron pruning).
         Logger::init();

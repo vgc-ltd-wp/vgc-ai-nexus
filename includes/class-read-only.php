@@ -15,6 +15,9 @@ defined( 'ABSPATH' ) || exit;
  * key is a known read verb. Anything unrecognised — including abilities added
  * in later releases — is treated as a write, so a read-only site can never
  * silently gain a write tool through an update.
+ *
+ * Other plugins' abilities and tools (2.38.0): Other_Tools applies this mode to
+ * them, by their own readonly annotation, on every way an AI can reach them.
  */
 final class Read_Only {
 

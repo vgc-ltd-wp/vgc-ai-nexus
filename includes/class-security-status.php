@@ -160,6 +160,43 @@ class Security_Status {
     }
 
     /**
+     * Plain lines about other MCP servers and MCP-like addresses that are on
+     * (AI Nexus → Other AI tools). Empty until the REST API has started, which is
+     * when the adapter builds its servers: pass $build on an admin page.
+     *
+     * @return string[]
+     */
+    public static function other_ai_lines( bool $build = false ): array {
+        if ( $build ) {
+            Other_Tools::build_servers();
+        }
+        if ( ! did_action( 'rest_api_init' ) ) {
+            return [];
+        }
+        $lines   = [];
+        $servers = Other_Tools::active_servers();
+        if ( $servers ) {
+            $lines[] = sprintf(
+                /* translators: %s: list of MCP servers */
+                __( 'Other MCP servers that are on: %s.', 'mcp-abilities' ),
+                implode( ', ', $servers )
+            );
+            $lines[] = __( "AI Nexus's sign-in and connection approval do not cover a server with a sign-in of its own (WooCommerce's uses its own API keys). Read-only mode and the switches on AI Nexus → Other AI tools do cover the tools of every server on the MCP adapter.", 'mcp-abilities' );
+        } else {
+            $lines[] = __( "No other MCP server is on: AI assistants connect through AI Nexus's own server only.", 'mcp-abilities' );
+        }
+        $endpoints = Other_Tools::active_endpoints();
+        if ( $endpoints ) {
+            $lines[] = sprintf(
+                /* translators: %s: list of REST routes */
+                __( 'Other MCP-like addresses that are on: %s. They are not served through AI Nexus\'s adapter: AI Nexus cannot see or limit their tools, only switch them off.', 'mcp-abilities' ),
+                implode( ', ', $endpoints )
+            );
+        }
+        return $lines;
+    }
+
+    /**
      * Admin notice: hard error when the loopback proves the endpoint is
      * blocked; otherwise stay quiet (a merely-present security plugin is
      * reported in the guide, not nagged about).

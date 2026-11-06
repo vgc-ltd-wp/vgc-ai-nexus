@@ -534,6 +534,55 @@
         } );
     } );
 
+    // ── Other AI tools: switches, "counts as a read", new ones ──────────────
+
+    $( document ).on( 'change', '.mcp-other .mcp-other-switch, .mcp-other .mcp-other-read, .mcp-other input[name="mcp-other-new"]', function () {
+        state.dirty = true;
+        $( '#mcp-other-save' ).addClass( 'mcp-btn--dirty' );
+    } );
+
+    // "Counts as a read" lifts the read-only note of its row.
+    $( document ).on( 'change', '.mcp-other .mcp-other-read', function () {
+        $( this ).closest( 'tr' ).find( '.mcp-other__blocked' ).prop( 'hidden', this.checked );
+    } );
+
+    $( document ).on( 'click', '#mcp-other-save', function () {
+        const $btn     = $( this );
+        const $status  = $( '#mcp-other-status' );
+        const settings = { tools: {}, servers: {}, endpoints: {}, new: $( '.mcp-other input[name="mcp-other-new"]:checked' ).val() || 'allow' };
+
+        $( '.mcp-other .mcp-other-switch' ).each( function () {
+            const kind = $( this ).data( 'kind' );
+            const id   = String( $( this ).attr( 'data-id' ) );
+            if ( 'tools' === kind ) {
+                const $read = $( this ).closest( 'tr' ).find( '.mcp-other-read' );
+                settings.tools[ id ] = { on: this.checked, read: $read.length ? $read.is( ':checked' ) : false };
+            } else if ( 'servers' === kind || 'endpoints' === kind ) {
+                settings[ kind ][ id ] = this.checked;
+            }
+        } );
+
+        $btn.prop( 'disabled', true );
+        $status.removeClass( 'mcp-save-status--success mcp-save-status--error' ).text( mcpAbilities.i18n.saving );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_save_other_tools', nonce: mcpAbilities.nonce, settings: JSON.stringify( settings ) } )
+            .done( function ( res ) {
+                if ( res && res.success ) {
+                    state.dirty = false;
+                    $btn.removeClass( 'mcp-btn--dirty' );
+                    $status.addClass( 'mcp-save-status--success' ).text( mcpAbilities.i18n.saved );
+                } else {
+                    $status.addClass( 'mcp-save-status--error' ).text( ( res && res.data && res.data.message ) || mcpAbilities.i18n.error );
+                }
+            } )
+            .fail( function () {
+                $status.addClass( 'mcp-save-status--error' ).text( mcpAbilities.i18n.error );
+            } )
+            .always( function () {
+                $btn.prop( 'disabled', false );
+                setTimeout( function () { $status.text( '' ); }, 3000 );
+            } );
+    } );
+
     // ── Warn on unsaved changes ──────────────────────────────────────────────
 
     $( window ).on( 'beforeunload', function () {

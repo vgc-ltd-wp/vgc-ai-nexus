@@ -60,6 +60,10 @@ $mcp_budget_class = $mcp_grand_total <= 25 ? 'is-green' : ( $mcp_grand_total <= 
             <p class="mcp-readonly__help">
                 <?php esc_html_e( 'When on, AI assistants can read, list and search this site but cannot change anything: every create, update, delete, upload and settings tool is refused — in AI Nexus and in all of its extensions, including tools added by future updates. Your per-ability settings below are kept and come back when you switch it off. Takes effect immediately.', 'mcp-abilities' ); ?>
             </p>
+            <p class="mcp-readonly__help">
+                <?php esc_html_e( 'Other plugins\' AI tools are covered too: only those their plugin marks as read-only can be used.', 'mcp-abilities' ); ?>
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=mcp-abilities-other-tools' ) ); ?>"><?php esc_html_e( 'Other AI tools', 'mcp-abilities' ); ?></a>
+            </p>
             <?php if ( $mcp_ro_forced ) : ?>
                 <p class="mcp-readonly__help"><strong>
                     <?php esc_html_e( 'Locked on by VGC_AI_NEXUS_READONLY in wp-config.php — remove that line to use this switch.', 'mcp-abilities' ); ?>

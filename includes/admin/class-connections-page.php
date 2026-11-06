@@ -109,6 +109,17 @@ class Connections_Page {
             case 'setting':
                 $html = esc_html__( 'setting: require admin approval', 'mcp-abilities' );
                 break;
+            case \MCP_Abilities\Other_Tools::LOG_TYPE:
+                $why  = [
+                    'read_only'  => __( 'refused: read-only mode', 'mcp-abilities' ),
+                    'off'        => __( 'refused: turned off', 'mcp-abilities' ),
+                    'new'        => __( 'refused: new, kept off', 'mcp-abilities' ),
+                    'server_off' => __( 'refused: server turned off', 'mcp-abilities' ),
+                ];
+                /* translators: %s: tool name */
+                $html   = self::link( admin_url( 'admin.php?page=' . \MCP_Abilities\Other_Tools::PAGE_SLUG ), sprintf( __( "another plugin's tool %s", 'mcp-abilities' ), (string) ( $object['key'] ?? '' ) ) );
+                $suffix = isset( $why[ $action ] ) ? ' <span class="mcp-log-object__action">' . esc_html( $why[ $action ] ) . '</span>' : $suffix;
+                break;
             default:
                 $html = esc_html( $type . ' #' . $id );
         }

@@ -1283,6 +1283,66 @@
 .mcp-readonly__title { font-weight: 600; font-size: 14px; }
 .mcp-readonly__help { margin: 8px 0 0; color: #50575e; }
 
+/* ── Other AI tools ─────────────────────────────────────────────────────── */
+.mcp-other [hidden] { display: none !important; }
+.mcp-other .mcp-readonly__title { margin: 0; }
+.mcp-other__security { margin: 10px 0 0 18px; list-style: disc; color: #50575e; }
+.mcp-other__section { margin: 0 0 26px; }
+.mcp-other__section > h2 { font-size: 16px; margin: 0 0 6px; }
+.mcp-other__intro { margin: 0 0 12px; color: var(--mcp-muted); max-width: 820px; }
+.mcp-other__card {
+    background: var(--mcp-surface);
+    border: 1px solid var(--mcp-border);
+    border-radius: var(--mcp-radius);
+    box-shadow: var(--mcp-shadow);
+    padding: 14px 18px;
+    margin: 0 0 12px;
+    min-width: 0;
+}
+.mcp-other__card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.mcp-other__card-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.mcp-other__id { overflow-wrap: anywhere; word-break: break-word; }
+.mcp-other__new { background: #fff4d6; color: #8a5a00; }
+.mcp-other .mcp-badge--locked { white-space: nowrap; flex: 0 0 auto; }
+.mcp-other .mcp-badge--locked .dashicons { font-size: 14px; width: 14px; height: 14px; vertical-align: -2px; }
+.mcp-other__facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 14px;
+    margin: 10px 0 0;
+}
+.mcp-other__facts dt { color: var(--mcp-muted); }
+.mcp-other__facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.mcp-other__names summary { cursor: pointer; color: var(--mcp-primary); margin-top: 4px; }
+.mcp-other__note { margin: 10px 0 0; color: #50575e; font-size: 13px; }
+.mcp-other__group { margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
+.mcp-other__table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.mcp-other__table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--mcp-muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mcp-border);
+}
+.mcp-other__table td { padding: 10px 8px; border-bottom: 1px solid var(--mcp-border); vertical-align: top; }
+.mcp-other__table tr:last-child td { border-bottom: none; }
+.mcp-other__col-switch { width: 60px; text-align: right; }
+.mcp-other__label { display: block; color: var(--mcp-muted); margin-top: 2px; }
+.mcp-other__marked { display: inline-block; font-weight: 600; }
+.mcp-other__marked--read { color: #00703c; }
+.mcp-other__marked--write { color: #b32d2e; }
+.mcp-other__marked--unmarked { color: #8a5a00; }
+.mcp-other__read { display: block; margin-top: 4px; }
+.mcp-other__blocked { display: block; margin-top: 4px; color: #b32d2e; font-size: 12px; }
+.mcp-other__policy { border: 1px solid var(--mcp-border); }
+.mcp-other__policy label { display: block; margin: 0 0 8px; }
+.mcp-other__policy .mcp-other__intro { margin: 6px 0 0; }
+
 /* ── Phone (WordPress admin's own breakpoint) ───────────────────────────────
    Group cards, the toolbar and the abilities table are shared by the Abilities
    page and every extension subpage. Desktop rules above stay untouched. */
@@ -1357,6 +1417,31 @@
     .mcp-log-row td.mcp-col-client,
     .mcp-log-row td.mcp-col-objects,
     .mcp-log-row td.mcp-col-ip     { grid-column: 1 / -1; }
+
+    /* Other AI tools: one stacked block per tool or address, switch top right. */
+    .mcp-other__card { padding: 12px 14px; }
+    .mcp-other__facts { grid-template-columns: minmax(0, 1fr); }
+    .mcp-other__facts dd { margin-bottom: 6px; }
+    .mcp-other__table,
+    .mcp-other__table tbody { display: block; }
+    .mcp-other__table thead { display: none; }
+    .mcp-other__table .mcp-other__row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 12px;
+        row-gap: 6px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--mcp-border);
+    }
+    .mcp-other__table .mcp-other__row:last-child { border-bottom: none; }
+    .mcp-other__table .mcp-other__row td { display: block; padding: 0; border-bottom: none; min-width: 0; }
+    .mcp-other__row td.mcp-other__col-tool   { grid-column: 1; grid-row: 1; }
+    .mcp-other__row td.mcp-other__col-switch { grid-column: 2; grid-row: 1; width: auto; }
+    .mcp-other__row td.mcp-other__col-ways,
+    .mcp-other__row td.mcp-other__col-marked { grid-column: 1 / -1; }
+    /* A 40px tap target around the 24px switch, without changing how it looks. */
+    .mcp-other .mcp-other__switch::after { content: ''; position: absolute; inset: -8px -4px; }
+    .mcp-other__policy label { min-height: 40px; display: flex; align-items: center; gap: 8px; }
 }
 
 /* ── VGC icons (Icons::svg / Icons::logo) ───────────────────────────────── */

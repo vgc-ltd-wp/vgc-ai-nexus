@@ -54,12 +54,52 @@ With consolidation on (the default), each group is one tool whose gate is the lo
 Any signed-in user with `read` can reach the MCP endpoint. Every call has always been checked; since 2.36.0 they are also told only what concerns them (`includes/class-tool-visibility.php`).
 
 - **`tools/list`** shows a user the tools they could call. A Subscriber or WooCommerce customer gets a valid, empty list. A group tool stays listed for anyone with its lowest capability (Options Management for `edit_posts`, because of `list_post_types`), and its other actions are refused when called. An administrator sees everything, a switched-off group included: calling that one explains how to switch it on. Anyone without the capability is simply refused it.
-- **Read-only mode does not take tools off the list.** A write tool someone holds the capability for stays listed and is refused when called, so switching the mode off needs no reconnect. A connection waiting for approval still sees only the status tool.
+- **Read-only mode does not take AI Nexus's own tools off the list.** A write tool someone holds the capability for stays listed and is refused when called, so switching the mode off needs no reconnect (a group tool leaves its write actions out of its description). A connection waiting for approval still sees only the status tool. Other plugins' tools that change the site are taken off the list while the mode is on: see [Other Plugins' AI Tools](#other-plugins-ai-tools-and-mcp-servers-since-2380).
 - **`mcp-adapter-discover-abilities` and `mcp-adapter-get-ability-info`** need `edit_posts` (they needed `read`). Set by the adapter's filters `mcp_adapter_discover_abilities_capability` and `mcp_adapter_get_ability_info_capability`; a site can set its own there. `mcp-adapter-execute-ability` still needs only `read`, because every ability checks its own permission, but it is listed only for someone who could run at least one ability.
 - **The usage guide** needs `edit_posts`. Everyone who gets it gets what is useful for working: post type and taxonomy slugs, the page builder's name, whether WooCommerce and WPML are active, read-only mode, what each extension does. Only `manage_options` also sees the WordPress version, the theme, the AI Nexus plugins with their versions, the adapter, the security plugin and whether REST is blocked, the approval setting and how remote connections work. `guide_version` carries the plugin's version only for them.
 - **`initialize`** gives an account below `edit_posts` a short note in place of the usual orientation, which would send it to tools it does not have.
 
 Another plugin's copy of the MCP adapter older than 0.5.0 has no list filter and shows every tool. The checks on each call still apply.
+
+---
+
+## Other Plugins' AI Tools and MCP Servers (since 2.38.0)
+
+Until 2.37.0, read-only mode and the tool switches bound only AI Nexus's own tools. Other plugins' abilities reached AI clients past them, and ran while read-only mode was on:
+
+1. through the adapter's `mcp-adapter-execute-ability` tool on AI Nexus's own server, for any ability marked `meta.mcp.public` (WooCommerce's `product-create`, `product-update`, `product-delete`, `order-update-status`, `order-add-note`; AIOSEO's robots rules);
+2. as tools other plugins add to AI Nexus's server (`mcp_adapter_default_server_config`);
+3. on MCP servers other plugins create on the adapter (WooCommerce creates `woocommerce-mcp` when its MCP feature is on);
+4. through WordPress's own Abilities REST route (`/wp-abilities/v1/abilities/<name>/run`) for abilities with `show_in_rest`.
+
+Since 2.38.0 one gate covers all four (`includes/class-other-tools.php`):
+
+- **Every ability that is not AI Nexus's own** gets its permission and execute callbacks wrapped as it is registered (`wp_register_ability_args`). AI Nexus's own are core's, every extension's and anything else built on `MCP_Abilities\Ability` (their callbacks close over one; they enforce read-only mode themselves), plus the adapter's three `mcp-adapter/*` abilities. Names cannot tell them apart: the WooCommerce extension registers `woocommerce/...` abilities of its own next to WooCommerce's.
+- **It refuses only an AI:** an MCP request (any adapter server, a STDIO tool call) or the Abilities REST route, except for a signed-in browser (cookie and REST nonce) and WP-CLI. A person in wp-admin, cron and a plugin using its own ability are never refused.
+- **It refuses** a tool an administrator turned off; a new one while "keep them off" is chosen; and, while read-only mode is on, every tool that is not a read. A read is a tool its plugin marks `meta.annotations.readonly: true` (WordPress 6.9 ability annotations; WooCommerce, AIOSEO, VGC Stats, VGC Google Product Feed and VGC Stock Manager mark theirs), or an unmarked tool the administrator ticked "Counts as a read". `false`, `null` or no annotation counts as a change: deny by default. A tool with its own handler (no ability behind it) is read by its `readOnlyHint`.
+- **The AI is told why** (`mcp_abilities_read_only`: the tool changes the site and read-only mode is on; `mcp_abilities_tool_off`: a site administrator turned it off), with HTTP 403 on the Abilities REST route. Every refusal is written to the activity log, once per tool and request.
+- **What the AI sees:** `tools/list`, `resources/list` and `prompts/list` on every adapter server, `mcp-adapter-discover-abilities` and `mcp-adapter-get-ability-info` leave out what would be refused (info answers with the reason instead).
+- **Every tool call** on every adapter server goes through a second check (`mcp_adapter_pre_tool_call`), which also covers tools other plugins add with a handler of their own.
+
+**AI Nexus → Other AI tools** (administrators, `manage_options`) lists:
+
+1. the MCP servers on the site, each with an On/Off switch. AI Nexus's own server is first and always on;
+2. other plugins' tools an AI can reach, by plugin: how it reaches each one, whether it reads or changes (from the plugin's annotation; missing is "Changes (not marked)"), an On/Off switch, and "Counts as a read" for a tool its plugin did not mark;
+3. other MCP-like addresses (a path segment `mcp`, or `mcp-` / `-mcp` in a segment) that the adapter does not serve. AI Nexus cannot see or limit their tools; it can only switch the address off;
+4. what happens when a plugin adds a new AI tool or MCP server: allow it (the default), or keep it off until switched on. "New" is anything not yet shown on this page; opening the page with "keep them off" stores what it shows for the first time as off, so seeing a tool never switches it on.
+
+A server or an address that is off is gone: its routes are removed (`rest_endpoints`) and every request to it gets a 404 (`rest_pre_dispatch`), in any letter case, as `/wp-json/...` and as `?rest_route=`, inside `/batch/v1` too. AI Nexus's own server, `/mcp/...`, `/mcp-abilities/...` and `/vgc-cc/...` can never be turned off, whatever the option says.
+
+The switches live in one option, `mcp_abilities_other_tools`, which the `update_option` ability refuses (prefix `mcp_abilities_`), so an AI cannot switch anything back on. The page saves through admin AJAX with a nonce and `manage_options`.
+
+**Sign-in.** AI Nexus's sign-in (Application Passwords, its OAuth tokens) and "require admin approval" do not cover a server with a sign-in of its own: WooCommerce's MCP server uses WooCommerce API keys. Read-only mode and the switches on this page do cover the tools of every server on the adapter, whoever signed in.
+
+**What it cannot cover:**
+
+- an MCP endpoint a plugin serves itself, without the adapter: AI Nexus cannot see its tools, only switch its address off;
+- `wp mcp-adapter serve` (STDIO, WP-CLI): its tool calls are refused like any other, but anyone who can run WP-CLI can run any PHP on the site, so it is not a boundary;
+- an ability registered with an `ability_class` that overrides `execute()` and `check_permissions()` so its callbacks never run;
+- another plugin's copy of the adapter older than 0.5.0 (no list or pre-call filters: its tools stay listed, the ability gate still refuses them), and resources or prompts with handlers of their own on another plugin's server (only the server switch applies).
 
 ---
 
@@ -132,7 +172,7 @@ And every key starting with:
 | Prefix | Why |
 |---|---|
 | `vgc_cc_` | OAuth token store (a written row would be a login), the apps allowed to connect, the registration policy |
-| `mcp_abilities_` | This plugin's own settings: read-only mode, connection approval, the guide conventions every AI session reads, the tool consolidation switch |
+| `mcp_abilities_` | This plugin's own settings: read-only mode, connection approval, the guide conventions every AI session reads, the tool consolidation switch, the switches for other plugins' AI tools and MCP servers |
 | `_transient_`, `_site_transient_` | Caches, including the update and extension-installer package URLs |
 | `auto_update_` | Which plugins and themes update themselves |
 | `theme_mods_`, `widget_`, `mcp_custom_` | Customizer settings, widget content, custom code (use the dedicated tools) |
@@ -276,7 +316,7 @@ Filters: `mcp_abilities_verify_packages` (bool, `$package`, `$slug`; false skips
 Deactivating removes nothing. Deleting the plugin (Plugins → Delete, `wp plugin uninstall`) removes, on every site of a network:
 
 - the Application Passwords the Connect page recorded (only those; one someone made on their profile stays, even with the same name), so those connections stop working at once;
-- the activity log, the settings (tool switches, consolidation), the guide's conventions, the custom JavaScript from `inject_js`, upload links, the plugin's caches and rate-limit counters;
+- the activity log, the settings (tool switches, consolidation, the switches on Other AI tools), the guide's conventions, the custom JavaScript from `inject_js`, upload links, the plugin's caches and rate-limit counters;
 - the OAuth apps and tokens, who-is-connecting names, approval records and MCP sessions, **unless the VGC MCP Claude Connector is installed**, active or not: it serves the same connections under the same names.
 
 Kept: read-only mode and "require admin approval", so that deleting and uploading the plugin again never quietly makes a site less protected (two small options stay behind in the database; delete `mcp_abilities_read_only` and `mcp_abilities_require_approval` by hand if the plugin is gone for good); the MCP attribution meta on revisions, posts, comments, order notes and orders, which is the record of what an AI changed; custom CSS, which is WordPress's own Additional CSS; extensions' settings; `vgc_cc_connections` and the connector's other own settings.
@@ -303,5 +343,7 @@ This prevents the AI from silently failing or guessing workarounds, and allows i
 - **A compromised update repository** — see [Updates and Packages](#updates-and-packages-since-2370).
 - **A misconfigured allowlist** — if you enable User Management and connect an administrator account to the AI, the AI can manage users as that administrator would.
 - **PHP file execution via uploads** — `upload_file` blocks `.php` MIME types, but WordPress's own upload restrictions should also be in place as a second layer.
+- **An MCP endpoint another plugin serves itself**, outside the MCP adapter — AI Nexus cannot see or limit its tools; AI Nexus → Other AI tools can only switch its address off. See [Other Plugins' AI Tools](#other-plugins-ai-tools-and-mcp-servers-since-2380).
+- **WP-CLI** — `wp mcp-adapter serve` (STDIO) is for people who can already run any PHP on the site.
 
 **Recommendation:** Create a dedicated WordPress user for the AI agent with the minimum role needed (often `editor`), and only enable the tool groups required for the AI's actual tasks.

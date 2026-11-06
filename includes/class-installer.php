@@ -82,6 +82,9 @@ class Installer {
             'mcp_abilities_oauth_rules',
             'mcp_abilities_loaded_version',
             'mcp_abilities_consolidate',
+            // Other plugins' tool and server switches: settings, not a safety switch
+            // like read-only mode (2.38.0).
+            Other_Tools::OPTION,
             Admin\Connect::OPTION_CONNECTIONS,
             Guide::CONVENTIONS_OPTION,
             Custom_Code::JS_HEAD_OPTION,

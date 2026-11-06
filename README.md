@@ -201,8 +201,20 @@ Key protections:
 - **Package checks** — AI Nexus's own update and the extension installer accept packages only from the VGC update channel, and verify the manifest's SHA-256 where it gives one
 - **Clean uninstall** — deleting the plugin (never deactivating) revokes the Application Passwords the Connect page made and removes its data on every site of a network, keeping what a still-installed legacy connector needs and the audit trail of what an AI changed
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
+- **Other plugins' AI tools** — read-only mode also covers the AI tools other plugins add (WooCommerce, AIOSEO and others), on every MCP server and on WordPress's Abilities REST route; **AI Nexus → Other AI tools** lists every other MCP server, AI tool and MCP-like address on the site and lets an administrator turn each one off, or keep new ones off until they are switched on
 
 See [docs/security.md](docs/security.md) for a full breakdown.
+
+---
+
+## Changelog
+
+### 2.38.0
+
+- Read-only mode now covers other plugins' AI tools too. While it is on, an AI can use another plugin's tool only if that plugin marks it as read-only (or you count it as a read); everything else is refused and no longer listed. This holds for AI Nexus's execute tool, tools other plugins add to AI Nexus's server, other plugins' MCP servers and WordPress's Abilities REST route. A person signed in to wp-admin is not affected.
+- New page **AI Nexus → Other AI tools**: every MCP server on the site, every other plugin's tool an AI can reach and how, other MCP-like addresses, each with an On/Off switch. AI Nexus's own server is always on.
+- New setting: when a plugin adds a new AI tool or MCP server, allow it (default) or keep it off until you switch it on.
+- Every refusal is written to the activity log. The settings cannot be changed by an AI, and they are removed when the plugin is deleted.
 
 ---
 

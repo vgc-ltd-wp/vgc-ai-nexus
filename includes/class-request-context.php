@@ -157,6 +157,11 @@ final class Request_Context {
         return self::$is_mcp;
     }
 
+    /** How the MCP request came in: 'http', 'abilities-rest', 'stdio', or '' when it is not one. */
+    public static function transport(): string {
+        return self::$is_mcp ? self::$transport : '';
+    }
+
     /** For tests and for a caller that runs an MCP-like flow outside REST. */
     public static function mark_mcp( string $transport = 'http', string $session_id = '' ): void {
         self::$is_mcp     = true;
