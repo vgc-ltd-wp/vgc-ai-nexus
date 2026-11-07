@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * With a persistent object cache (Memcached on SiteGround, Redis elsewhere)
  * transients exist ONLY in the cache. Any flush or eviction then deletes a
- * 30-day refresh token, and the client is silently signed out. Options are
+ * refresh token, and the client is silently signed out. Options are
  * cached the same way but always persisted to the database, so a cache wipe
  * just means the next read comes from the DB.
  *
@@ -36,8 +36,11 @@ final class Token_Store {
 	}
 
 	/**
-	 * @param string               $type 'token' | 'refresh' | 'code'
+	 * @param string               $type 'token' | 'refresh' | 'code' | 'tomb'
 	 * @param array<string, mixed> $data Must include 'expires' (unix time).
+	 *                                   Since 2.39.0 also 'fp' (Lifecycle::fingerprint() of
+	 *                                   the user's password when issued); refresh rows 'conf'
+	 *                                   (issued after the client proved its secret) and 'since'.
 	 */
 	public static function put( string $type, string $raw, array $data ): void {
 		$key = self::key( $type, $raw );
@@ -104,7 +107,7 @@ final class Token_Store {
 	}
 
 	/**
-	 * Live (unexpired, unrotated) refresh tokens per client: who signed in and
+	 * Live (unexpired, unrotated, still valid for their user) refresh tokens per client: who signed in and
 	 * how long the connection can keep refreshing.
 	 *
 	 * @return array<string, array{users: int[], refresh_until: int}>
@@ -112,7 +115,8 @@ final class Token_Store {
 	public static function summary_by_client(): array {
 		$out = array();
 		foreach ( self::rows( 'refresh' ) as $data ) {
-			if ( ! empty( $data['rotated_at'] ) || (int) ( $data['expires'] ?? 0 ) < time() ) {
+			// Since 2.39.0 also not a token whose user is gone or changed password.
+			if ( ! empty( $data['rotated_at'] ) || ! Lifecycle::row_is_live( $data ) ) {
 				continue;
 			}
 			$cid = (string) ( $data['client_id'] ?? '' );
@@ -127,10 +131,31 @@ final class Token_Store {
 
 	/** Remove every code and token issued to one client. */
 	public static function delete_for_client( string $client_id ): int {
+		return self::delete_where( static fn( string $type, array $data ): bool => (string) ( $data['client_id'] ?? '' ) === $client_id );
+	}
+
+	/**
+	 * Remove every code and token of one user: of one client, or of all
+	 * (2.39.0: user deleted, removed from the site, role changed, Disconnect).
+	 */
+	public static function delete_for_user( int $user_id, ?string $client_id = null ): int {
+		return self::delete_where( static function ( string $type, array $data ) use ( $user_id, $client_id ): bool {
+			return (int) ( $data['user_id'] ?? 0 ) === $user_id
+				&& ( null === $client_id || (string) ( $data['client_id'] ?? '' ) === $client_id );
+		} );
+	}
+
+	/**
+	 * Remove every code, token and reuse marker that $match picks.
+	 *
+	 * @param callable(string, array<string, mixed>): bool $match Type ('code', 'token', 'refresh', 'tomb') and data.
+	 * @return int How many rows went.
+	 */
+	public static function delete_where( callable $match ): int {
 		$removed = 0;
-		foreach ( array( 'token', 'refresh', 'code' ) as $type ) {
+		foreach ( self::TYPES as $type ) {
 			foreach ( self::rows( $type ) as $name => $data ) {
-				if ( (string) ( $data['client_id'] ?? '' ) === $client_id ) {
+				if ( $match( $type, $data ) ) {
 					delete_option( $name );
 					++$removed;
 				}
@@ -138,6 +163,36 @@ final class Token_Store {
 		}
 		return $removed;
 	}
+
+	/**
+	 * Every stored row of one type, expired ones included.
+	 *
+	 * @return array<string, array<string, mixed>> option_name => data
+	 */
+	public static function all_of( string $type ): array {
+		return in_array( $type, self::TYPES, true ) ? self::rows( $type ) : array();
+	}
+
+	/**
+	 * Shorten every refresh token that runs longer than $until to $until
+	 * (2.39.0 upgrade: 30 days became 14 days unused).
+	 *
+	 * @return int How many were shortened.
+	 */
+	public static function cap_refresh( int $until ): int {
+		$capped = 0;
+		foreach ( self::rows( 'refresh' ) as $name => $data ) {
+			if ( (int) ( $data['expires'] ?? 0 ) > $until ) {
+				$data['expires'] = $until;
+				update_option( $name, $data, false );
+				++$capped;
+			}
+		}
+		return $capped;
+	}
+
+	/** Row types: authorization codes, access tokens, refresh tokens, rotated refresh tokens (reuse markers). */
+	const TYPES = array( 'code', 'token', 'refresh', 'tomb' );
 
 	/** @return array<string, array<string, mixed>> option_name => data */
 	private static function rows( string $type ): array {

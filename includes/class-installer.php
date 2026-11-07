@@ -22,6 +22,8 @@ class Installer {
 
     public static function deactivate(): void {
         flush_rewrite_rules();
+        // The daily switch-off of unused connections; scheduled again on the next load.
+        wp_clear_scheduled_hook( 'mcp_abilities_idle_sweep' );
         do_action( 'mcp_abilities_deactivated' );
     }
 
@@ -36,7 +38,8 @@ class Installer {
      * comments and orders outlive the plugin; so does the record of who made
      * them and through which app.
      *
-     * Deliberately KEPT: read-only mode and "require admin approval". Whoever
+     * Deliberately KEPT: read-only mode and "require admin approval" (with
+     * "Also hold administrators' new connections", 2.39.0). Whoever
      * deletes the plugin and uploads it again must not find a read-only site
      * writable, or new connections let straight in, without anyone having
      * decided that. Two small options left behind are a fair price.
@@ -76,6 +79,7 @@ class Installer {
         self::revoke_connections();
 
         Logger::drop_table();
+        wp_clear_scheduled_hook( Connections::CRON );
 
         foreach ( [
             MCP_ABILITIES_OPTION_KEY,
@@ -89,6 +93,12 @@ class Installer {
             Guide::CONVENTIONS_OPTION,
             Custom_Code::JS_HEAD_OPTION,
             Custom_Code::JS_FOOTER_OPTION,
+            // 2.39.0: the list of connections that are on, the one-time upgrade
+            // steps and their notice. ("Also hold administrators' new
+            // connections" stays, with "require admin approval".)
+            Connections::OPTION,
+            OAuth\Lifecycle::UPGRADES,
+            OAuth\Lifecycle::POLICY_NOTICE,
         ] as $opt ) {
             delete_option( $opt );
         }

@@ -40,6 +40,8 @@ add_filter( 'mcp_abilities_extensions', function ( array $extensions ): array {
 } );
 ```
 
+Since 2.39.0 core's `update_option` tool refuses the `option_key` every extension registers here, so an AI cannot switch an extension's disabled tools back on. Any other option that holds settings, definitions or credentials needs a name core already protects (see [security.md](security.md#options-protection)).
+
 ### 3. Register a category
 
 ```php

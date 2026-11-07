@@ -1343,6 +1343,27 @@
 .mcp-other__policy label { display: block; margin: 0 0 8px; }
 .mcp-other__policy .mcp-other__intro { margin: 6px 0 0; }
 
+/* ── Connections that are on, "Your AI connections", other hosts (2.39.0) ── */
+.mcp-live { margin-bottom: 24px; }
+.mcp-live h2 { margin: 0 0 6px; font-size: 18px; }
+.mcp-live-table td { vertical-align: top; }
+.mcp-live__actions,
+.mcp-own-connections__actions { white-space: nowrap; }
+.mcp-live__confirm,
+.mcp-own-confirm { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; white-space: normal; }
+.mcp-live__confirm[hidden],
+.mcp-own-confirm[hidden],
+.mcp-live-disconnect[hidden],
+.mcp-own-revoke[hidden],
+.mcp-live-empty[hidden],
+.mcp-own-empty[hidden] { display: none !important; }
+.mcp-own-connections td { vertical-align: top; }
+.mcp-own-status:empty { display: none; }
+.mcp-oauth-hosts { margin: 4px 0 16px; }
+.mcp-oauth-hosts__label { display: block; font-weight: 600; margin-bottom: 2px; }
+.mcp-oauth-hosts textarea { max-width: 520px; }
+.mcp-approval__hold { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+
 /* ── Phone (WordPress admin's own breakpoint) ───────────────────────────────
    Group cards, the toolbar and the abilities table are shared by the Abilities
    page and every extension subpage. Desktop rules above stay untouched. */
@@ -1442,6 +1463,45 @@
     /* A 40px tap target around the 24px switch, without changing how it looks. */
     .mcp-other .mcp-other__switch::after { content: ''; position: absolute; inset: -8px -4px; }
     .mcp-other__policy label { min-height: 40px; display: flex; align-items: center; gap: 8px; }
+
+    /* Connections that are on / "Your AI connections": one stacked block per
+       connection, each value under its own small label, no sideways scroll. */
+    .mcp-live .mcp-table-scroll,
+    #mcp-own-connections-table { overflow-x: visible; }
+    .mcp-live-table,
+    .mcp-live-table tbody,
+    .mcp-own-connections,
+    .mcp-own-connections tbody { display: block; width: 100%; }
+    .mcp-live-table thead,
+    .mcp-own-connections thead { display: none; }
+    .mcp-live-table tr,
+    .mcp-own-connections tr {
+        display: block;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--mcp-border);
+    }
+    .mcp-live-table td,
+    .mcp-own-connections td {
+        display: block;
+        padding: 2px 0;
+        border: none;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .mcp-live-table td[data-label]::before,
+    .mcp-own-connections td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 12px;
+        color: var(--mcp-muted);
+    }
+    .mcp-live__actions,
+    .mcp-own-connections__actions { white-space: normal; padding-top: 8px !important; }
+    .mcp-live__actions .mcp-btn,
+    .mcp-own-connections__actions .button { min-height: 40px; }
+    .mcp-approval__hold { min-height: 40px; }
+    /* Long option texts (tool names, users, the policy) must not widen the page. */
+    .mcp-wrap select { max-width: 100%; }
 }
 
 /* ── VGC icons (Icons::svg / Icons::logo) ───────────────────────────────── */

@@ -28,11 +28,18 @@ final class Server {
 	const NONCE_CONSENT  = 'vgc_cc_consent';
 	const TTL_CODE       = 600;      // 10 minutes
 	const TTL_ACCESS     = 3600;     // 1 hour
-	const TTL_REFRESH    = 2592000;  // 30 days
+	// The default only: an unused refresh token lives Lifecycle::idle_seconds()
+	// (14 days, filter mcp_abilities_idle_days), pushed forward on each use.
+	const TTL_REFRESH    = 1209600;  // 14 days (30 before 2.39.0)
 	// A used refresh token stays valid this long, so two runs refreshing at the
 	// same moment (or a client retrying after a network error) are not signed out.
 	const REFRESH_GRACE  = 120;
 	const REST_NAMESPACE = 'vgc-cc/v1';
+	// The consent page needs a WordPress sign-in at most this old (filter
+	// mcp_abilities_oauth_reauth_after); Approve is accepted TTL_CODE longer.
+	const REAUTH_AFTER   = 600;
+	// A wrong bearer token is logged at most once per address in this time.
+	const BAD_TOKEN_LOG_EVERY = 600;
 
 	/**
 	 * The client and user of the bearer token this request signed in with
@@ -728,12 +735,25 @@ final class Server {
 			return self::token_error( 'invalid_grant', 'redirect_uri mismatch.' );
 		}
 
+		// 2.39.0: the app is still registered, and the person who approved still
+		// exists and has not changed their password since.
+		$problem = Lifecycle::row_problem( $code_data );
+		if ( '' !== $problem ) {
+			Lifecycle::on_dead_row( $code_data, $problem );
+			return self::token_error( 'invalid_grant', 'Authorization code expired or invalid.' );
+		}
+
 		// Verify client: accept PKCE and/or a client secret.  Require at least one
 		// valid proof.  This supports public clients (PKCE only), confidential
 		// clients (secret only), and clients that send both.
 		$has_challenge = '' !== ( $code_data['code_challenge'] ?? '' );
 		$has_secret    = '' !== $client_secret;
 		$proof_ok      = false;
+
+		// A client that registered a local (loopback) address must use PKCE.
+		if ( ! $has_challenge && Client_Manager::requires_pkce( $client_id ) ) {
+			return self::token_error( 'invalid_grant', 'This client must use PKCE.' );
+		}
 
 		if ( $has_challenge ) {
 			$vlen = strlen( $code_verifier );
@@ -761,7 +781,9 @@ final class Server {
 			return self::token_error( 'invalid_client', 'Client authentication required: provide a code_verifier (PKCE) or client_secret.', 401 );
 		}
 
-		return self::issue_tokens( $code_data['user_id'], $client_id );
+		// Its refresh token remembers whether the client proved its secret: from
+		// then on every refresh needs it (audit M1).
+		return self::issue_tokens( (int) $code_data['user_id'], $client_id, '', array( 'conf' => $has_secret, 'since' => time() ) );
 	}
 
 	private static function grant_refresh_token( \WP_REST_Request $request ) {
@@ -774,13 +796,20 @@ final class Server {
 			return self::token_error( 'invalid_request', 'Missing required parameters.' );
 		}
 
-		if ( '' !== $client_secret && ! Client_Manager::verify_secret( $client_id, $client_secret ) ) {
-			return self::token_error( 'invalid_client', 'Invalid client_secret.', 401 );
+		$secret_ok = false;
+		if ( '' !== $client_secret ) {
+			if ( ! Client_Manager::verify_secret( $client_id, $client_secret ) ) {
+				return self::token_error( 'invalid_client', 'Invalid client_secret.', 401 );
+			}
+			$secret_ok = true;
 		}
 
 		$rt_data = Token_Store::get( 'refresh', $refresh_token );
 
 		if ( ! $rt_data ) {
+			// A refresh token rotated longer ago than the grace period is being used
+			// again: someone else has a copy. Every token of that connection goes.
+			self::check_reuse( $refresh_token, $client_id );
 			return self::token_error( 'invalid_grant', 'Refresh token expired or invalid.' );
 		}
 
@@ -788,29 +817,82 @@ final class Server {
 			return self::token_error( 'invalid_grant', 'client_id mismatch.' );
 		}
 
+		// 2.39.0: the app is still registered, the user still exists and has not
+		// changed their password since the token was issued.
+		$problem = Lifecycle::row_problem( $rt_data );
+		if ( '' !== $problem ) {
+			Lifecycle::on_dead_row( $rt_data, $problem );
+			return self::token_error( 'invalid_grant', 'Refresh token expired or invalid.' );
+		}
+
+		// Audit M1: a client that registered as one keeping a secret, or a token
+		// issued after the secret was proven, never refreshes without it.
+		if ( ! $secret_ok && ( Client_Manager::is_confidential( $client_id ) || ! empty( $rt_data['conf'] ) ) ) {
+			return self::token_error( 'invalid_client', 'Client authentication required: this client must send its client_secret.', 401 );
+		}
+
+		$user_id = (int) $rt_data['user_id'];
+		$carry   = array(
+			'conf'  => $secret_ok || ! empty( $rt_data['conf'] ),
+			'since' => (int) ( $rt_data['since'] ?? 0 ),
+		);
+
 		// A confidential client (it proved its client_secret just now: claude.ai
-		// does) keeps the SAME refresh token, its 30 days pushed forward on every
+		// does) keeps the SAME refresh token, its lifetime pushed forward on every
 		// use. Rotating it broke vibrantcolorink.com: claude.ai sometimes comes
 		// back with the token from before its last refresh (a lost response, or
 		// another of its workers), minutes later, and a rotated token was dead
 		// after REFRESH_GRACE, so the connector was dropped. OAuth 2.1 requires
 		// rotation only for public clients; those keep it below.
-		if ( '' !== $client_secret && empty( $rt_data['rotated_at'] ) ) {
-			$rt_data['expires'] = time() + self::TTL_REFRESH;
+		if ( $secret_ok && empty( $rt_data['rotated_at'] ) ) {
+			$rt_data['expires'] = time() + Lifecycle::idle_seconds();
+			$rt_data['conf']    = true;
+			if ( empty( $rt_data['fp'] ) ) {
+				$rt_data['fp'] = Lifecycle::fingerprint( $user_id );
+			}
 			Token_Store::put( 'refresh', $refresh_token, $rt_data );
-			return self::issue_tokens( (int) $rt_data['user_id'], $client_id, $refresh_token );
+			return self::issue_tokens( $user_id, $client_id, $refresh_token, $carry );
 		}
 
 		if ( empty( $rt_data['rotated_at'] ) ) {
-			// First use: rotate, but keep the old token alive for a short grace period.
-			$rt_data['rotated_at'] = time();
-			$rt_data['expires']    = time() + self::REFRESH_GRACE;
+			// First use: rotate, but keep the old token alive for a short grace
+			// period, and a marker of it for as long as a refresh token lives.
+			$now                   = time();
+			$rt_data['rotated_at'] = $now;
+			$rt_data['expires']    = $now + self::REFRESH_GRACE;
 			Token_Store::put( 'refresh', $refresh_token, $rt_data );
+			Token_Store::put( 'tomb', $refresh_token, array(
+				'user_id'    => $user_id,
+				'client_id'  => $client_id,
+				'rotated_at' => $now,
+				'expires'    => $now + Lifecycle::idle_seconds(),
+			) );
 		} else {
 			self::log( sprintf( 'refresh token reused %ds after rotation (within grace) client=%s', time() - (int) $rt_data['rotated_at'], $client_id ) );
 		}
 
-		return self::issue_tokens( (int) $rt_data['user_id'], $client_id );
+		return self::issue_tokens( $user_id, $client_id, '', $carry );
+	}
+
+	/**
+	 * A refresh token that is no longer live: if it was rotated longer ago than
+	 * REFRESH_GRACE, someone is replaying an old copy. Every code and token of
+	 * that client and user is deleted (the person connects again) and it is
+	 * logged. A token that was never ours does nothing.
+	 */
+	private static function check_reuse( string $refresh_token, string $client_id ): void {
+		$tomb = Token_Store::get( 'tomb', $refresh_token );
+		if ( ! $tomb || (string) ( $tomb['client_id'] ?? '' ) !== $client_id ) {
+			return;
+		}
+		$age = time() - (int) ( $tomb['rotated_at'] ?? 0 );
+		if ( $age <= self::REFRESH_GRACE ) {
+			return;
+		}
+		$user_id = (int) ( $tomb['user_id'] ?? 0 );
+		$removed = Lifecycle::revoke( $user_id, $client_id, 'reuse of a rotated refresh token' );
+		self::log( sprintf( 'refresh token REUSED %ds after it was rotated: every token of client=%s user_id=%d revoked (%d rows); the app must connect again', $age, $client_id, $user_id, $removed ) );
+		\MCP_Abilities\Connections::log_event( 'oauth_refresh_reuse_revoked', $user_id, array( 'type' => 'connection', 'id' => 0, 'key' => 'oauth:' . $client_id . ':' . $user_id, 'action' => 'revoked: a rotated refresh token was used again' ) );
 	}
 
 	/**
@@ -834,15 +916,21 @@ final class Server {
 	}
 
 	/**
-	 * @param string $keep_refresh A refresh token to hand back unchanged (a
-	 *                             confidential client's refresh); '' = new one.
+	 * @param string               $keep_refresh A refresh token to hand back unchanged (a
+	 *                                           confidential client's refresh); '' = new one.
+	 * @param array<string, mixed> $carry        For a new refresh token: 'conf' (the client
+	 *                                           proved its secret) and 'since' (when the
+	 *                                           connection was first approved).
 	 */
-	private static function issue_tokens( int $user_id, string $client_id, string $keep_refresh = '' ): \WP_REST_Response {
+	private static function issue_tokens( int $user_id, string $client_id, string $keep_refresh = '', array $carry = array() ): \WP_REST_Response {
 		$access_token  = Client_Manager::generate_token( 32 );
 		$refresh_token = '' !== $keep_refresh ? $keep_refresh : Client_Manager::generate_token( 32 );
+		// Every code and token carries a fingerprint of the user's password: a
+		// password change, by any route, ends the connection (audit H2).
+		$fp = Lifecycle::fingerprint( $user_id );
 
 		Token_Store::put( 'token', $access_token,
-			array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_ACCESS ) );
+			array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_ACCESS, 'fp' => $fp ) );
 
 		self::log( sprintf(
 			'issued access token for user_id=%d client=%s token_hash=%s',
@@ -852,8 +940,16 @@ final class Server {
 		) );
 
 		if ( '' === $keep_refresh ) {
-			Token_Store::put( 'refresh', $refresh_token,
-				array( 'user_id' => $user_id, 'client_id' => $client_id, 'expires' => time() + self::TTL_REFRESH ) );
+			$since = (int) ( $carry['since'] ?? 0 );
+			Token_Store::put( 'refresh', $refresh_token, array(
+				'user_id'   => $user_id,
+				'client_id' => $client_id,
+				// 14 days unused (filter mcp_abilities_idle_days), then it is gone.
+				'expires'   => time() + Lifecycle::idle_seconds(),
+				'fp'        => $fp,
+				'conf'      => ! empty( $carry['conf'] ),
+				'since'     => $since > 0 ? $since : time(),
+			) );
 		}
 
 		Token_Store::cleanup();
@@ -908,21 +1004,53 @@ final class Server {
 			exit;
 		}
 
-		$client = Client_Manager::get( $params['client_id'] );
-		$user   = wp_get_current_user();
+		// 2.39.0 (audit L1): only an account that can use the tools may connect.
+		if ( ! self::may_consent() ) {
+			self::log( sprintf( 'consent page: user_id=%d lacks %s, cannot connect an AI app', get_current_user_id(), self::consent_capability() ) );
+			self::render_cannot_connect_page();
+			return;
+		}
 
-		self::output_doctype();
+		// 2.39.0 (audit H2): a login cookie alone is not enough. The person signs in
+		// again unless they did so a few minutes ago, so a stolen cookie cannot be
+		// turned into a connection that outlives it.
+		if ( ! self::login_is_fresh() ) {
+			self::log( sprintf( 'consent page: the sign-in of user_id=%d is older than %ds, asking to sign in again', get_current_user_id(), self::reauth_after() ) );
+			wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ), true ) );
+			exit;
+		}
+
+		$client    = Client_Manager::get( $params['client_id'] );
+		$user      = wp_get_current_user();
+		$is_claude = Client_Manager::is_claude_redirect( $params['redirect_uri'] );
+		$name      = '' !== trim( (string) ( $client['name'] ?? '' ) ) ? (string) $client['name'] : __( 'Unnamed app', 'mcp-abilities' );
+		$created   = (int) ( $client['created_at'] ?? 0 );
+
+		self::output_doctype( $is_claude ? __( 'Authorize Claude', 'mcp-abilities' ) : __( 'Authorize an app', 'mcp-abilities' ) );
 		?>
 		<div class="vgc-cc-box">
-			<div class="vgc-cc-logo"><img src="<?php echo esc_url( MCP_ABILITIES_URL . 'assets/oauth/claude-icon.svg' ); ?>" alt="Claude" width="48" height="48"></div>
-			<h1><?php esc_html_e( 'Authorize Access', 'mcp-abilities' ); ?></h1>
-			<p><?php printf( /* translators: 1:client 2:site */ esc_html__( '%1$s is requesting access to %2$s.', 'mcp-abilities' ), '<strong>' . esc_html( $client['name'] ) . '</strong>', '<strong>' . esc_html( get_bloginfo( 'name' ) ) . '</strong>' ); ?></p>
-			<p class="vgc-cc-user"><?php printf( esc_html__( 'Signed in as %s.', 'mcp-abilities' ), '<strong>' . esc_html( $user->display_name . ' (' . $user->user_login . ')' ) . '</strong>' ); ?></p>
-			<?php // Where the code goes: the person approving should see it (audit M6). ?>
-			<p class="vgc-cc-dest"><?php printf( /* translators: %s: host name, e.g. claude.ai */ esc_html__( 'After you approve, your browser goes back to %s.', 'mcp-abilities' ), '<strong>' . esc_html( (string) wp_parse_url( $params['redirect_uri'], PHP_URL_HOST ) ) . '</strong>' ); ?></p>
-			<?php if ( ! Client_Manager::is_claude_redirect( $params['redirect_uri'] ) ) : ?>
-				<p class="vgc-cc-warn" role="note"><?php esc_html_e( 'This is not a Claude address. Approve only if you started this connection yourself and trust that site.', 'mcp-abilities' ); ?></p>
+			<?php if ( $is_claude ) : // Claude's name and logo only for Claude's own return address (audit M2). ?>
+				<div class="vgc-cc-logo"><img src="<?php echo esc_url( MCP_ABILITIES_URL . 'assets/oauth/claude-icon.svg' ); ?>" alt="Claude" width="48" height="48"></div>
+				<h1><?php esc_html_e( 'Authorize Claude', 'mcp-abilities' ); ?></h1>
+			<?php else : ?>
+				<h1><?php printf( /* translators: %s: the app's name as it registered */ esc_html__( 'Authorize “%s”', 'mcp-abilities' ), esc_html( $name ) ); ?></h1>
+				<p class="vgc-cc-warn vgc-cc-warn--strong" role="alert"><strong><?php esc_html_e( 'This is not a Claude address.', 'mcp-abilities' ); ?></strong> <?php esc_html_e( 'The app named itself; nobody checked that name. Approve only if you started this connection yourself, just now, and trust the address below.', 'mcp-abilities' ); ?></p>
 			<?php endif; ?>
+			<p><?php printf( /* translators: 1:client 2:site */ esc_html__( '%1$s is requesting access to %2$s.', 'mcp-abilities' ), '<strong>' . esc_html( $name ) . '</strong>', '<strong>' . esc_html( get_bloginfo( 'name' ) ) . '</strong>' ); ?></p>
+			<p class="vgc-cc-user"><?php printf( esc_html__( 'Signed in as %s.', 'mcp-abilities' ), '<strong>' . esc_html( $user->display_name . ' (' . $user->user_login . ')' ) . '</strong>' ); ?></p>
+			<?php // Where the code goes: the person approving should see it (audit M6, M2: the whole address). ?>
+			<p class="vgc-cc-dest"><?php printf( /* translators: %s: host name, e.g. claude.ai */ esc_html__( 'After you approve, your browser goes back to %s:', 'mcp-abilities' ), '<strong>' . esc_html( (string) wp_parse_url( $params['redirect_uri'], PHP_URL_HOST ) ) . '</strong>' ); ?>
+				<code class="vgc-cc-url"><?php echo esc_html( $params['redirect_uri'] ); ?></code></p>
+			<p class="vgc-cc-dest"><?php
+				echo $created
+					? esc_html( sprintf(
+						/* translators: 1: date and time, 2: how long ago, e.g. "3 mins" */
+						__( 'This app registered with the site on %1$s (%2$s ago).', 'mcp-abilities' ),
+						wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $created ),
+						human_time_diff( $created, time() )
+					) )
+					: esc_html__( 'When this app registered is not known.', 'mcp-abilities' );
+			?></p>
 			<p class="vgc-cc-scope-intro"><?php esc_html_e( 'This will allow the application to call MCP tools on this WordPress site with your account permissions.', 'mcp-abilities' ); ?></p>
 			<form method="post">
 				<?php wp_nonce_field( self::NONCE_CONSENT . '_' . $params['client_id'] ); ?>
@@ -981,6 +1109,19 @@ final class Server {
 		if ( ! is_user_logged_in() ) {
 			self::log( 'consent POST: user NOT logged in — redirecting to wp-login (consent cannot complete)' );
 			wp_safe_redirect( wp_login_url() );
+			exit;
+		}
+
+		// The same two rules as the page (2.39.0). Approve may come up to TTL_CODE
+		// after the page was shown, so the sign-in may be that much older here.
+		if ( ! self::may_consent() ) {
+			self::log( sprintf( 'consent POST: user_id=%d lacks %s — no code issued', get_current_user_id(), self::consent_capability() ) );
+			self::render_cannot_connect_page();
+			return;
+		}
+		if ( ! self::login_is_fresh( self::TTL_CODE ) ) {
+			self::log( sprintf( 'consent POST: the sign-in of user_id=%d is too old — asking to sign in again, no code issued', get_current_user_id() ) );
+			wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ), true ) );
 			exit;
 		}
 
@@ -1054,6 +1195,7 @@ final class Server {
 			'code_challenge'        => $code_challenge,
 			'code_challenge_method' => $code_challenge_method,
 			'expires'               => time() + self::TTL_CODE,
+			'fp'                    => Lifecycle::fingerprint( get_current_user_id() ),
 		) );
 
 		$final = self::build_callback_url( $redirect_uri, array(
@@ -1102,6 +1244,7 @@ final class Server {
 		if ( '' === $redirect_uri || ! Client_Manager::is_valid_redirect_uri( $client_id, $redirect_uri ) ) return new \WP_Error( 'invalid_redirect_uri', __( 'redirect_uri not registered.', 'mcp-abilities' ) );
 		if ( 'code' !== $response_type )                                              return new \WP_Error( 'unsupported_response_type', __( 'Only response_type=code supported.', 'mcp-abilities' ) );
 		if ( '' !== $code_challenge_method && 'S256' !== $code_challenge_method )     return new \WP_Error( 'invalid_request',           __( 'Only code_challenge_method=S256 supported.', 'mcp-abilities' ) );
+		if ( '' === $code_challenge && Client_Manager::requires_pkce( $client_id ) )  return new \WP_Error( 'invalid_request',           __( 'This app must use PKCE (code_challenge).', 'mcp-abilities' ) );
 
 		return compact( 'client_id', 'redirect_uri', 'response_type', 'state', 'code_challenge', 'code_challenge_method' );
 	}
@@ -1147,8 +1290,23 @@ final class Server {
 
 		$data = Token_Store::get( 'token', $token );
 		if ( ! $data ) {
-			self::log( sprintf( 'bearer validation: token unknown or expired (token_hash=%s)', substr( hash( 'sha256', $token ), 0, 12 ) ) );
+			self::log_unknown_token( $token );
 			return null;
+		}
+
+		// 2.39.0: the user still exists and has not changed their password since
+		// the token was issued, and the app is still registered. Otherwise the
+		// token, and every other one it shares that fate with, is deleted.
+		$problem = Lifecycle::row_problem( $data );
+		if ( '' !== $problem ) {
+			Token_Store::delete( 'token', $token );
+			Lifecycle::on_dead_row( $data, $problem );
+			return null;
+		}
+		if ( empty( $data['fp'] ) ) {
+			// Issued before 2.39.0: it gets the fingerprint of the password it works with now.
+			$data['fp'] = Lifecycle::fingerprint( (int) $data['user_id'] );
+			Token_Store::put( 'token', $token, $data );
 		}
 
 		self::debug( sprintf( 'bearer validation: OK user_id=%d token_hash=%s', (int) $data['user_id'], substr( hash( 'sha256', $token ), 0, 12 ) ) );
@@ -1157,6 +1315,99 @@ final class Server {
 			'user_id'   => (int) $data['user_id'],
 		);
 		return (int) $data['user_id'];
+	}
+
+	/**
+	 * "token unknown or expired", at most once per address (an IPv6 /64) every
+	 * BAD_TOKEN_LOG_EVERY seconds: anyone can send wrong tokens, and each one
+	 * used to write a line (audit L3).
+	 */
+	private static function log_unknown_token( string $token ): void {
+		$from = Rate_Limit::bucket( Rate_Limit::ip() );
+		$key  = Rate_Limit::PREFIX . 'log_' . md5( $from );
+		if ( false !== get_transient( $key ) ) {
+			return;
+		}
+		set_transient( $key, time(), self::BAD_TOKEN_LOG_EVERY );
+		self::log( sprintf(
+			'bearer validation: token unknown or expired (token_hash=%s) from %s; more from this address are not logged for %d minutes',
+			substr( hash( 'sha256', $token ), 0, 12 ),
+			$from,
+			(int) ( self::BAD_TOKEN_LOG_EVERY / 60 )
+		) );
+	}
+
+	// ── Consent rules (2.39.0) ─────────────────────────────────────────────
+
+	/** The capability an account needs to connect an AI app (filter, default edit_posts). */
+	public static function consent_capability(): string {
+		/**
+		 * The capability a WordPress account needs to approve an AI app on the
+		 * consent page. No core tool works below edit_posts.
+		 *
+		 * @param string $capability Default 'edit_posts'.
+		 */
+		$cap = (string) apply_filters( 'mcp_abilities_oauth_consent_capability', 'edit_posts' );
+		return '' !== $cap ? $cap : 'edit_posts';
+	}
+
+	public static function may_consent(): bool {
+		return current_user_can( self::consent_capability() );
+	}
+
+	/** How old a sign-in may be for the consent page, in seconds (0 or less: no limit). */
+	public static function reauth_after(): int {
+		/**
+		 * How recent the WordPress sign-in must be for the consent page. Older:
+		 * the person is sent to sign in again. 0 or less turns the rule off.
+		 *
+		 * @param int $seconds Default 600.
+		 */
+		return (int) apply_filters( 'mcp_abilities_oauth_reauth_after', self::REAUTH_AFTER );
+	}
+
+	/**
+	 * Seconds since the current browser session signed in (its session token's
+	 * "login" time), or null when it is not known.
+	 */
+	public static function login_age(): ?int {
+		$user_id = get_current_user_id();
+		$token   = $user_id && function_exists( 'wp_get_session_token' ) ? (string) wp_get_session_token() : '';
+		if ( '' === $token || ! class_exists( '\WP_Session_Tokens' ) ) {
+			return null;
+		}
+		$session = \WP_Session_Tokens::get_instance( $user_id )->get( $token );
+		if ( ! is_array( $session ) || empty( $session['login'] ) ) {
+			return null;
+		}
+		return max( 0, time() - (int) $session['login'] );
+	}
+
+	/** @param int $slack Seconds more than reauth_after() that are still accepted. */
+	private static function login_is_fresh( int $slack = 0 ): bool {
+		$max = self::reauth_after();
+		if ( $max <= 0 ) {
+			return true;
+		}
+		$age = self::login_age();
+		return null !== $age && $age <= $max + $slack;
+	}
+
+	private static function render_cannot_connect_page(): void {
+		status_header( 403 );
+		self::output_doctype( __( 'Cannot connect', 'mcp-abilities' ) );
+		$user = wp_get_current_user();
+		?>
+		<div class="vgc-cc-box">
+			<h1><?php esc_html_e( 'This account cannot connect AI assistants', 'mcp-abilities' ); ?></h1>
+			<p><?php printf(
+				/* translators: %s: user name and login */
+				esc_html__( 'Your account %s cannot connect AI assistants to this site. If you need this, ask a site administrator.', 'mcp-abilities' ),
+				'<strong>' . esc_html( $user->display_name . ' (' . $user->user_login . ')' ) . '</strong>'
+			); ?></p>
+		</div>
+		</body></html>
+		<?php
 	}
 
 	/**
@@ -1240,7 +1491,9 @@ final class Server {
 		return $response;
 	}
 
-	private static function output_doctype(): void {
+	/** @param string $title What the page is, after the site name ("Authorize Claude" only for Claude). */
+	private static function output_doctype( string $title = '' ): void {
+		$title = '' !== $title ? $title : __( 'Authorize an app', 'mcp-abilities' );
 		// We render before WordPress/REST sets any Content-Type (parse_request
 		// priority 1), so declare HTML explicitly.
 		if ( ! headers_sent() ) {
@@ -1259,7 +1512,7 @@ final class Server {
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo esc_html( get_bloginfo( 'name' ) . ' — ' . __( 'Authorize Claude', 'mcp-abilities' ) ); ?></title>
+<title><?php echo esc_html( get_bloginfo( 'name' ) . ' — ' . $title ); ?></title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f0f1;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
@@ -1270,6 +1523,8 @@ p{color:#3c434a;margin-bottom:12px;line-height:1.5}
 .vgc-cc-user{background:#f6f7f7;border:1px solid #c3c4c7;border-radius:4px;padding:10px 14px;font-size:.9em}
 .vgc-cc-dest{font-size:.9em}
 .vgc-cc-warn{color:#6e4a00;background:#fcf9e8;border:1px solid #dba617;border-radius:4px;padding:10px 14px;font-size:.9em}
+.vgc-cc-warn--strong{color:#8a1f11;background:#fcf0f1;border:2px solid #d63638;font-size:.95em}
+.vgc-cc-url{display:block;margin-top:6px;padding:8px 10px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;font-size:.85em;overflow-wrap:anywhere;word-break:break-all}
 .vgc-cc-scope-intro{margin-top:16px;font-size:.9em;color:#646970}
 .vgc-cc-field{margin-top:18px}
 .vgc-cc-field label{display:block;font-weight:600;font-size:.9em;margin-bottom:6px}
@@ -1289,10 +1544,10 @@ p{color:#3c434a;margin-bottom:12px;line-height:1.5}
 	}
 
 	private static function render_error_page( string $message ): void {
-		self::output_doctype();
+		// No Claude logo: any app's request can lead here (2.39.0).
+		self::output_doctype( __( 'Authorization Error', 'mcp-abilities' ) );
 		?>
 		<div class="vgc-cc-box">
-			<div class="vgc-cc-logo"><img src="<?php echo esc_url( MCP_ABILITIES_URL . 'assets/oauth/claude-icon.svg' ); ?>" alt="Claude" width="48" height="48"></div>
 			<h1><?php esc_html_e( 'Authorization Error', 'mcp-abilities' ); ?></h1>
 			<div class="vgc-cc-error"><?php echo esc_html( $message ); ?></div>
 		</div>

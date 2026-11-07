@@ -26,6 +26,61 @@ claude.ai (web, mobile, Desktop connectors, scheduled routines) cannot use an Ap
 - **Logging:** registrations, approvals, token issues and errors are logged (prefix `AI Nexus OAuth:`), but never a request body, an authorization code or a token, only short hashes of codes and tokens. Per-request tracing needs `MCP_ABILITIES_OAUTH_DEBUG`.
 - Codes and tokens are 256-bit random values stored only as SHA-256 hashes; PKCE (S256) and exact redirect-address matching are enforced. The registration policy on the Connect page (Claude addresses only by default, any app, or none) decides which apps may register.
 
+### Since 2.39.0 (access analysis 2026-11-06: H2, M1, M2, L1, L2, H8)
+
+**A connection ends with the account behind it.**
+- Every authorization code, access token and refresh token carries a fingerprint of the user's password: the first 16 hex characters of `hash_hmac( 'sha256', user_pass, wp_salt( 'auth' ) )`. It reveals nothing about the password.
+- When it no longer matches, the token is refused and deleted. This is checked on every MCP request, at refresh and at the code exchange, so it catches every way a password changes: a reset, the profile screen, WP-CLI, `wp_set_password()`, another plugin, even a direct database write. Only the user's tokens from before the change go; a connection made afterwards keeps working.
+- Tokens issued before 2.39.0 get the fingerprint of the password they are first used with.
+- A token is also refused, and deleted, when its user no longer exists or its app is no longer registered.
+- A user's codes and tokens are deleted at once when the user is deleted (`deleted_user`), removed from a site of a network (`remove_user_from_blog`) or given another role (`set_user_role`, not for a new account). They connect again.
+
+**The consent page asks more.**
+- **A fresh sign-in.** The page needs a WordPress login less than 10 minutes old: the `login` time of the browser's session token. Otherwise it sends the person to `wp_login_url( <this page>, true )` (reauth) and back. Approve is accepted up to 10 minutes after that, as the page may have stayed open. A stolen login cookie, even the front-end `logged_in` one, therefore no longer turns into a connection. Filter `mcp_abilities_oauth_reauth_after` (seconds, default 600; 0 or less turns the rule off).
+- **An account that can use the tools.** Only accounts with `edit_posts` may consent: no core tool works below it. Anyone else, a WooCommerce Customer for instance, gets a plain page (HTTP 403) saying their account cannot connect AI assistants to this site, and a posted Approve issues nothing. Filter `mcp_abilities_oauth_consent_capability`.
+- **Claude's name and logo only for Claude.** "Authorize Claude" and the Claude logo appear only when the app returns to a Claude address (below). Any other app gets a neutral title with the name it registered under ("Authorize “…”"), a prominent warning that it is not a Claude address and that nobody checked the name, the full return address, and when the app registered. The error page shows no logo.
+
+**"Claude only" (`restricted`) means Claude.** Under this policy, registration (`/register`) accepts these return addresses and nothing else:
+- `https`, host exactly `claude.ai` or `claude.com` (standard port), path starting `/api/mcp/`. claude.ai's is `https://claude.ai/api/mcp/auth_callback`.
+- Loopback, `http://localhost`, `http://127.0.0.1` or `http://[::1]` on any port, but only for an app that registers as public (`token_endpoint_auth_method` `none`). Such an app must then use PKCE: the consent page refuses a request without `code_challenge`, and the token endpoint refuses a code without one even with the secret.
+- `https` on a host an administrator added under **AI Nexus → Connect → Other apps allowed to connect** (one per line; `*.example.com` includes sub-domains). These hosts are stored in `vgc_cc_allowed_origins` next to the old default wildcards, which no longer allow anything on their own; they stay there for an older connector that reads the same option.
+- An address with a user name or password, a fragment, white space, a backslash or a dot segment (also encoded) is never accepted.
+- The old wildcards (`*.claude.ai`, `*.anthropic.com`, any scheme, any path) are gone, so look-alikes such as `claude.ai.evil.com`, `evil.com/claude.ai`, `http://claude.ai/…` or another path are refused.
+- A refused registration gets a message that names the setting where an address can be added, and one line in the error log.
+- Apps registered before keep their exact registered addresses.
+
+**A stored "open" becomes "restricted", once.** The old VGC MCP Claude Connector wrote `vgc_cc_dyn_reg_policy = open`, and AI Nexus inherits that option.
+- At the first load of 2.39.0 a stored `open` is set to `restricted`, and AI Nexus's pages show a notice: what changed, how to add an address, and a Dismiss link (nonce, `manage_options`). Saving the policy also clears it.
+- An administrator may choose "Any app" again; the step is recorded in `mcp_abilities_oauth_upgrades` and never runs twice.
+
+**Refresh tokens (M1).**
+- A client is remembered as one that keeps a secret when it registers with `client_secret_post` or `client_secret_basic`. A refresh token is marked when it was issued after the client proved its secret (at the code exchange or a refresh).
+- A refresh for such a client, or with such a token, requires a valid `client_secret` (HTTP 401 `invalid_client` without it). An unmarked token that comes with a valid secret gets the mark.
+- A public client's refresh token is still replaced on each use, with the 120-second grace for two runs refreshing at once. A marker of the replaced token (its hash, the client, the user, when) is kept for the refresh lifetime. If that old token is presented after the grace period, someone else has a copy: every code and token of that client and user is deleted, the app must connect again, and it is logged ("refresh token REUSED") and written to the activity log.
+
+---
+
+## Connections: How Long They Live, and Who Sees Them (since 2.39.0)
+
+**Unused connections switch off after 14 days** (the owner's decision; no absolute lifetime).
+- An OAuth refresh token lives 14 days, pushed forward each time it is used (30 days before). At the update, every existing refresh token that ran longer is cut to 14 days from that moment, so nobody is cut off on the spot.
+- An Application Password made on AI Nexus's Connect page (its UUID is in `mcp_abilities_connections`) is deleted with `WP_Application_Passwords` after 14 days unused. "Unused" is judged by the later of WordPress's own `last_used` (which WordPress writes at most once a day) and AI Nexus's last activity for it, or by its creation date if it was never used.
+- Other Application Passwords are only listed, never removed.
+- A daily cron event, `mcp_abilities_idle_sweep`, does this. It also deletes expired and dead OAuth rows (gone user, gone app, changed password) and their entries in the list. Every removal is written to the activity log (`connection_idle_removed`).
+- Filter `mcp_abilities_idle_days` (default 14, kept between 1 and 365).
+
+**The list of connections that are on.** One entry per OAuth app + user and per Application Password used on MCP, kept whether approval is on or off and for administrators too. Connection approval's records exist only while approval is on and skip administrators.
+- Stored in the non-autoloaded option `mcp_abilities_connection_registry`: kind, user, app or Application Password, app name, the "Who is connecting?" name, first seen, last active, last address.
+- It is updated on MCP requests at most once a minute per connection, and holds at most 1,000 entries (the longest unused go first).
+- The AI cannot read it (`get_option`) or change it (`update_option`).
+- **AI Nexus → Connections** starts with "Connections that are on": every OAuth connection with a live refresh token, every Application Password made on the Connect page, and every other one used on MCP. Each row shows the user, the app and who said they are connecting, the sign-in kind, connected since, last active and from which address, when it switches off if unused, and the approval status when approval is on.
+- Its **Disconnect** button needs the page's nonce and `manage_options`. For OAuth it deletes that app + user's codes and tokens; for an Application Password it deletes the password. Every Disconnect is written to the activity log.
+- **Your AI connections**, on each user's own profile screen, lists only that user's connections, with **Revoke**. Revoke needs a nonce of its own, and the key must belong to the current user.
+
+**"Also hold administrators' new connections"** (next to "Require admin approval", default off).
+- While it is on, administrators' new connections wait for approval too. Switching it on approves the administrators' connections that work at that moment.
+- The `mcp_abilities_approval_exempt_admins` filter still has the last word.
+
 ---
 
 ## Capability Enforcement
@@ -146,8 +201,10 @@ The following categories of option keys are blocked from being read:
 - Payment gateway credentials (`woocommerce_stripe_*`, `woocommerce_paypal_*`, `woocommerce-ppcp-settings`, any key containing `ppcp`, etc.)
 - Email credentials: `wp_mail_smtp`, core `mailserver_pass`, any key containing `smtp`, `sendgrid`, `mailchimp`, etc.
 - `jetpack_private_options` (and any key containing `jetpack_private`), `fs_accounts` (Freemius)
-- AI Nexus OAuth data: `vgc_cc_oauth_clients` and any key starting with `vgc_cc_` (clients, tokens, policy); who is connected and who approved it
+- AI Nexus OAuth data: `vgc_cc_oauth_clients` and any key starting with `vgc_cc_` (clients, tokens, policy); who is connected and who approved it; the list of connections that are on (`mcp_abilities_connection_registry`) and the Connect page's Application Passwords (`mcp_abilities_connections`) (since 2.39.0)
+- The Analytics extension's Google sign-in: any key containing `vgc_analytics_` (`vgc_analytics_oauth` holds the client secret and refresh token, the transients `vgc_analytics_otok_*` the access tokens) (since 2.39.0)
 - Any key containing `_license`, `_api_key`, `_secret`, `_private_key`, `_pass` or `token`
+- The cache rows of every name above: `_transient_…`, `_transient_timeout_…`, `_site_transient_…` and `_site_transient_timeout_…` (since 2.39.0)
 
 ### Write protection (`update_option`)
 The following keys can never be written:
@@ -176,6 +233,9 @@ And every key starting with:
 | `_transient_`, `_site_transient_` | Caches, including the update and extension-installer package URLs |
 | `auto_update_` | Which plugins and themes update themselves |
 | `theme_mods_`, `widget_`, `mcp_custom_` | Customizer settings, widget content, custom code (use the dedicated tools) |
+| `mcp_cpt_`, `mcp_wpml_`, `mcp_analytics_`, `mcp_tracker_`, `vgc_analytics_`, `vgc_pinterest_` | AI Nexus extensions' settings, stored definitions and Google / Pinterest sign-ins (since 2.39.0) |
+
+And every AI Nexus extension's settings (since 2.39.0): the `option_key` each extension registers through `mcp_abilities_extensions`, plus `mcp_woo_settings`, `mcp_avada_settings`, `mcp_elementor_settings`, Tracker's `vgct_nexus` and Environment Lock's `vgc_ainx_envlock`, whether or not the extension is active. An AI cannot switch an extension's disabled tools back on.
 
 ---
 
@@ -272,7 +332,7 @@ A tool's own `WP_Error` or `{success:false, error}` is what the AI needs to corr
 
 - **MCP sessions** keep only the protocol version and the client's name and version from `initialize`, in strings of a fixed length, not the whole request. Sessions stored by an older version still read.
 - **JSON-RPC batches** of more than 100 messages are refused whole with HTTP 400 and a JSON-RPC `-32600`, before any of them runs. MCP clients send one message per request, and the 2025-06-18 protocol dropped batches. Filter `mcp_adapter_max_batch_size` (0 or less turns the limit off).
-- **The error log** gets no line for a request without a sign-in: that is the normal first step of the claude.ai sign-in, and anyone can repeat it. A signed-in user who is refused is still logged. A wrong OAuth bearer token is logged too (`token unknown or expired`).
+- **The error log** gets no line for a request without a sign-in: that is the normal first step of the claude.ai sign-in, and anyone can repeat it. A signed-in user who is refused is still logged. A wrong OAuth bearer token is logged too (`token unknown or expired`), but since 2.39.0 at most once per address (an IPv6 /64) every 10 minutes.
 
 ---
 
@@ -287,6 +347,8 @@ add_filter( 'mcp_abilities_trusted_proxies', fn() => [ '10.0.0.5', '173.245.48.0
 ```
 
 When `REMOTE_ADDR` is on that list, `X-Forwarded-For` is read from the right and the first address that is not a listed proxy is the visitor's. What the visitor sent to the left of it is ignored.
+
+**IPv6 (since 2.39.0):** the OAuth rate limits and the bad-token log count an IPv6 caller by its /64 network, since one machine usually holds a whole /64 and can pick any address in it. IPv4 is counted by the address.
 
 **Behind Cloudflare or a similar proxy:** unless the web server restores the visitor's address (`mod_remoteip`, nginx `real_ip`, Cloudflare's own module) or the filter lists the proxy's ranges, the activity log shows the proxy's address, and everyone behind one proxy address shares a rate limit.
 
@@ -309,6 +371,8 @@ Filters: `mcp_abilities_verify_packages` (bool, `$package`, `$slug`; false skips
 
 **What it does not cover:** updates of the extensions and other VGC plugins, which run their own copy of the updater, and a zip someone uploads by hand or installs with `wp plugin install <url>`. Extension installs are only checked against a hash where the manifest gives one.
 
+**"Check again" (since 2.39.0).** Core's updater skips its one-hour manifest cache for `?force-check=1` only for a user with `update_plugins`, on the Updates or Plugins screen. Before, any visitor could add it to a request that runs `admin_init` (`admin-post.php`, and `admin-ajax.php` where WordPress or a plugin reads the update list there) and make the site fetch the manifest every time. The extensions' own copies of the updater get the same change with their next releases.
+
 ---
 
 ## Uninstalling (since 2.37.0)
@@ -317,9 +381,10 @@ Deactivating removes nothing. Deleting the plugin (Plugins → Delete, `wp plugi
 
 - the Application Passwords the Connect page recorded (only those; one someone made on their profile stays, even with the same name), so those connections stop working at once;
 - the activity log, the settings (tool switches, consolidation, the switches on Other AI tools), the guide's conventions, the custom JavaScript from `inject_js`, upload links, the plugin's caches and rate-limit counters;
-- the OAuth apps and tokens, who-is-connecting names, approval records and MCP sessions, **unless the VGC MCP Claude Connector is installed**, active or not: it serves the same connections under the same names.
+- the OAuth apps and tokens, who-is-connecting names, approval records and MCP sessions, **unless the VGC MCP Claude Connector is installed**, active or not: it serves the same connections under the same names;
+- since 2.39.0: the list of connections that are on, the record of the one-time upgrade steps and their notice, and the daily `mcp_abilities_idle_sweep` event (deactivating removes the event too; it is scheduled again on the next load).
 
-Kept: read-only mode and "require admin approval", so that deleting and uploading the plugin again never quietly makes a site less protected (two small options stay behind in the database; delete `mcp_abilities_read_only` and `mcp_abilities_require_approval` by hand if the plugin is gone for good); the MCP attribution meta on revisions, posts, comments, order notes and orders, which is the record of what an AI changed; custom CSS, which is WordPress's own Additional CSS; extensions' settings; `vgc_cc_connections` and the connector's other own settings.
+Kept: read-only mode and "require admin approval" (with "Also hold administrators' new connections"), so that deleting and uploading the plugin again never quietly makes a site less protected (two small options stay behind in the database; delete `mcp_abilities_read_only` and `mcp_abilities_require_approval` by hand if the plugin is gone for good); the MCP attribution meta on revisions, posts, comments, order notes and orders, which is the record of what an AI changed; custom CSS, which is WordPress's own Additional CSS; extensions' settings; `vgc_cc_connections` and the connector's other own settings.
 
 **So never delete the plugin to update it.** Deleting and uploading it again loses all of the above: every connection has to be made again, and tool switches are back to their defaults, and JavaScript added with `inject_js` stops running for good. To install a zip by hand, upload it over the existing plugin (Plugins → Add New → Upload, "Replace current with uploaded").
 

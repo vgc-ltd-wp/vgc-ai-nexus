@@ -21,6 +21,8 @@ class Get_Option_Ability extends Ability {
         // Who is connected, from where, and who approved it.
         'mcp_abilities_connection_approvals', 'mcp_abilities_approval_mail_times',
         'mcp_abilities_oauth_operators',
+        // Every live connection, when and from which address it was last used (2.39.0).
+        'mcp_abilities_connection_registry', 'mcp_abilities_connections',
 
         // Mail and service credentials stored under names the patterns miss.
         'wp_mail_smtp', 'mailserver_pass', 'jetpack_private_options',
@@ -44,6 +46,7 @@ class Get_Option_Ability extends Ability {
         'jetpack_private',
         'fs_accounts',             // Freemius accounts (licence + API keys)
         'vgc_cc_',                 // AI Nexus OAuth: clients, tokens, policy
+        'vgc_analytics_',          // Analytics extension: Google client secret + refresh token (vgc_analytics_oauth), access tokens (2.39.0)
         'mailchimp',               // Mailchimp API keys
         'sendgrid',
         'postmark',
@@ -71,20 +74,39 @@ class Get_Option_Ability extends Ability {
         ];
     }
 
+    /** Cache rows of a refused name are refused too: _transient_x, _transient_timeout_x and the site-wide forms (2.39.0). */
+    private const CACHE_PREFIXES = [ '_site_transient_timeout_', '_site_transient_', '_transient_timeout_', '_transient_' ];
+
     public function execute( array $params ): array {
         $key = sanitize_key( $params['name'] );
 
-        if ( in_array( $key, self::DENYLIST, true ) ) {
+        if ( self::is_protected( $key ) ) {
             return $this->error( "Option '{$key}' is protected." );
-        }
-
-        foreach ( self::DENYLIST_PATTERNS as $pattern ) {
-            if ( str_contains( $key, $pattern ) ) {
-                return $this->error( "Option '{$key}' is protected." );
-            }
         }
 
         $value = get_option( $key, $params['default'] ?? false );
         return $this->json_result( [ 'option' => $key, 'value' => $value ] );
+    }
+
+    /** Whether a (sanitized) option name may not be read. */
+    public static function is_protected( string $key ): bool {
+        $names = [ $key ];
+        foreach ( self::CACHE_PREFIXES as $prefix ) {
+            if ( str_starts_with( $key, $prefix ) ) {
+                $names[] = substr( $key, strlen( $prefix ) );
+                break;
+            }
+        }
+        foreach ( $names as $name ) {
+            if ( in_array( $name, self::DENYLIST, true ) ) {
+                return true;
+            }
+            foreach ( self::DENYLIST_PATTERNS as $pattern ) {
+                if ( str_contains( $name, $pattern ) ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

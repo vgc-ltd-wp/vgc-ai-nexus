@@ -114,6 +114,21 @@ final class Operators {
 		self::save( $map );
 	}
 
+	/** A deleted user: forget their names on every app (2.39.0). */
+	public static function delete_for_user( int $user_id ): void {
+		$map    = self::all();
+		$suffix = ':' . $user_id;
+		$before = count( $map );
+		foreach ( array_keys( $map ) as $key ) {
+			if ( substr( (string) $key, -strlen( $suffix ) ) === $suffix ) {
+				unset( $map[ $key ] );
+			}
+		}
+		if ( count( $map ) !== $before ) {
+			self::save( $map );
+		}
+	}
+
 	private static function save( array $map ): void {
 		if ( ! $map ) {
 			delete_option( self::OPTION );

@@ -342,7 +342,7 @@ Protected keys (auth keys/salts, payment gateway credentials, API secrets, etc.)
 | `key` | string | **Yes** | Option name |
 | `value` | any | **Yes** | New value |
 
-Critical options (`siteurl`, `active_plugins`, `default_role`, auth keys, etc.) are write-protected.
+Critical options (`siteurl`, `active_plugins`, `default_role`, auth keys, AI Nexus's and every extension's settings, etc.) are write-protected; secrets and the list of connections cannot be read. See [security.md](security.md#options-protection).
 
 ---
 

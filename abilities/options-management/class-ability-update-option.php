@@ -65,7 +65,43 @@ class Update_Option_Ability extends Ability {
         '_transient_',      // caches, incl. update and extension package URLs
         '_site_transient_', // core update caches (package URLs)
         'auto_update_',     // which plugins and themes update themselves
+        // AI Nexus extensions' settings and stored sign-ins (2.39.0): an AI must
+        // not switch an extension's disabled tools back on, nor plant a definition
+        // or a Google / Pinterest credential.
+        'mcp_cpt_', 'mcp_wpml_', 'mcp_analytics_', 'mcp_tracker_',
+        'vgc_analytics_', 'vgc_pinterest_',
     ];
+
+    /**
+     * Extension settings that always count, whether or not the extension is
+     * active right now (2.39.0): Tracker's connection, Environment Lock, and the
+     * option keys of the extensions that register with mcp_abilities_extensions.
+     */
+    private const DENY_EXTENSION_KEYS = [
+        'vgct_nexus', 'vgc_ainx_envlock',
+        'mcp_avada_settings', 'mcp_elementor_settings', 'mcp_woo_settings',
+    ];
+
+    /**
+     * Every option an AI Nexus extension keeps its settings in, as the
+     * extensions register with core (mcp_abilities_extensions → option_key),
+     * plus the fixed list above.
+     *
+     * @return string[]
+     */
+    public static function extension_keys(): array {
+        $keys = self::DENY_EXTENSION_KEYS;
+        try {
+            foreach ( (array) apply_filters( 'mcp_abilities_extensions', [] ) as $ext ) {
+                if ( is_array( $ext ) && ! empty( $ext['option_key'] ) && is_string( $ext['option_key'] ) ) {
+                    $keys[] = sanitize_key( $ext['option_key'] );
+                }
+            }
+        } catch ( \Throwable $e ) {
+            // An extension that fails to describe itself must not open its options.
+        }
+        return array_values( array_unique( array_filter( $keys ) ) );
+    }
 
     /**
      * Exact keys that depend on the table prefix: the role → capability table.
@@ -107,6 +143,10 @@ class Update_Option_Ability extends Ability {
             if ( str_starts_with( $key, $prefix ) ) {
                 return $this->error( "Option '{$key}' is protected and cannot be modified." );
             }
+        }
+
+        if ( in_array( $key, self::extension_keys(), true ) ) {
+            return $this->error( "Option '{$key}' is an AI Nexus extension's settings: it is protected and cannot be modified." );
         }
 
         if ( ! apply_filters( 'mcp_abilities_allow_option_write', true, $key ) ) {

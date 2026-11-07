@@ -18,7 +18,8 @@ defined( 'ABSPATH' ) || exit;
  *
  * Counters are transients: losing one (a cache flush) only resets a window.
  * The address comes from Client_Ip: REMOTE_ADDR, as X-Forwarded-For can be set
- * by the caller, unless the site names its proxies.
+ * by the caller, unless the site names its proxies. Since 2.39.0 an IPv6
+ * caller is counted by its /64 network (bucket()).
  */
 final class Rate_Limit {
 
@@ -49,7 +50,9 @@ final class Rate_Limit {
 		}
 		[ $max, $window ] = array( (int) $limit[0], (int) $limit[1] );
 
-		$ip  = self::ip();
+		// An IPv6 caller is counted by its /64: one machine usually has a whole
+		// /64 to itself and can change the rest of its address at will (2.39.0).
+		$ip  = self::bucket( self::ip() );
 		$key = self::PREFIX . $bucket . '_' . md5( $ip );
 		$now = time();
 		$hit = get_transient( $key );
@@ -82,6 +85,22 @@ final class Rate_Limit {
 		 * @param string $ip The caller's address (Client_Ip), or 'unknown'.
 		 */
 		return (string) apply_filters( 'mcp_abilities_oauth_client_ip', $ip );
+	}
+
+	/**
+	 * What one caller is counted as: an IPv4 address as it is, an IPv6 address
+	 * by its /64 network ("2001:db8:1:2::/64"). Anything else is returned as it is.
+	 */
+	public static function bucket( string $ip ): string {
+		if ( false === strpos( $ip, ':' ) || false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return $ip;
+		}
+		$packed = inet_pton( $ip );
+		if ( false === $packed || 16 !== strlen( $packed ) ) {
+			return $ip;
+		}
+		$net = inet_ntop( substr( $packed, 0, 8 ) . str_repeat( "\0", 8 ) );
+		return false === $net ? $ip : $net . '/64';
 	}
 
 	/** The OAuth error response for a refused request. */

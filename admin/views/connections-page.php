@@ -70,6 +70,77 @@ function mcp_time_ago( string $utc_datetime ): string {
         </a>
     </div>
 
+    <!-- ── Connections that are on (2.39.0) ───────────────────────────────── -->
+    <div class="mcp-doc-section mcp-live" id="mcp-live-connections">
+        <h2><?php printf( /* translators: %d: count */ esc_html__( 'Connections that are on (%d)', 'mcp-abilities' ), count( $live_connections ) ); ?></h2>
+        <p class="mcp-section-sub"><?php
+            printf(
+                /* translators: %d: number of days */
+                esc_html__( 'Every AI assistant that can use this site right now, administrators included. A claude.ai sign-in, and an Application Password made on the Connect page, switch off by themselves after %d days without use. Other Application Passwords are only listed here.', 'mcp-abilities' ),
+                (int) \MCP_Abilities\OAuth\Lifecycle::idle_days()
+            );
+        ?></p>
+        <div class="mcp-table-scroll">
+        <table class="widefat striped mcp-live-table" id="mcp-live-table">
+            <thead><tr>
+                <th><?php esc_html_e( 'User', 'mcp-abilities' ); ?></th>
+                <th><?php esc_html_e( 'App · who is connecting', 'mcp-abilities' ); ?></th>
+                <th><?php esc_html_e( 'Signed in with', 'mcp-abilities' ); ?></th>
+                <th><?php esc_html_e( 'Connected since', 'mcp-abilities' ); ?></th>
+                <th><?php esc_html_e( 'Last active', 'mcp-abilities' ); ?></th>
+                <th><?php esc_html_e( 'Switches off if unused on', 'mcp-abilities' ); ?></th>
+                <?php if ( $approval_on ) : ?><th><?php esc_html_e( 'Approval', 'mcp-abilities' ); ?></th><?php endif; ?>
+                <th></th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ( $live_connections as $conn ) :
+                $conn_user = get_userdata( (int) $conn['user_id'] );
+            ?>
+                <tr class="mcp-live-row" data-key="<?php echo esc_attr( $conn['key'] ); ?>">
+                    <td class="mcp-live__user" data-label="<?php esc_attr_e( 'User', 'mcp-abilities' ); ?>">
+                        <?php if ( $conn_user ) : ?>
+                            <strong><?php echo esc_html( $conn_user->display_name ); ?></strong><br>
+                            <span class="mcp-section-sub"><?php echo esc_html( $conn_user->user_login . ' · ' . implode( ', ', (array) $conn_user->roles ) ); ?></span>
+                        <?php else : ?>
+                            <?php echo esc_html( '#' . (int) $conn['user_id'] ); ?>
+                        <?php endif; ?>
+                    </td>
+                    <td class="mcp-live__app" data-label="<?php esc_attr_e( 'App', 'mcp-abilities' ); ?>">
+                        <strong><?php echo esc_html( '' !== $conn['app'] ? $conn['app'] : __( 'Unnamed app', 'mcp-abilities' ) ); ?></strong>
+                        <br><span class="mcp-section-sub"><?php echo '' !== $conn['operator'] ? esc_html( $conn['operator'] ) : esc_html__( 'no name given', 'mcp-abilities' ); ?></span>
+                    </td>
+                    <td class="mcp-live__kind" data-label="<?php esc_attr_e( 'Signed in with', 'mcp-abilities' ); ?>">
+                        <?php echo esc_html( \MCP_Abilities\Connections::kind_label( $conn['kind'] ) ); ?>
+                        <?php if ( 'app_password' === $conn['kind'] && ! $conn['made_here'] ) : ?><br><span class="mcp-section-sub"><?php esc_html_e( 'not made on AI Nexus', 'mcp-abilities' ); ?></span><?php endif; ?>
+                    </td>
+                    <td class="mcp-live__since" data-label="<?php esc_attr_e( 'Connected since', 'mcp-abilities' ); ?>"><?php echo esc_html( \MCP_Abilities\Connections::when( $conn['since'] ) ?: '—' ); ?></td>
+                    <td class="mcp-live__last" data-label="<?php esc_attr_e( 'Last active', 'mcp-abilities' ); ?>">
+                        <?php echo esc_html( \MCP_Abilities\Connections::when( $conn['last_active'] ) ?: __( 'not recorded yet', 'mcp-abilities' ) ); ?>
+                        <?php if ( '' !== $conn['ip'] ) : ?><br><span class="mcp-section-sub"><?php printf( /* translators: %s: IP address */ esc_html__( 'from %s', 'mcp-abilities' ), esc_html( $conn['ip'] ) ); ?></span><?php endif; ?>
+                    </td>
+                    <td class="mcp-live__until" data-label="<?php esc_attr_e( 'Switches off if unused on', 'mcp-abilities' ); ?>"><?php echo esc_html( $conn['disconnects_at'] ? \MCP_Abilities\Connections::when( $conn['disconnects_at'] ) : __( 'never (only listed)', 'mcp-abilities' ) ); ?></td>
+                    <?php if ( $approval_on ) : ?>
+                        <td class="mcp-live__approval" data-label="<?php esc_attr_e( 'Approval', 'mcp-abilities' ); ?>"><?php echo esc_html( \MCP_Abilities\Connections::approval_label( $conn['approval'] ) ); ?></td>
+                    <?php endif; ?>
+                    <td class="mcp-live__actions">
+                        <button type="button" class="mcp-btn mcp-btn--link mcp-live-disconnect"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
+                        <span class="mcp-live__confirm" hidden>
+                            <?php echo 'oauth' === $conn['kind']
+                                ? esc_html__( 'Disconnect? The assistant loses access at once and has to connect again.', 'mcp-abilities' )
+                                : esc_html__( 'Disconnect? This deletes the Application Password; whatever uses it stops working at once.', 'mcp-abilities' ); ?>
+                            <button type="button" class="mcp-btn mcp-btn--danger mcp-live-disconnect-yes"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
+                            <button type="button" class="mcp-btn mcp-btn--ghost mcp-live-disconnect-no"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
+                        </span>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+                <tr class="mcp-live-empty"<?php echo $live_connections ? ' hidden' : ''; ?>><td colspan="<?php echo $approval_on ? 8 : 7; ?>" class="mcp-section-sub"><?php esc_html_e( 'No AI connection is on.', 'mcp-abilities' ); ?></td></tr>
+            </tbody>
+        </table>
+        </div>
+        <p id="mcp-live-status" class="mcp-save-status" role="status"></p>
+    </div>
+
     <!-- ── Summary stats ──────────────────────────────────────────────────── -->
     <div class="mcp-stats-grid">
 

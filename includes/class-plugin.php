@@ -71,6 +71,7 @@ final class Plugin {
             'class-installer.php',
             'class-request-context.php',
             'class-connection-approval.php',
+            'class-connections.php',
             'class-other-tools.php',
             'class-logger.php',
             'class-registry.php',
@@ -104,6 +105,10 @@ final class Plugin {
         // "Require admin approval for new connections" (off by default): a
         // held connection gets one status tool and nothing else.
         Connection_Approval::init();
+
+        // Every connection that is on and when it was last used, the daily
+        // switch-off of unused ones, "Your AI connections" on the profile (2.39.0).
+        Connections::init();
 
         // Other plugins' AI tools and MCP servers: read-only mode covers them,
         // and an administrator can turn each one off (AI Nexus → Other AI tools).

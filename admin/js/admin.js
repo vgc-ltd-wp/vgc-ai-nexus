@@ -583,6 +583,93 @@
             } );
     } );
 
+    // ── Connect: other hosts that may register, hold administrators (2.39.0) ─
+
+    $( document ).on( 'click', '#mcp-oauth-hosts-save', function () {
+        const $btn    = $( this ).prop( 'disabled', true );
+        const $status = $( '#mcp-oauth-hosts-status' );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.saving || 'Saving…' );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_oauth_hosts', nonce: mcpAbilities.nonce, hosts: $( '#mcp-oauth-hosts' ).val() } )
+            .done( function ( res ) {
+                if ( res && res.success ) {
+                    $( '#mcp-oauth-hosts' ).val( ( res.data.hosts || [] ).join( '\n' ) );
+                    $status.addClass( 'is-success' ).text( res.data.message || 'Saved.' );
+                } else {
+                    $status.addClass( 'is-error' ).text( ( res && res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () { $status.addClass( 'is-error' ).text( 'Failed.' ); } )
+            .always( function () { $btn.prop( 'disabled', false ); } );
+    } );
+
+    $( document ).on( 'change', '#mcp-approval-hold-admins', function () {
+        const $box    = $( this );
+        const on      = $box.is( ':checked' );
+        const $status = $( '#mcp-approval-hold-status' );
+        $box.prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( mcpAbilities.i18n.working || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_approval_hold_admins', nonce: mcpAbilities.nonce, on: on ? 1 : 0 } )
+            .done( function ( res ) {
+                if ( res && res.success ) {
+                    $box.prop( 'checked', !! res.data.on );
+                    $status.addClass( 'is-success' ).text( res.data.message || 'Saved.' );
+                } else {
+                    $box.prop( 'checked', ! on );
+                    $status.addClass( 'is-error' ).text( ( res && res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $box.prop( 'checked', ! on );
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } )
+            .always( function () { $box.prop( 'disabled', false ); } );
+    } );
+
+    // ── Connections that are on → Disconnect; profile → Revoke (2.39.0) ─────
+    // One pattern for both: the button opens an inline confirmation in its row.
+
+    function confirmRow( $btn, confirmSel, show ) {
+        const $cell = $btn.closest( 'td' );
+        $cell.find( confirmSel ).prop( 'hidden', ! show );
+        $cell.find( '.mcp-live-disconnect, .mcp-own-revoke' ).prop( 'hidden', show );
+    }
+
+    function endConnection( $row, action, nonce, $status, emptySel ) {
+        const $btns = $row.find( 'button' ).prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success mcp-save-status--error mcp-save-status--success' ).text( ( mcpAbilities.i18n && mcpAbilities.i18n.working ) || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, { action: action, nonce: nonce, key: $row.attr( 'data-key' ) } )
+            .done( function ( res ) {
+                const msg = ( res && res.data && res.data.message ) || '';
+                if ( res && res.success ) {
+                    const $tbody = $row.closest( 'tbody' );
+                    $row.remove();
+                    if ( ! $tbody.find( 'tr[data-key]' ).length ) {
+                        $tbody.find( emptySel ).prop( 'hidden', false );
+                    }
+                    $status.addClass( 'is-success' ).text( msg );
+                } else {
+                    $btns.prop( 'disabled', false );
+                    $status.addClass( 'is-error' ).text( msg || ( mcpAbilities.i18n && mcpAbilities.i18n.error ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $btns.prop( 'disabled', false );
+                $status.addClass( 'is-error' ).text( ( mcpAbilities.i18n && mcpAbilities.i18n.error ) || 'Failed.' );
+            } );
+    }
+
+    $( document ).on( 'click', '.mcp-live-disconnect', function () { confirmRow( $( this ), '.mcp-live__confirm', true ); } );
+    $( document ).on( 'click', '.mcp-live-disconnect-no', function () { confirmRow( $( this ), '.mcp-live__confirm', false ); } );
+    $( document ).on( 'click', '.mcp-live-disconnect-yes', function () {
+        endConnection( $( this ).closest( 'tr' ), 'mcp_connection_disconnect', mcpAbilities.nonce, $( '#mcp-live-status' ), '.mcp-live-empty' );
+    } );
+
+    $( document ).on( 'click', '.mcp-own-revoke', function () { confirmRow( $( this ), '.mcp-own-confirm', true ); } );
+    $( document ).on( 'click', '.mcp-own-revoke-no', function () { confirmRow( $( this ), '.mcp-own-confirm', false ); } );
+    $( document ).on( 'click', '.mcp-own-revoke-yes', function () {
+        endConnection( $( this ).closest( 'tr' ), 'mcp_own_connection_revoke', mcpAbilities.ownNonce, $( '#mcp-own-status' ), '.mcp-own-empty' );
+    } );
+
     // ── Warn on unsaved changes ──────────────────────────────────────────────
 
     $( window ).on( 'beforeunload', function () {

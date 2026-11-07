@@ -63,9 +63,10 @@ final class Client_Manager {
 
 	/**
 	 * @param array<string, array<string, mixed>> $clients Every client, as it is to be stored.
+	 * @param array<string, mixed>                $extra   More fields: 'confidential', 'pkce' (2.39.0).
 	 * @return array{client_id: string, client_secret: string}
 	 */
-	private static function insert( array $clients, string $name, array $redirect_uris, int $user_id, bool $dynamic ): array {
+	private static function insert( array $clients, string $name, array $redirect_uris, int $user_id, bool $dynamic, array $extra = array() ): array {
 		$client_id     = self::generate_token( self::ID_BYTES );
 		$client_secret = self::generate_token( self::SECRET_BYTES );
 
@@ -76,7 +77,7 @@ final class Client_Manager {
 			'user_id'       => (int) $user_id,
 			'dynamic'       => $dynamic,
 			'created_at'    => time(),
-		);
+		) + $extra;
 		if ( $dynamic ) {
 			$clients[ $client_id ]['used_at'] = 0;
 		}
@@ -197,20 +198,27 @@ final class Client_Manager {
 			}
 		}
 
-		// Validate redirect URIs against policy.
+		// Echo back the client's requested token endpoint auth method.  Claude
+		// registers as a public client using PKCE ("none"); forcing
+		// "client_secret_post" can make the client reject the registration.
+		$auth_method = isset( $registration_request['token_endpoint_auth_method'] ) && is_string( $registration_request['token_endpoint_auth_method'] )
+			? sanitize_text_field( $registration_request['token_endpoint_auth_method'] )
+			: 'none';
+		if ( ! in_array( $auth_method, array( 'none', 'client_secret_post', 'client_secret_basic' ), true ) ) {
+			$auth_method = 'none';
+		}
+
+		// Validate redirect URIs against policy (2.39.0: Claude's exact
+		// addresses, loopback only with PKCE, hosts an administrator added).
+		$pkce = false;
 		if ( 'restricted' === $policy ) {
-			$allowed_origins = (array) get_option( Options::ALLOWED_ORIGINS, Options::DEFAULT_ORIGINS );
 			foreach ( $redirect_uris as $uri ) {
-				if ( ! self::uri_matches_origins( (string) $uri, $allowed_origins ) ) {
-					return new \WP_Error(
-						'invalid_redirect_uri',
-						sprintf(
-							/* translators: %s: rejected redirect URI */
-							__( 'redirect_uri "%s" is not permitted by the server registration policy.', 'mcp-abilities' ),
-							esc_url( $uri )
-						),
-						array( 'status' => 400 )
-					);
+				$why = self::redirect_refusal( (string) $uri, $auth_method );
+				if ( '' !== $why ) {
+					return new \WP_Error( 'invalid_redirect_uri', self::refusal_message( (string) $uri, $why ), array( 'status' => 400 ) );
+				}
+				if ( self::is_loopback_redirect( (string) $uri ) ) {
+					$pkce = true;
 				}
 			}
 		}
@@ -220,16 +228,6 @@ final class Client_Manager {
 			: '';
 		if ( '' === $client_name ) {
 			$client_name = __( 'Dynamic Client', 'mcp-abilities' );
-		}
-
-		// Echo back the client's requested token endpoint auth method.  Claude
-		// registers as a public client using PKCE ("none"); forcing
-		// "client_secret_post" can make the client reject the registration.
-		$auth_method = isset( $registration_request['token_endpoint_auth_method'] )
-			? sanitize_text_field( (string) $registration_request['token_endpoint_auth_method'] )
-			: 'none';
-		if ( ! in_array( $auth_method, array( 'none', 'client_secret_post', 'client_secret_basic' ), true ) ) {
-			$auth_method = 'none';
 		}
 
 		[ $clients, $removed ] = self::make_room( self::get_all() );
@@ -247,7 +245,12 @@ final class Client_Manager {
 			);
 		}
 
-		$credentials = self::insert( $clients, $client_name, $redirect_uris, $default_user_id, true );
+		// Whether it said it keeps a secret: such a client must then prove it on
+		// every refresh (2.39.0). A loopback client must use PKCE.
+		$credentials = self::insert( $clients, $client_name, $redirect_uris, $default_user_id, true, array(
+			'confidential' => 'none' !== $auth_method,
+			'pkce'         => $pkce,
+		) );
 
 		// RFC 7591 §3.2.1 response fields.  Always include client_secret so a
 		// confidential client can use it; a public client (auth_method=none)
@@ -304,9 +307,104 @@ final class Client_Manager {
 		return rtrim( strtr( base64_encode( random_bytes( $bytes ) ), '+/', '-_' ), '=' );
 	}
 
-	/** Whether a redirect address is on one of Claude's own hosts (claude.ai, claude.com, anthropic.com). */
+	/**
+	 * Whether a redirect address is one of Claude's own (2.39.0): https, the
+	 * host exactly claude.ai or claude.com, the standard port, a path under
+	 * /api/mcp/ (claude.ai's is https://claude.ai/api/mcp/auth_callback).
+	 */
 	public static function is_claude_redirect( string $uri ): bool {
-		return self::uri_matches_origins( $uri, Options::DEFAULT_ORIGINS );
+		$p = self::parse_redirect( $uri );
+		return null !== $p
+			&& 'https' === $p['scheme']
+			&& in_array( $p['host'], array( 'claude.ai', 'claude.com' ), true )
+			&& ( null === $p['port'] || 443 === $p['port'] )
+			&& 0 === strpos( $p['path'], '/api/mcp/' );
+	}
+
+	/** A loopback address an app on the person's own computer listens on: http://localhost, 127.0.0.1 or [::1], any port. */
+	public static function is_loopback_redirect( string $uri ): bool {
+		$p = self::parse_redirect( $uri );
+		return null !== $p && 'http' === $p['scheme'] && in_array( $p['host'], array( 'localhost', '127.0.0.1', '[::1]' ), true );
+	}
+
+	/** Whether a registered client must use PKCE (it registered a loopback address). */
+	public static function requires_pkce( string $client_id ): bool {
+		$client = self::get( $client_id );
+		return is_array( $client ) && ! empty( $client['pkce'] );
+	}
+
+	/** Whether a client registered as one that keeps a secret (client_secret_post / _basic). */
+	public static function is_confidential( string $client_id ): bool {
+		$client = self::get( $client_id );
+		return is_array( $client ) && ! empty( $client['confidential'] );
+	}
+
+	/**
+	 * Why a redirect address may not register under the "restricted" policy:
+	 * '' (allowed), 'pkce' (loopback without PKCE) or 'address'.
+	 *
+	 * Allowed: Claude's own addresses; loopback for a public client (it can
+	 * only prove itself with PKCE); https on a host an administrator added.
+	 */
+	public static function redirect_refusal( string $uri, string $auth_method ): string {
+		if ( self::is_claude_redirect( $uri ) ) {
+			return '';
+		}
+		if ( self::is_loopback_redirect( $uri ) ) {
+			return 'none' === $auth_method ? '' : 'pkce';
+		}
+		$p = self::parse_redirect( $uri );
+		if ( null !== $p && 'https' === $p['scheme'] && self::uri_matches_origins( $uri, Options::extra_hosts() ) ) {
+			return '';
+		}
+		return 'address';
+	}
+
+	/** The message a refused registration gets: what is allowed, and where an administrator adds an address. */
+	public static function refusal_message( string $uri, string $why ): string {
+		$shown = mb_substr( $uri, 0, 200 );
+		if ( 'pkce' === $why ) {
+			return sprintf(
+				/* translators: %s: rejected redirect URI */
+				__( 'redirect_uri "%s" is a local address. A local address is accepted only from an app that uses PKCE and no client secret (token_endpoint_auth_method "none").', 'mcp-abilities' ),
+				$shown
+			);
+		}
+		return sprintf(
+			/* translators: %s: rejected redirect URI */
+			__( 'redirect_uri "%s" is not allowed on this site. Only Claude (https://claude.ai/api/mcp/… or https://claude.com/api/mcp/…) and local apps that use PKCE may connect. A site administrator can allow another app\'s address under WordPress Admin → AI Nexus → Connect → "Other apps allowed to connect".', 'mcp-abilities' ),
+			$shown
+		);
+	}
+
+	/**
+	 * A redirect address taken apart, or null when it is not a plain absolute
+	 * address: no user or password, no fragment, no white space or control
+	 * characters, no backslash, no dot segments (also encoded).
+	 *
+	 * @return array{scheme:string,host:string,port:int|null,path:string}|null
+	 */
+	private static function parse_redirect( string $uri ): ?array {
+		if ( '' === $uri || strlen( $uri ) > self::MAX_URI_LENGTH || preg_match( '/[\x00-\x20\x7f\\\\]/', $uri ) ) {
+			return null;
+		}
+		$parts = wp_parse_url( $uri );
+		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+			return null;
+		}
+		if ( isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['fragment'] ) || false !== strpos( $uri, '@' ) ) {
+			return null;
+		}
+		$path = isset( $parts['path'] ) ? (string) $parts['path'] : '/';
+		if ( preg_match( '#(^|/)\.\.?(/|$)|%2e|%2f|%5c#i', $path ) ) {
+			return null;
+		}
+		return array(
+			'scheme' => strtolower( (string) $parts['scheme'] ),
+			'host'   => strtolower( (string) $parts['host'] ),
+			'port'   => isset( $parts['port'] ) ? (int) $parts['port'] : null,
+			'path'   => $path,
+		);
 	}
 
 	/**

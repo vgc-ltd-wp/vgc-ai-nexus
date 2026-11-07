@@ -16,7 +16,8 @@ defined( 'ABSPATH' ) || exit;
  *   - Application Password:     "app:<uuid>:<user_id>"
  * Never held: WP-CLI / STDIO, a signed-in browser (cookie), and — filter
  * mcp_abilities_approval_exempt_admins, default true — users who can
- * manage_options.
+ * manage_options, unless "Also hold administrators' new connections"
+ * (option HOLD_ADMINS, 2.39.0) is on.
  *
  * A held connection (pending, or rejected) sees exactly one tool,
  * mcp-abilities-connection-status, and an initialize message that says it is
@@ -50,6 +51,7 @@ final class Connection_Approval {
     public const CONSTANT      = 'VGC_AI_NEXUS_REQUIRE_APPROVAL';
     public const RECORDS       = 'mcp_abilities_connection_approvals';
     public const MAIL_LOG      = 'mcp_abilities_approval_mail_times';
+    public const HOLD_ADMINS   = 'mcp_abilities_approval_hold_admins';
     public const STATUS_TOOL   = 'mcp-abilities-connection-status';
     public const ERROR_CODE    = 'mcp_abilities_pending_approval';
     public const LOG_STATUS    = 'pending_approval';
@@ -119,7 +121,8 @@ final class Connection_Approval {
         Logger::log( 'connection_approval_disabled', [ 'success' => true ], [ [ 'type' => 'setting', 'id' => 0, 'action' => 'off' ] ] );
     }
 
-    private static function grandfather( int $admin_id ): int {
+    /** @param bool $admins_only Only administrators' connections (hold-admins switched on). */
+    private static function grandfather( int $admin_id, bool $admins_only = false ): int {
         $found = [];
         if ( class_exists( OAuth\Token_Store::class ) ) {
             foreach ( OAuth\Token_Store::summary_by_client() as $client_id => $usage ) {
@@ -158,7 +161,7 @@ final class Connection_Approval {
         $records = self::records();
         $count   = 0;
         foreach ( $found as $conn ) {
-            if ( self::is_exempt_user( $conn['user_id'] ) ) {
+            if ( $admins_only ? ! user_can( $conn['user_id'], 'manage_options' ) : self::is_exempt_user( $conn['user_id'] ) ) {
                 continue;
             }
             $existing = $records[ $conn['key'] ] ?? null;
@@ -183,13 +186,46 @@ final class Connection_Approval {
         return ( 'oauth' === $auth ? 'oauth:' : 'app:' ) . $id . ':' . $user_id;
     }
 
-    private static function is_exempt_user( int $user_id ): bool {
+    /**
+     * Whether a user's connections are never held: administrators
+     * (manage_options), unless "Also hold administrators' new connections"
+     * is on (2.39.0) or the filter says otherwise.
+     */
+    public static function is_exempt_user( int $user_id ): bool {
         /**
          * Whether administrators (manage_options) are never held.
          *
-         * @param bool $exempt Default true.
+         * @param bool $exempt Default true, false while the "Also hold
+         *                     administrators' new connections" setting is on.
          */
-        return $user_id > 0 && user_can( $user_id, 'manage_options' ) && (bool) apply_filters( 'mcp_abilities_approval_exempt_admins', true );
+        return $user_id > 0 && user_can( $user_id, 'manage_options' ) && (bool) apply_filters( 'mcp_abilities_approval_exempt_admins', ! self::hold_admins() );
+    }
+
+    /** "Also hold administrators' new connections" (default off). */
+    public static function hold_admins(): bool {
+        return (bool) get_option( self::HOLD_ADMINS, false );
+    }
+
+    /**
+     * Switch "Also hold administrators' new connections". Switching it on
+     * while approval is on approves the administrators' connections that
+     * work today, so their scheduled tasks keep running.
+     *
+     * @return int Connections approved this way.
+     */
+    public static function set_hold_admins( bool $on, int $admin_id ): int {
+        $count = 0;
+        if ( $on && ! self::hold_admins() ) {
+            // Approve first, then switch on (as enable() does).
+            $count = self::enabled() ? self::grandfather( $admin_id, true ) : 0;
+            update_option( self::HOLD_ADMINS, true, true );
+            self::$state = null;
+        } elseif ( ! $on ) {
+            update_option( self::HOLD_ADMINS, false, true );
+            self::$state = null;
+        }
+        Logger::log( 'connection_approval_hold_admins', [ 'success' => true ], [ [ 'type' => 'setting', 'id' => 0, 'action' => $on ? "administrators held; existing approved: {$count}" : 'administrators not held' ] ] );
+        return $count;
     }
 
     /**

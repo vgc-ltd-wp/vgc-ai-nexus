@@ -190,8 +190,9 @@ Key protections:
 - **Capability checks** on every tool (`edit_posts`, `manage_options`, `upload_files`, etc.)
 - **Object-level checks** — each post, page and media item is checked against the user (`read_post`, `edit_post`, `delete_post`, `publish_post`): a Contributor reads only published content and their own drafts, cannot publish, and cannot read or write protected meta; media tools act only on attachments the user may edit
 - **Input validation** — every call is checked against the tool's schema (required fields, types, and the enums of core tools) before it runs
-- **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl`, the roles table, caches, OAuth tokens, this plugin's own settings and mail/payment credentials are read- and/or write-protected
-- **claude.ai sign-in (OAuth)** — a token works only on the MCP routes, so read-only mode and the tool switches cannot be bypassed through the plain REST API; the consent page cannot be framed or cached and shows where the browser goes after Approve; app registration is capped, rate-limited per address and expires when unused; codes, tokens and request bodies are never logged
+- **Options denylist** — authentication keys, salts, `active_plugins`, `siteurl`, the roles table, caches, OAuth tokens, this plugin's and every AI Nexus extension's settings, the Analytics extension's Google sign-in and mail/payment credentials are read- and/or write-protected
+- **claude.ai sign-in (OAuth)** — a token works only on the MCP routes, so read-only mode and the tool switches cannot be bypassed through the plain REST API; the consent page cannot be framed or cached, needs a sign-in under 10 minutes old and an account that can write posts, and shows the full address the browser goes to; only Claude's own addresses (and local apps with PKCE, and hosts an administrator adds) may register; a password change, a role change or deleting the user ends the connection; an unused connection switches off after 14 days; app registration is capped, rate-limited per address and expires when unused; codes, tokens and request bodies are never logged
+- **Every connection in view** — AI Nexus → Connections lists every AI connection that is on and when it was last used, with Disconnect; each user sees and can revoke their own on their profile
 - **SSRF protection** on upload tools — public addresses only (A and AAAA, every redirect), the connection pinned to the checked address, the size limit enforced during the download
 - **Only what concerns them** — `tools/list` shows a user the tools they could call; versions, the theme and the security setup are for administrators only
 - **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`
@@ -208,6 +209,20 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.39.0
+
+- **An AI connection no longer outlives the account behind it.** Changing a password ends every claude.ai connection of that account, whatever way the password was changed (reset, profile, WP-CLI, another plugin). So does deleting the user, removing them from the site or changing their role; they connect again. A connection of an app that is no longer registered stops working too.
+- **Connecting needs a fresh sign-in.** The approval page asks you to log in again unless you did so in the last 10 minutes, so a stolen login cookie cannot be turned into a lasting AI connection. Only accounts that can write posts may connect an AI; others see a page saying their account cannot.
+- **"Claude only" now means Claude.** New apps may register only with Claude's own return addresses (https://claude.ai/api/mcp/… and https://claude.com/api/mcp/…), local apps on your computer that use PKCE, and hosts you add under **Other apps allowed to connect** on the Connect page. Apps connected before keep working. The approval page shows Claude's name and logo only for Claude; any other app gets a plain title with its name, a clear warning, its full return address and when it registered.
+- **Sites that had "Any app"** (set by the old connector plugin) are switched to "Claude only" once, with a notice that says how to add an address. You can choose "Any app" again.
+- **Unused connections switch off after 14 days.** A claude.ai connection that is not used for 14 days ends (it used to be 30, renewed on use); existing ones get 14 days from the update. An Application Password made on the Connect page is deleted after 14 days without use. Other Application Passwords are only listed. Developers can change the 14 with the `mcp_abilities_idle_days` filter.
+- **New: Connections that are on.** AI Nexus → Connections now starts with every AI connection that is on — administrators included, whether or not approval is on — with who, which app, who said they are connecting, since when, when and from where it was last used, when it switches off if unused, its approval status, and a Disconnect button.
+- **New: Your AI connections** on each user's profile, with Revoke for their own.
+- **New setting:** "Also hold administrators' new connections", next to "Require admin approval".
+- **Refresh tokens:** an app that keeps a secret must send it on every refresh, and an old refresh token used again after it was replaced ends that connection.
+- **Option protection** now covers every AI Nexus extension's settings, and the AI can no longer read the Analytics extension's Google sign-in or the list of connections.
+- **Fewer ways to load the site:** a wrong token is logged once per address every 10 minutes, IPv6 callers are counted by their /64 network, and only an administrator's "Check again" on the Updates screen skips the update cache.
 
 ### 2.38.0
 

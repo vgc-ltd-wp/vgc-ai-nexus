@@ -67,7 +67,13 @@ $adapter_ok  = Connect::adapter_active();
                     <span class="mcp-readonly__title"><?php esc_html_e( 'Require admin approval for new connections', 'mcp-abilities' ); ?></span>
                     <span id="mcp-approval-status" class="mcp-save-status"></span>
                 </label>
-                <p class="mcp-readonly__help"><?php esc_html_e( 'When on, a new AI connection — a claude.ai sign-in or an Application Password — can connect but gets no tools until you approve it here. Until then it only sees that it is waiting. Administrators, WP-CLI and your own signed-in browser are never held.', 'mcp-abilities' ); ?></p>
+                <p class="mcp-readonly__help"><?php esc_html_e( 'When on, a new AI connection — a claude.ai sign-in or an Application Password — can connect but gets no tools until you approve it here. Until then it only sees that it is waiting. WP-CLI and your own signed-in browser are never held; administrators only with the setting below.', 'mcp-abilities' ); ?></p>
+                <label class="mcp-approval__check mcp-approval__hold">
+                    <input type="checkbox" id="mcp-approval-hold-admins" <?php checked( \MCP_Abilities\Connection_Approval::hold_admins() ); ?>>
+                    <?php esc_html_e( 'Also hold administrators\' new connections', 'mcp-abilities' ); ?>
+                    <span id="mcp-approval-hold-status" class="mcp-save-status"></span>
+                </label>
+                <p class="mcp-readonly__help"><?php esc_html_e( 'A stolen administrator login could otherwise connect an AI with full rights without anyone being asked. When you switch this on, administrators\' connections that work today are approved now.', 'mcp-abilities' ); ?></p>
                 <?php if ( $appr_forced ) : ?>
                     <p class="mcp-readonly__help"><strong><?php esc_html_e( 'Locked on by VGC_AI_NEXUS_REQUIRE_APPROVAL in wp-config.php — remove that line to use this switch.', 'mcp-abilities' ); ?></strong></p>
                 <?php endif; ?>
@@ -215,7 +221,13 @@ $adapter_ok  = Connect::adapter_active();
                         ?>
                     <?php endif; ?>
                 </p>
-                <p class="mcp-section-sub"><?php esc_html_e( 'Claude acts with the permissions of the WordPress user who approves the connection, and stays signed in (renewing itself) until you disconnect it below.', 'mcp-abilities' ); ?></p>
+                <p class="mcp-section-sub"><?php
+                    printf(
+                        /* translators: %d: number of days */
+                        esc_html__( 'Claude acts with the permissions of the WordPress user who approves the connection (an account that can at least write posts, signed in within the last few minutes). It stays signed in, renewing itself, until you disconnect it below, the user changes their password, role or is deleted, or it goes %d days without being used.', 'mcp-abilities' ),
+                        (int) \MCP_Abilities\OAuth\Lifecycle::idle_days()
+                    );
+                ?></p>
 
                 <p>
                     <label for="mcp-oauth-policy" style="font-weight:600;margin-right:8px;"><?php esc_html_e( 'Which apps may connect:', 'mcp-abilities' ); ?></label>
@@ -223,7 +235,7 @@ $adapter_ok  = Connect::adapter_active();
                         <?php
                         $policy  = \MCP_Abilities\OAuth\Options::policy();
                         $choices = [
-                            'restricted' => __( 'Claude only (claude.ai and Anthropic) — recommended', 'mcp-abilities' ),
+                            'restricted' => __( 'Claude only (and the hosts below) — recommended', 'mcp-abilities' ),
                             'open'       => __( 'Any app (each still needs your approval)', 'mcp-abilities' ),
                             'closed'     => __( 'None — no new connections', 'mcp-abilities' ),
                         ];
@@ -235,6 +247,17 @@ $adapter_ok  = Connect::adapter_active();
                     <span id="mcp-oauth-policy-status" class="mcp-save-status"></span>
                 </p>
 
+                <div class="mcp-oauth-hosts">
+                    <label for="mcp-oauth-hosts" class="mcp-oauth-hosts__label"><?php esc_html_e( 'Other apps allowed to connect', 'mcp-abilities' ); ?></label>
+                    <p class="mcp-section-sub" id="mcp-oauth-hosts-help"><?php esc_html_e( '“Claude only” lets Claude connect (claude.ai and claude.com) and apps on your own computer that use PKCE. An app may also connect when it returns to one of these hosts over https. One host per line, for example apps.example.com; *.example.com also allows every sub-domain.', 'mcp-abilities' ); ?></p>
+                    <textarea id="mcp-oauth-hosts" class="large-text code" rows="3" aria-describedby="mcp-oauth-hosts-help"><?php echo esc_textarea( implode( "\n", \MCP_Abilities\OAuth\Options::extra_hosts() ) ); ?></textarea>
+                    <p>
+                        <button type="button" class="mcp-btn mcp-btn--primary" id="mcp-oauth-hosts-save"><?php esc_html_e( 'Save hosts', 'mcp-abilities' ); ?></button>
+                        <span id="mcp-oauth-hosts-status" class="mcp-save-status"></span>
+                    </p>
+                </div>
+
+                <div class="mcp-table-scroll">
                 <table class="widefat striped mcp-connections-table" id="mcp-oauth-table">
                     <thead>
                         <tr>
@@ -281,6 +304,7 @@ $adapter_ok  = Connect::adapter_active();
                         </tr>
                     </tbody>
                 </table>
+                </div>
                 <span id="mcp-oauth-status" class="mcp-save-status"></span>
             <?php endif; ?>
         </div>

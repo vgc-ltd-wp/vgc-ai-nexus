@@ -24,6 +24,8 @@ class Connect {
         add_action( 'wp_ajax_mcp_oauth_operator',        [ $this, 'ajax_oauth_operator' ] );
         add_action( 'wp_ajax_mcp_approval_setting',      [ $this, 'ajax_approval_setting' ] );
         add_action( 'wp_ajax_mcp_approval_decide',       [ $this, 'ajax_approval_decide' ] );
+        add_action( 'wp_ajax_mcp_approval_hold_admins',  [ $this, 'ajax_approval_hold_admins' ] );
+        add_action( 'wp_ajax_mcp_oauth_hosts',           [ $this, 'ajax_oauth_hosts' ] );
     }
 
     /** AJAX: who may register as a claude.ai-style OAuth app (restricted/open/closed). */
@@ -36,7 +38,48 @@ class Connect {
         if ( ! \MCP_Abilities\OAuth\Options::set_policy( $policy ) ) {
             wp_send_json_error( [ 'message' => __( 'Unknown setting.', 'mcp-abilities' ) ] );
         }
+        // An administrator chose: the 2.39.0 notice about the change has done its job.
+        delete_option( \MCP_Abilities\OAuth\Lifecycle::POLICY_NOTICE );
         wp_send_json_success( [ 'message' => __( 'Saved.', 'mcp-abilities' ) ] );
+    }
+
+    /**
+     * AJAX: hosts besides Claude's that may register an app under "Claude only"
+     * (https only). One per line; "*.example.com" includes its sub-domains.
+     */
+    public function ajax_oauth_hosts(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $raw   = isset( $_POST['hosts'] ) ? (string) wp_unslash( $_POST['hosts'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- each line is cleaned by Options::clean_host()
+        $lines = array_filter( array_map( 'trim', preg_split( '/[\r\n,]+/', $raw ) ?: [] ) );
+        $kept  = \MCP_Abilities\OAuth\Options::set_extra_hosts( $lines );
+        $bad   = count( $lines ) - count( $kept );
+        wp_send_json_success( [
+            'hosts'   => $kept,
+            'message' => $bad > 0
+                /* translators: %d: number of entries */
+                ? sprintf( _n( 'Saved. %d entry was not a host name and was left out.', 'Saved. %d entries were not host names (or were Claude\'s own) and were left out.', $bad, 'mcp-abilities' ), $bad )
+                : __( 'Saved.', 'mcp-abilities' ),
+        ] );
+    }
+
+    /** AJAX: "Also hold administrators' new connections". */
+    public function ajax_approval_hold_admins(): void {
+        check_ajax_referer( 'mcp_abilities_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $on       = ! empty( $_POST['on'] );
+        $approved = \MCP_Abilities\Connection_Approval::set_hold_admins( $on, get_current_user_id() );
+        wp_send_json_success( [
+            'on'      => \MCP_Abilities\Connection_Approval::hold_admins(),
+            'message' => $on
+                /* translators: %d: number of connections */
+                ? sprintf( _n( 'On. Administrators\' new connections wait for approval too; %d existing one was approved.', 'On. Administrators\' new connections wait for approval too; %d existing ones were approved.', $approved, 'mcp-abilities' ), $approved )
+                : __( 'Off. Administrators\' connections are not held.', 'mcp-abilities' ),
+        ] );
     }
 
     /** AJAX: revoke an OAuth app (claude.ai connection) and all of its tokens. */

@@ -796,5 +796,8 @@ final class Request_Context {
         if ( class_exists( Connection_Approval::class, false ) ) {
             Connection_Approval::reset();
         }
+        if ( class_exists( Connections::class, false ) ) {
+            Connections::reset();
+        }
     }
 }

@@ -20,6 +20,23 @@ class Connections_Page {
     public function init(): void {
         add_action( 'admin_menu',            [ $this, 'add_submenu' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
+        add_action( 'wp_ajax_mcp_connection_disconnect', [ $this, 'ajax_disconnect' ] );
+    }
+
+    /** AJAX: switch one connection off ("Connections that are on" → Disconnect). */
+    public function ajax_disconnect(): void {
+        if ( ! check_ajax_referer( 'mcp_abilities_nonce', 'nonce', false ) ) {
+            wp_send_json_error( [ 'message' => __( 'The page has expired. Reload it and try again.', 'mcp-abilities' ) ], 403 );
+        }
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $key  = isset( $_POST['key'] ) ? sanitize_text_field( wp_unslash( $_POST['key'] ) ) : '';
+        $user = wp_get_current_user();
+        if ( ! \MCP_Abilities\Connections::disconnect( $key, sprintf( 'the administrator %s', $user->user_login ) ) ) {
+            wp_send_json_error( [ 'message' => __( 'That connection is not on any more.', 'mcp-abilities' ) ] );
+        }
+        wp_send_json_success( [ 'message' => __( 'Disconnected. The assistant has to connect again to use this site.', 'mcp-abilities' ) ] );
     }
 
     public function add_submenu(): void {
@@ -45,6 +62,16 @@ class Connections_Page {
             [],
             MCP_ABILITIES_VERSION
         );
+        // "Connections that are on" → Disconnect (2.39.0).
+        wp_enqueue_script( 'mcp-abilities-admin', MCP_ABILITIES_URL . 'admin/js/admin.js', [ 'jquery' ], MCP_ABILITIES_VERSION, true );
+        wp_localize_script( 'mcp-abilities-admin', 'mcpAbilities', [
+            'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'nonce'   => wp_create_nonce( 'mcp_abilities_nonce' ),
+            'i18n'    => [
+                'working' => __( 'Working…', 'mcp-abilities' ),
+                'error'   => __( 'That did not work. Reload the page and try again.', 'mcp-abilities' ),
+            ],
+        ] );
     }
 
     public function render(): void {
@@ -76,6 +103,10 @@ class Connections_Page {
         ] );
         $all_tools = Logger::get_all_tools();
 
+        // Every connection that is on now (2.39.0).
+        $live_connections = \MCP_Abilities\Connections::live();
+        $approval_on      = \MCP_Abilities\Connection_Approval::enabled();
+
         include MCP_ABILITIES_DIR . 'admin/views/connections-page.php';
     }
 
@@ -104,7 +135,7 @@ class Connections_Page {
                 $html = self::order_html( $id, $deleted );
                 break;
             case 'connection':
-                $html = self::connection_html( (string) ( $object['key'] ?? '' ) );
+                $html = self::connection_html( (string) ( $object['key'] ?? '' ), $object );
                 break;
             case 'setting':
                 $html = esc_html__( 'setting: require admin approval', 'mcp-abilities' );
@@ -174,10 +205,22 @@ class Connections_Page {
         return self::link( $url, $text );
     }
 
-    /** A connection (approval record), linked to the Connect page. */
-    private static function connection_html( string $key ): string {
+    /**
+     * A connection (approval record), linked to the Connect page. Without a
+     * record (approval off, or a connection that ended): who and which app,
+     * as the log row stored them.
+     *
+     * @param array<string, mixed> $object
+     */
+    private static function connection_html( string $key, array $object = [] ): string {
         $record = \MCP_Abilities\Connection_Approval::records()[ $key ] ?? null;
         if ( ! is_array( $record ) ) {
+            $uid  = (int) ( $object['user_id'] ?? 0 );
+            $user = $uid ? get_userdata( $uid ) : null;
+            if ( $uid || ! empty( $object['app'] ) ) {
+                /* translators: 1: user login, 2: app name */
+                return esc_html( sprintf( __( 'connection: %1$s via %2$s', 'mcp-abilities' ), $user ? $user->user_login : '#' . $uid, '' !== (string) ( $object['app'] ?? '' ) ? (string) $object['app'] : __( 'unnamed app', 'mcp-abilities' ) ) );
+            }
             /* translators: %s: connection key */
             return '<span class="mcp-muted">' . esc_html( sprintf( __( 'connection %s (no record)', 'mcp-abilities' ), $key ) ) . '</span>';
         }

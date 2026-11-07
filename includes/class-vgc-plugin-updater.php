@@ -153,7 +153,7 @@ class VGC_Plugin_Updater {
             return $this->entry;
         }
         // WordPress appends ?force-check=1 when the admin clicks "Check again".
-        if ( ! empty( $_GET['force-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        if ( $this->force_check() ) {
             delete_transient( $this->cache_key );
         } else {
             $cached = get_transient( $this->cache_key );
@@ -171,6 +171,24 @@ class VGC_Plugin_Updater {
 
         set_transient( $this->cache_key, $entry, HOUR_IN_SECONDS );
         return $this->entry = $entry;
+    }
+
+    /**
+     * Whether this request asks to skip the cache: "Check again" (?force-check=1)
+     * on the Updates or Plugins screen, by someone who may update plugins.
+     * Before 2.39.0 any visitor could add it to a request that runs admin_init
+     * (admin-post.php, admin-ajax.php) and make the site fetch the manifest on
+     * every hit (access analysis L3).
+     */
+    private function force_check(): bool {
+        if ( empty( $_GET['force-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+            return false;
+        }
+        if ( ! function_exists( 'current_user_can' ) || ! function_exists( 'wp_get_current_user' ) || ! current_user_can( 'update_plugins' ) ) {
+            return false;
+        }
+        $screen = isset( $GLOBALS['pagenow'] ) ? (string) $GLOBALS['pagenow'] : '';
+        return in_array( $screen, [ 'update-core.php', 'plugins.php', 'update.php' ], true );
     }
 
     /** Add this plugin to the update transient when a newer version is published. */

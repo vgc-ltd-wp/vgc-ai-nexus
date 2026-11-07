@@ -51,6 +51,11 @@ final class Bootstrap {
 	}
 
 	public static function boot(): void {
+		// Whoever serves the sign-in, the rows are the same: a deleted user, a
+		// role change or removal from the site ends them, and the 2.39.0 upgrade
+		// steps run (Lifecycle).
+		Lifecycle::init();
+
 		$connector = self::connector_version();
 		if ( null !== $connector && version_compare( $connector, '1.4.0', '<' ) ) {
 			self::$mode = 'connector';
@@ -190,6 +195,9 @@ final class Bootstrap {
 		Token_Store::delete_for_client( $client_id );
 		Client_Manager::delete( $client_id );
 		Operators::delete_for_client( $client_id );
+		if ( class_exists( \MCP_Abilities\Connections::class ) ) {
+			\MCP_Abilities\Connections::forget_client( $client_id );
+		}
 		Server::log( sprintf( 'app revoked by admin user_id=%d client=%s', get_current_user_id(), $client_id ) );
 		return true;
 	}
