@@ -64,7 +64,7 @@ claude.ai (web, mobile, Desktop connectors, scheduled routines) cannot use an Ap
 
 **Unused connections switch off after 14 days** (the owner's decision; no absolute lifetime).
 - An OAuth refresh token lives 14 days, pushed forward each time it is used (30 days before). At the update, every existing refresh token that ran longer is cut to 14 days from that moment, so nobody is cut off on the spot.
-- An Application Password made on AI Nexus's Connect page (its UUID is in `mcp_abilities_connections`) is deleted with `WP_Application_Passwords` after 14 days unused. "Unused" is judged by the later of WordPress's own `last_used` (which WordPress writes at most once a day) and AI Nexus's last activity for it, or by its creation date if it was never used.
+- An Application Password made on AI Nexus's Connect page (its UUID is in `mcp_abilities_connections`) is deleted with `WP_Application_Passwords` after 14 days unused. "Unused" is judged by the later of WordPress's own `last_used` (which WordPress writes at most once a day) and AI Nexus's last activity for it, or by its creation date if it was never used. For one from before 2.39.0 the 14 days start at the update at the earliest (the time of the upgrade step `refresh_cap_239`), as for refresh tokens, so nothing is deleted on the first night.
 - Other Application Passwords are only listed, never removed.
 - A daily cron event, `mcp_abilities_idle_sweep`, does this. It also deletes expired and dead OAuth rows (gone user, gone app, changed password) and their entries in the list. Every removal is written to the activity log (`connection_idle_removed`).
 - Filter `mcp_abilities_idle_days` (default 14, kept between 1 and 365).

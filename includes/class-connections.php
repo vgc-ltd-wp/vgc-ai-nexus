@@ -388,7 +388,17 @@ final class Connections {
      */
     private static function idle_from( array $item, int $here_last ): int {
         $last = max( (int) ( $item['last_used'] ?? 0 ), $here_last );
-        return $last > 0 ? $last : (int) ( $item['created'] ?? 0 );
+        $last = $last > 0 ? $last : (int) ( $item['created'] ?? 0 );
+        // Counted from the update to 2.39.0 at the earliest: one unused for
+        // weeks before it gets the same 14 days as a claude.ai sign-in, so
+        // nothing switches off on the first night.
+        return max( $last, self::counting_since() );
+    }
+
+    /** When the 14 days started for connections from before 2.39.0 (the upgrade step's time; 0 = not run). */
+    private static function counting_since(): int {
+        $done = get_option( Lifecycle::UPGRADES, [] );
+        return is_array( $done ) ? (int) ( $done['refresh_cap_239'] ?? 0 ) : 0;
     }
 
     /** '' (approval off), 'exempt', 'approved', 'pending', 'rejected' or 'unknown' (not decided yet). */
