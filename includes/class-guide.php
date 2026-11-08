@@ -51,6 +51,11 @@ class Guide {
             // Lead with it: it changes what every other rule means.
             array_splice( $lines, 2, 0, [ Read_Only::orientation_line(), '' ] );
         }
+        $licence = Licence::ai_notice();
+        if ( null !== $licence ) {
+            $lines[] = '';
+            $lines[] = $licence;
+        }
         return implode( "\n", $lines );
     }
 
@@ -356,6 +361,10 @@ MD;
         $out[] = '- **Read-only mode:** ' . ( Read_Only::active()
             ? 'ON — all write tools are disabled' . ( Read_Only::forced() ? ' (locked in wp-config.php)' : '' ) . '. Read, list and search only.'
             : 'off — reads and writes allowed (subject to per-tool permissions).' );
+        $licence = Licence::ai_notice();
+        if ( null !== $licence ) {
+            $out[] = '- **Licence:** ' . preg_replace( '/^LICENCE: /', '', $licence );
+        }
         if ( $admin ) {
             $oauth = \MCP_Abilities\OAuth\Bootstrap::mode();
             $out[] = '- **Remote access (claude.ai web, mobile, scheduled tasks):** ' . ( 'core' === $oauth

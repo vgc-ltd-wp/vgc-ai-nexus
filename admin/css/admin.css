@@ -1504,6 +1504,37 @@
     .mcp-wrap select { max-width: 100%; }
 }
 
+/* ── AI Nexus → Licence ─────────────────────────────────────────────────── */
+.mcp-licence .mcp-status { margin-left: 8px; vertical-align: middle; }
+.mcp-licence__facts { border-collapse: collapse; margin: 14px 0 18px; font-size: 14px; }
+.mcp-licence__facts th {
+    padding: 6px 20px 6px 0;
+    color: var(--mcp-muted);
+    font-weight: 400;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+.mcp-licence__facts td { padding: 6px 0; vertical-align: top; }
+.mcp-licence__detail code { font-size: 12px; overflow-wrap: anywhere; }
+.mcp-licence__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.mcp-licence__remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mcp-licence__enter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.mcp-licence__key {
+    flex: 1 1 320px;
+    max-width: 420px;
+    min-width: 0;
+    font-family: "SF Mono", Consolas, monospace;
+}
+.mcp-licence__list { margin: 0; padding-left: 18px; list-style: disc; color: var(--mcp-muted); }
+@media screen and (max-width: 782px) {
+    .mcp-licence__facts th { white-space: normal; padding-right: 12px; }
+    .mcp-licence__key { max-width: 100%; flex-basis: 100%; min-height: 40px; }
+    .mcp-licence__actions .mcp-btn,
+    .mcp-licence__enter .mcp-btn { min-height: 40px; }
+    .mcp-licence__remove label { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
+}
+
 /* ── VGC icons (Icons::svg / Icons::logo) ───────────────────────────────── */
 svg.mcp-icon { display: block; flex: 0 0 auto; overflow: visible; }
 svg.mcp-logo { display: block; flex: 0 0 auto; }

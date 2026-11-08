@@ -204,11 +204,20 @@ Key protections:
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
 - **Other plugins' AI tools** — read-only mode also covers the AI tools other plugins add (WooCommerce, AIOSEO and others), on every MCP server and on WordPress's Abilities REST route; **AI Nexus → Other AI tools** lists every other MCP server, AI tool and MCP-like address on the site and lets an administrator turn each one off, or keep new ones off until they are switched on
 
+- **Licence key** — a key for AI Nexus extensions, under **AI Nexus → Licence**: an AI cannot read or change it, and a site without one contacts nothing
+
 See [docs/security.md](docs/security.md) for a full breakdown.
 
 ---
 
 ## Changelog
+
+### 2.40.0
+
+- **New page: AI Nexus → Licence.** Enter a licence key for AI Nexus extensions, see whether it is active, until when, and whether this site counts as the live site or a staging copy. One key covers one live site and its staging copies, and unlocks every extension there. AI Nexus itself stays free and needs no key.
+- **Nothing changes yet.** Every tool keeps working at full speed with or without a key, whatever the licence says. A site with a key is told when it has expired or stopped being valid, and so is the AI working on it.
+- **A site without a key contacts nothing.** With a key, AI Nexus asks the licence server once a day and when the page is opened; it sends the key, the site's address and environment type, a random id for this installation, and the WordPress, PHP and AI Nexus versions. If the server cannot be reached, nothing changes; after three weeks without an answer the page says so.
+- **The key is protected:** an AI cannot read or change it, it is sent only in the body of an https request, and only its last five characters are ever shown. Answers from the server count only if they carry a valid signature. Deleting the plugin removes the key and lets the site go.
 
 ### 2.39.0
 

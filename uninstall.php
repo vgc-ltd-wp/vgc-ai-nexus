@@ -8,7 +8,8 @@
  * What goes and what stays is decided there:
  *   - removed: the activity log table, AI Nexus settings (the switches for other
  *     plugins' AI tools and MCP servers included), the custom JavaScript,
- *     the Application Passwords the Connect page made, one-time upload links,
+ *     the Application Passwords the Connect page made, the licence key (after
+ *     telling the licence server to let the site go), one-time upload links,
  *     caches, and the OAuth apps, tokens and MCP sessions — those last three only
  *     when no VGC MCP Claude Connector is installed, because that plugin serves
  *     the same connections;

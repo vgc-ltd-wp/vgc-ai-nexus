@@ -61,6 +61,9 @@ final class Plugin {
 
             $other_tools_page = new Admin\Other_Tools_Page();
             $other_tools_page->init();
+
+            $licence_page = new Admin\Licence_Page();
+            $licence_page->init();
         }
 
         do_action( 'mcp_abilities_loaded', $this );
@@ -113,6 +116,9 @@ final class Plugin {
         // Other plugins' AI tools and MCP servers: read-only mode covers them,
         // and an administrator can turn each one off (AI Nexus → Other AI tools).
         Other_Tools::init();
+
+        // This site's licence key: notices only for now, nothing is switched off or slowed.
+        Licence::init();
 
         // Start the activity logger (table upgrade + cron pruning).
         Logger::init();

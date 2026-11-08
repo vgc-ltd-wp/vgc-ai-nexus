@@ -24,6 +24,8 @@ class Installer {
         flush_rewrite_rules();
         // The daily switch-off of unused connections; scheduled again on the next load.
         wp_clear_scheduled_hook( 'mcp_abilities_idle_sweep' );
+        // The daily licence check; scheduled again on the next admin page.
+        wp_clear_scheduled_hook( Licence::CRON );
         do_action( 'mcp_abilities_deactivated' );
     }
 
@@ -77,6 +79,9 @@ class Installer {
     private static function uninstall_site( bool $connector ): void {
         // First: it needs the option that goes below.
         self::revoke_connections();
+
+        // Gives up this site's place on the licence key, then removes the key.
+        Licence::uninstall();
 
         Logger::drop_table();
         wp_clear_scheduled_hook( Connections::CRON );

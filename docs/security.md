@@ -192,6 +192,23 @@ The capability above only says whether a tool can be used at all. Which post, wh
 
 ---
 
+## The Licence Key (since 2.40.0)
+
+AI Nexus → Licence holds one key for the site (`includes/class-licence.php`). **For now it only tells: no tool is turned off or slowed down because of a licence, whatever the server answers.**
+
+- **No key, no traffic.** A site without a key never contacts the licence server. There is no daily check and no call when the page is opened.
+- **What is sent** with a key, once a day and when an administrator opens the page (at most hourly): the key, the site's `home` address, `wp_get_environment_type()`, a random id for this installation, and the WordPress, PHP and AI Nexus versions. Always in the body of a POST over https; the key is never in an address or a log.
+- **What is trusted.** An answer counts only if it carries a valid Ed25519 signature, made with a key pinned in the plugin (by key id, over the exact bytes of the payload), and is about this site's host. A stored answer is checked again each time it is read, so changing the option by hand changes nothing, and an answer older than the last one is refused.
+- **A failure is not a decision.** A timeout, a TLS error, a 4xx or 5xx, a rate limit, or an answer that does not verify leaves the last verified answer as it was. After three weeks without an answer the page and AI Nexus's screens say so. Only a verified answer can say a key has expired or is not valid here.
+- **Expiry cannot be outrun by a silent server.** A stored "valid" answer whose end date has passed counts as expired, and a clock set back does not undo it: the time used is the later of the site's clock and the time of the answer.
+- **The AI is told** when a key on the site has expired or is not valid here (in the MCP handshake and in the usage guide), if an extension is active. A site without a key says nothing to the AI.
+- **The key and the AI.** `update_option` refuses `mcp_abilities_licence` (prefix `mcp_abilities_`), `get_option` refuses it by name and its cache rows, and it is not autoloaded. Pages show only its last five characters. The forms need `manage_options` and a nonce.
+- **Deleting the plugin** tells the licence server to let the site go, then removes the key. Deactivating keeps the key and stops the daily check until the next admin page.
+
+The client's side of the protocol is in `docs/client-contract.md` of the licence server's repository.
+
+---
+
 ## Options Protection
 
 ### Read protection (`get_option`)
@@ -203,7 +220,8 @@ The following categories of option keys are blocked from being read:
 - `jetpack_private_options` (and any key containing `jetpack_private`), `fs_accounts` (Freemius)
 - AI Nexus OAuth data: `vgc_cc_oauth_clients` and any key starting with `vgc_cc_` (clients, tokens, policy); who is connected and who approved it; the list of connections that are on (`mcp_abilities_connection_registry`) and the Connect page's Application Passwords (`mcp_abilities_connections`) (since 2.39.0)
 - The Analytics extension's Google sign-in: any key containing `vgc_analytics_` (`vgc_analytics_oauth` holds the client secret and refresh token, the transients `vgc_analytics_otok_*` the access tokens) (since 2.39.0)
-- Any key containing `_license`, `_api_key`, `_secret`, `_private_key`, `_pass` or `token`
+- This site's licence key (`mcp_abilities_licence`) (since 2.40.0)
+- Any key containing `_license`, `_licence`, `_api_key`, `_secret`, `_private_key`, `_pass` or `token`
 - The cache rows of every name above: `_transient_…`, `_transient_timeout_…`, `_site_transient_…` and `_site_transient_timeout_…` (since 2.39.0)
 
 ### Write protection (`update_option`)

@@ -23,6 +23,8 @@ class Get_Option_Ability extends Ability {
         'mcp_abilities_oauth_operators',
         // Every live connection, when and from which address it was last used (2.39.0).
         'mcp_abilities_connection_registry', 'mcp_abilities_connections',
+        // This site's licence key (2.40.0).
+        'mcp_abilities_licence',
 
         // Mail and service credentials stored under names the patterns miss.
         'wp_mail_smtp', 'mailserver_pass', 'jetpack_private_options',
@@ -54,6 +56,7 @@ class Get_Option_Ability extends Ability {
         'wpml_',                   // WPML site key
         'wpseo_',                  // Yoast licence keys
         '_license',                // Generic licence key pattern
+        '_licence',                // The same, in British spelling
         '_api_key',                // Generic API key pattern
         '_secret',                 // Generic secret pattern
         '_private_key',
