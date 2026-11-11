@@ -857,9 +857,16 @@ final class Server {
 		if ( empty( $rt_data['rotated_at'] ) ) {
 			// First use: rotate, but keep the old token alive for a short grace
 			// period, and a marker of it for as long as a refresh token lives.
-			$now                   = time();
+			$now      = time();
+			$response = self::issue_tokens( $user_id, $client_id, '', $carry );
+			$data     = $response->get_data();
 			$rt_data['rotated_at'] = $now;
 			$rt_data['expires']    = $now + self::REFRESH_GRACE;
+			// 2.41.0 (review C5): the successor, encrypted, for the grace period
+			// only. A repeat inside it gets this same successor back, not a new,
+			// independent one, so two copies of the old token cannot each keep a
+			// chain of their own alive past the reuse check.
+			$rt_data['successor'] = self::seal( (string) ( $data['refresh_token'] ?? '' ) );
 			Token_Store::put( 'refresh', $refresh_token, $rt_data );
 			Token_Store::put( 'tomb', $refresh_token, array(
 				'user_id'    => $user_id,
@@ -867,11 +874,55 @@ final class Server {
 				'rotated_at' => $now,
 				'expires'    => $now + Lifecycle::idle_seconds(),
 			) );
-		} else {
-			self::log( sprintf( 'refresh token reused %ds after rotation (within grace) client=%s', time() - (int) $rt_data['rotated_at'], $client_id ) );
+			return $response;
 		}
 
-		return self::issue_tokens( $user_id, $client_id, '', $carry );
+		// Used again inside the grace period: a lost response or a second worker.
+		// Hand back the same successor, as long as it has not moved on itself.
+		if ( empty( $rt_data['successor'] ) ) {
+			// Rotated before 2.41.0 (or without sodium): as before, a new one.
+			self::log( sprintf( 'refresh token reused %ds after rotation (within grace) client=%s', time() - (int) $rt_data['rotated_at'], $client_id ) );
+			return self::issue_tokens( $user_id, $client_id, '', $carry );
+		}
+		$successor = self::open( (string) $rt_data['successor'] );
+		$next      = '' !== $successor ? Token_Store::get( 'refresh', $successor ) : null;
+		if ( null === $next || ! empty( $next['rotated_at'] ) || (string) ( $next['client_id'] ?? '' ) !== $client_id ) {
+			// The successor was already used (or is gone): two chains have split
+			// from one token. That connection ends, as on any reuse.
+			$removed = Lifecycle::revoke( $user_id, $client_id, 'a rotated refresh token was used again after its successor' );
+			self::log( sprintf( 'refresh token reused %ds after rotation, after its successor had been used: every token of client=%s user_id=%d revoked (%d rows)', time() - (int) $rt_data['rotated_at'], $client_id, $user_id, $removed ) );
+			\MCP_Abilities\Connections::log_event( 'oauth_refresh_reuse_revoked', $user_id, array( 'type' => 'connection', 'id' => 0, 'key' => 'oauth:' . $client_id . ':' . $user_id, 'action' => 'revoked: a rotated refresh token was used again after its successor' ) );
+			return self::token_error( 'invalid_grant', 'Refresh token expired or invalid.' );
+		}
+		self::log( sprintf( 'refresh token reused %ds after rotation (within grace) client=%s: the same successor handed back', time() - (int) $rt_data['rotated_at'], $client_id ) );
+		return self::issue_tokens( $user_id, $client_id, $successor, $carry );
+	}
+
+	/** A token sealed for a short stay in the database (secretbox, key from the auth salt). */
+	private static function seal( string $raw ): string {
+		if ( '' === $raw || ! function_exists( 'sodium_crypto_secretbox' ) ) {
+			return '';
+		}
+		$nonce = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
+		return base64_encode( $nonce . sodium_crypto_secretbox( $raw, $nonce, self::seal_key() ) );
+	}
+
+	/** seal() undone; '' when it cannot be opened. */
+	private static function open( string $sealed ): string {
+		$bin = '' !== $sealed ? base64_decode( $sealed, true ) : false;
+		if ( ! is_string( $bin ) || strlen( $bin ) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES || ! function_exists( 'sodium_crypto_secretbox_open' ) ) {
+			return '';
+		}
+		try {
+			$raw = sodium_crypto_secretbox_open( substr( $bin, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ), substr( $bin, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ), self::seal_key() );
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+		return is_string( $raw ) ? $raw : '';
+	}
+
+	private static function seal_key(): string {
+		return hash( 'sha256', wp_salt( 'auth' ) . '|mcp-abilities-refresh-successor', true );
 	}
 
 	/**

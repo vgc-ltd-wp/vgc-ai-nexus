@@ -195,7 +195,8 @@ Key protections:
 - **Every connection in view** — AI Nexus → Connections lists every AI connection that is on and when it was last used, with Disconnect; each user sees and can revoke their own on their profile
 - **SSRF protection** on upload tools — public addresses only (A and AAAA, every redirect), the connection pinned to the checked address, the size limit enforced during the download
 - **Only what concerns them** — `tools/list` shows a user the tools they could call; versions, the theme and the security setup are for administrators only
-- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`
+- **Credentials inside options** — `get_option` hides password, token, secret and key fields inside a setting's value; `update_option` cannot change or remove them, and refuses mail, payment, security and backup plugins' settings outright
+- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`; templates, template parts and navigation keep script only for an account with `unfiltered_html`, and global styles keep custom CSS only with `edit_css`, and neither while raw code is locked
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
@@ -211,6 +212,15 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.41.0
+
+Security review of 2026-11-10, medium findings in the core plugin.
+
+- **Options that move mail, money or access are protected.** `update_option` now refuses the settings of SMTP and mailer plugins (WP Mail SMTP, FluentSMTP, Post SMTP, Easy WP SMTP, VGC Mailer and core's post-by-email account), security, login, two-factor and backup plugins, Google Site Kit, WooCommerce's payment, shipping and e-mail settings and the bank account shown for bank transfers, stored recovery-mode keys, and the VGC plugins whose settings are a protection or a credential. Anything an AI may not read, it may not change either. Ordinary settings (site title, reading settings, the shop's currency) work as before.
+- **Credentials inside a setting are hidden.** Many plugins keep an API password, token or key as one field of a settings array, which a rule on the option's name cannot see. `get_option` now shows such fields as "*** hidden by AI Nexus ***" at any depth, in arrays, objects and JSON, and lists which fields it hid. `update_option` keeps them: an AI can change the other fields of the same setting, but cannot change, remove or overwrite a stored credential.
+- **Locking raw code locks it everywhere.** When an administrator locks raw code (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter), templates, template parts and navigation are saved without script, and custom CSS is left out of global styles. The same happens for an account without `unfiltered_html` (markup) or `edit_css` (CSS). The tool's answer says what was removed and why.
+- **Refresh tokens: one chain only.** When an app sends the same old refresh token twice within the 120-second grace period (two runs at once, a lost answer), it now gets the same new refresh token back, not a second one. If the old token comes back after its successor was already used, the connection ends, as it does after the grace period.
 
 ### 2.40.0
 

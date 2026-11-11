@@ -101,10 +101,13 @@ class Update_Global_Styles_Ability extends Ability {
                 $params['settings']
             );
         }
+        // Custom CSS in global styles ("css" at the top or per block) needs edit_css,
+        // and nobody's is taken while raw code is locked (2.41.0).
+        $css_stripped = false;
         if ( ! empty( $params['styles'] ) && is_array( $params['styles'] ) ) {
             $current_content['styles'] = $this->deep_merge(
                 $current_content['styles'] ?? [],
-                $params['styles']
+                \MCP_Abilities\Custom_Code::strip_style_css( $params['styles'], $css_stripped )
             );
         }
 
@@ -133,7 +136,12 @@ class Update_Global_Styles_Ability extends Ability {
             \WP_Theme_JSON_Resolver::clean_cached_data();
         }
 
-        return $this->success( 'Global styles updated. Changes are live immediately.' );
+        return $this->success(
+            'Global styles updated. Changes are live immediately.',
+            $css_stripped ? [ 'note' => \MCP_Abilities\Custom_Code::locked()
+                ? 'Raw code is locked on this site, so the custom CSS ("css") in the styles was left out.'
+                : 'This account does not have the "edit_css" capability, so the custom CSS ("css") in the styles was left out.' ] : []
+        );
     }
 
     /**

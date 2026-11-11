@@ -58,7 +58,8 @@ function mcp_upsert_template(
         return new \WP_Error( 'not_found', "Template \"{$id}\" not found." );
     }
 
-    $post_data = [ 'post_content' => $content ];
+    // No script for the whole site while raw code is locked (2.41.0).
+    $post_data = [ 'post_content' => \MCP_Abilities\Custom_Code::filter_markup( $content ) ];
     if ( null !== $title ) {
         $post_data['post_title'] = $title;
     }
@@ -226,7 +227,8 @@ class Update_Template_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "Template \"{$id}\" updated (post ID: {$result})." );
+        $note = \MCP_Abilities\Custom_Code::filter_markup( $content ) !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
+        return $this->success( "Template \"{$id}\" updated (post ID: {$result}).", $note );
     }
 }
 
@@ -270,10 +272,12 @@ class Create_Template_Ability extends Ability {
             return $this->error( "A template with slug \"{$slug}\" already exists. Use update_template to edit it." );
         }
 
+        // No script for the whole site while raw code is locked (2.41.0).
+        $stored  = \MCP_Abilities\Custom_Code::filter_markup( $content );
         $post_id = wp_insert_post( [
             'post_name'    => $slug,
             'post_title'   => $title,
-            'post_content' => $content,
+            'post_content' => $stored,
             'post_excerpt' => $description,
             'post_type'    => 'wp_template',
             'post_status'  => 'publish',
@@ -285,11 +289,11 @@ class Create_Template_Ability extends Ability {
 
         wp_set_object_terms( $post_id, get_stylesheet(), 'wp_theme' );
 
-        return $this->json_result( [
+        return $this->json_result( array_merge( [
             'id'      => get_stylesheet() . '//' . $slug,
             'wp_id'   => $post_id,
             'slug'    => $slug,
-        ] );
+        ], $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
     }
 }
 

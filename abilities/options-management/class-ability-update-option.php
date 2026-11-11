@@ -53,6 +53,27 @@ class Update_Option_Ability extends Ability {
 
         // Which widgets show where, and how URLs resolve.
         'sidebars_widgets', 'rewrite_rules', 'permalink_structure',
+
+        // Money and access (2.41.0): the bank account shown for bank transfers,
+        // and stored recovery-mode keys (a planted key opens recovery mode).
+        'woocommerce_bacs_accounts', 'recovery_keys',
+    ];
+
+    /**
+     * Prefixes of other plugins' options that move mail, money or access, or switch
+     * a protection off (2.41.0). The review's example: pointing an SMTP plugin at
+     * another server, then asking for an administrator's password reset.
+     */
+    private const DENY_PREFIXES_SECURITY = [
+        // Mail: SMTP and mailer plugins, core's post-by-email account.
+        'wp_mail_', 'mailserver_', 'fluentmail', 'postman_', 'easy_wp_smtp', 'swpsmtp_', 'vgc_mailer_',
+        // Security, login and backup plugins.
+        'itsec', 'wordfence', 'aiowps_', 'sg_security', 'cerber', 'wpcerber', 'limit_login_',
+        'wp_2fa_', 'two_factor_', 'jetpack_', 'sucuri', 'updraft_',
+        // Google Site Kit (which property and whose Google sign-in Analytics reads).
+        'googlesitekit_',
+        // VGC plugins whose settings are a protection or a credential.
+        'vgct_', 'vgc_trash_guard_', 'vgc_lic_', 'vgc_cookie_', 'vgc_ainx_',
     ];
 
     /** Option name prefixes that are blocked (matched with str_starts_with). */
@@ -119,7 +140,7 @@ class Update_Option_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'update_option';
         $this->label        = __( 'Update Option', 'mcp-abilities' );
-        $this->description  = 'Update a WordPress site option. Certain critical options are write-protected.';
+        $this->description  = 'Update a WordPress site option. Certain critical options are write-protected, including the settings of mail, payment, security and backup plugins. Credential fields inside a value cannot be changed: send them back as shown by get_option ("*** hidden by AI Nexus ***") or leave them out, and they keep their stored value.';
         $this->required_cap = 'manage_options';
         $this->input_schema = [
             'type'       => 'object',
@@ -149,13 +170,55 @@ class Update_Option_Ability extends Ability {
             return $this->error( "Option '{$key}' is an AI Nexus extension's settings: it is protected and cannot be modified." );
         }
 
+        $refusal = self::security_refusal( $key );
+        if ( null !== $refusal ) {
+            return $this->error( $refusal );
+        }
+
         if ( ! apply_filters( 'mcp_abilities_allow_option_write', true, $key ) ) {
             return $this->error( "Option '{$key}' is not writable." );
         }
 
+        // Credentials inside the value cannot be changed or removed; the mask a read
+        // showed keeps the stored value (2.41.0).
+        $value  = $params['value'];
+        $stored = get_option( $key, null );
+        if ( null !== $stored ) {
+            $guard = \MCP_Abilities\Option_Secrets::guard_write( $value, $stored );
+            if ( null !== $guard['error'] ) {
+                return $this->error( "Option '{$key}' was not changed. " . $guard['error'] );
+            }
+            $value = $guard['value'];
+        }
+
         $autoload = ( $params['autoload'] ?? 'yes' ) === 'yes' ? 'yes' : 'no';
-        update_option( $key, $params['value'], $autoload );
+        update_option( $key, $value, $autoload );
 
         return $this->success( "Option '{$key}' updated." );
+    }
+
+    /**
+     * Why an option may not be written for mail, money or security reasons, or
+     * null (2.41.0): anything the AI may not read (get_option's rules), payment,
+     * shipping and e-mail settings of WooCommerce, mailer and security plugins.
+     */
+    public static function security_refusal( string $key ): ?string {
+        if ( ! class_exists( Get_Option_Ability::class ) ) {
+            require_once __DIR__ . '/class-ability-get-option.php';
+        }
+        if ( Get_Option_Ability::is_protected( $key ) ) {
+            return "Option '{$key}' is protected: an AI may not read it, so it may not change it either.";
+        }
+        foreach ( self::DENY_PREFIXES_SECURITY as $prefix ) {
+            if ( str_starts_with( $key, $prefix ) ) {
+                return "Option '{$key}' is protected: it belongs to a mail, security or credential setting, which only an administrator may change, in that plugin's own settings screen.";
+            }
+        }
+        // woocommerce_<gateway | shipping method | e-mail>_settings: payment details,
+        // and who receives order and account e-mails.
+        if ( str_starts_with( $key, 'woocommerce_' ) && str_ends_with( $key, '_settings' ) ) {
+            return "Option '{$key}' is protected: WooCommerce payment, shipping and e-mail settings may only be changed in WooCommerce's own settings screens.";
+        }
+        return null;
     }
 }

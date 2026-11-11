@@ -134,7 +134,8 @@ class Update_Template_Part_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "Template part \"{$id}\" updated (post ID: {$result})." );
+        $note = \MCP_Abilities\Custom_Code::filter_markup( $content ) !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
+        return $this->success( "Template part \"{$id}\" updated (post ID: {$result}).", $note );
     }
 }
 
@@ -187,10 +188,12 @@ class Create_Template_Part_Ability extends Ability {
             return $this->error( "A template part with slug \"{$slug}\" already exists. Use update_template_part to edit it." );
         }
 
+        // No script for the whole site while raw code is locked (2.41.0).
+        $stored  = \MCP_Abilities\Custom_Code::filter_markup( $content );
         $post_id = wp_insert_post( [
             'post_name'    => $slug,
             'post_title'   => $title,
-            'post_content' => $content,
+            'post_content' => $stored,
             'post_type'    => 'wp_template_part',
             'post_status'  => 'publish',
         ], true );
@@ -202,12 +205,12 @@ class Create_Template_Part_Ability extends Ability {
         wp_set_object_terms( $post_id, get_stylesheet(), 'wp_theme' );
         wp_set_object_terms( $post_id, $area, 'wp_template_part_area' );
 
-        return $this->json_result( [
+        return $this->json_result( array_merge( [
             'id'    => get_stylesheet() . '//' . $slug,
             'wp_id' => $post_id,
             'slug'  => $slug,
             'area'  => $area,
-        ] );
+        ], $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
     }
 }
 

@@ -53,6 +53,9 @@ class Get_Option_Ability extends Ability {
         'sendgrid',
         'postmark',
         'sparkpost',
+        'fluentmail',              // FluentSMTP (2.41.0)
+        'postman_',                // Post SMTP
+        'updraft_',                // UpdraftPlus remote storage (S3, FTP, Dropbox …)
         'wpml_',                   // WPML site key
         'wpseo_',                  // Yoast licence keys
         '_license',                // Generic licence key pattern
@@ -65,7 +68,7 @@ class Get_Option_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'get_option';
         $this->label        = __( 'Get Option', 'mcp-abilities' );
-        $this->description  = 'Retrieve a WordPress site option. Required: name (string key). Examples: blogname, blogdescription, siteurl, admin_email, blogpublic.';
+        $this->description  = 'Retrieve a WordPress site option. Required: name (string key). Examples: blogname, blogdescription, siteurl, admin_email, blogpublic. Fields inside the value that hold credentials (passwords, tokens, secrets, API keys) are shown as "*** hidden by AI Nexus ***" and listed in masked_fields.';
         $this->required_cap = 'manage_options';
         $this->input_schema = [
             'type'       => 'object',
@@ -87,8 +90,16 @@ class Get_Option_Ability extends Ability {
             return $this->error( "Option '{$key}' is protected." );
         }
 
-        $value = get_option( $key, $params['default'] ?? false );
-        return $this->json_result( [ 'option' => $key, 'value' => $value ] );
+        // Credentials inside the value (an API password in a plugin's settings array)
+        // are masked, whatever the option is called (2.41.0).
+        $masked = [];
+        $value  = \MCP_Abilities\Option_Secrets::mask( get_option( $key, $params['default'] ?? false ), $masked );
+        $out    = [ 'option' => $key, 'value' => $value ];
+        if ( $masked ) {
+            $out['masked_fields'] = $masked;
+            $out['note']          = sprintf( 'Fields that hold credentials are shown as "%s". They cannot be read or changed through AI tools; to change one, use the plugin\'s own settings screen. update_option keeps them when they are sent back as shown.', \MCP_Abilities\Option_Secrets::MASK );
+        }
+        return $this->json_result( $out );
     }
 
     /** Whether a (sanitized) option name may not be read. */

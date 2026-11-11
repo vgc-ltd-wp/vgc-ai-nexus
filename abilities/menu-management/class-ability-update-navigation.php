@@ -36,9 +36,11 @@ class Update_Navigation_Ability extends Ability {
             return $this->error( 'Navigation content cannot be empty.' );
         }
 
+        // No script for the whole site while raw code is locked (2.41.0).
+        $stored      = \MCP_Abilities\Custom_Code::filter_markup( $content );
         $update_data = [
             'ID'           => $id,
-            'post_content' => $content,
+            'post_content' => $stored,
         ];
 
         if ( ! empty( $params['title'] ) ) {
@@ -51,6 +53,6 @@ class Update_Navigation_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "Navigation {$id} updated." );
+        return $this->success( "Navigation {$id} updated.", $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] );
     }
 }

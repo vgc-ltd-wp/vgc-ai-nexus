@@ -36,9 +36,8 @@ class Custom_Code_Group extends Ability_Group {
      * administrator previously stored; that frontend output is admin-managed.
      */
     public function is_locked(): bool {
-        $enabled = ! ( defined( 'MCP_ABILITIES_DISABLE_CUSTOM_CODE' ) && MCP_ABILITIES_DISABLE_CUSTOM_CODE );
-        $enabled = (bool) apply_filters( 'mcp_abilities_custom_code_enabled', $enabled );
-        return ! $enabled;
+        // One rule for every tool that stores raw code (2.41.0): see Custom_Code::locked().
+        return \MCP_Abilities\Custom_Code::locked();
     }
 
     public function is_enabled(): bool {

@@ -57,6 +57,7 @@ claude.ai (web, mobile, Desktop connectors, scheduled routines) cannot use an Ap
 - A client is remembered as one that keeps a secret when it registers with `client_secret_post` or `client_secret_basic`. A refresh token is marked when it was issued after the client proved its secret (at the code exchange or a refresh).
 - A refresh for such a client, or with such a token, requires a valid `client_secret` (HTTP 401 `invalid_client` without it). An unmarked token that comes with a valid secret gets the mark.
 - A public client's refresh token is still replaced on each use, with the 120-second grace for two runs refreshing at once. A marker of the replaced token (its hash, the client, the user, when) is kept for the refresh lifetime. If that old token is presented after the grace period, someone else has a copy: every code and token of that client and user is deleted, the app must connect again, and it is logged ("refresh token REUSED") and written to the activity log.
+- Since 2.41.0 (review C5): inside the grace period the old token gets the **same** successor back, not a new one, so two copies of one token cannot each grow a chain of their own. The successor is kept with the old token, sealed (libsodium secretbox, key derived from the `auth` salt), only for the grace period. If the successor has already been used (or cannot be opened), the old token coming back means two chains have split: the connection ends the same way, logged as "after its successor had been used". A token rotated by 2.40.0 or earlier has no successor kept and works as before inside the grace period.
 
 ---
 
@@ -164,6 +165,12 @@ The switches live in one option, `mcp_abilities_other_tools`, which the `update_
 
 This gates writes only. Code already stored keeps running, `get_custom_code` still reads it and `clear_css` still removes CSS, for anyone with `manage_options`. The other ways to the same code are closed too: `update_option` refuses `mcp_custom_*`, the Additional CSS post needs `edit_css` to edit, and WordPress's own filter removes custom CSS from `update_global_styles` for someone without `unfiltered_html`.
 
+**Locked raw code (since 2.41.0, review C3).** An administrator can lock raw code away from AI tools with the `MCP_ABILITIES_DISABLE_CUSTOM_CODE` constant or by returning false from the `mcp_abilities_custom_code_enabled` filter. That switches the Custom CSS & JS group off, and it now also covers every other tool that stores markup or CSS for the whole site (`Custom_Code::locked()`, `raw_allowed()`, `css_allowed()`):
+
+- `create_template`, `update_template`, `create_template_part`, `update_template_part` and `update_navigation` save the markup through `wp_kses_post()` (as WordPress does for a post by someone without `unfiltered_html`) unless the account has `unfiltered_html` and raw code is not locked. Block comments and ordinary markup are kept; `<script>` and event handlers are not.
+- `update_global_styles` leaves out every `css` key (the custom CSS at the top and per block) unless the account has `edit_css` and raw code is not locked.
+- The answer carries a `note` saying what was removed and why.
+
 ---
 
 ## Object-Level Checks (since 2.33.0)
@@ -223,6 +230,9 @@ The following categories of option keys are blocked from being read:
 - This site's licence key (`mcp_abilities_licence`) (since 2.40.0)
 - Any key containing `_license`, `_licence`, `_api_key`, `_secret`, `_private_key`, `_pass` or `token`
 - The cache rows of every name above: `_transient_…`, `_transient_timeout_…`, `_site_transient_…` and `_site_transient_timeout_…` (since 2.39.0)
+- FluentSMTP (`fluentmail…`), Post SMTP (`postman_…`) and UpdraftPlus remote storage (`updraft_…`) (since 2.41.0)
+
+**Credentials inside a value (since 2.41.0, review C2).** Many plugins keep an API user, password, token or key as one field of a settings array, which a rule on the option's name cannot see. Every option `get_option` returns is looked into (arrays, objects and JSON strings, up to 12 levels): a field whose name means a password, passphrase, secret, token, API / private / access / auth / signing key, HMAC, licence or credentials, and which holds a value, is shown as `*** hidden by AI Nexus ***`. The answer lists the hidden fields in `masked_fields`. Public keys (a publishable key, a reCAPTCHA site key), names that only contain "pass" inside a word (`passive_mode`, `bypass_cache`) and empty fields are left as they are (`includes/class-option-secrets.php`).
 
 ### Write protection (`update_option`)
 The following keys can never be written:
@@ -254,6 +264,21 @@ And every key starting with:
 | `mcp_cpt_`, `mcp_wpml_`, `mcp_analytics_`, `mcp_tracker_`, `vgc_analytics_`, `vgc_pinterest_` | AI Nexus extensions' settings, stored definitions and Google / Pinterest sign-ins (since 2.39.0) |
 
 And every AI Nexus extension's settings (since 2.39.0): the `option_key` each extension registers through `mcp_abilities_extensions`, plus `mcp_woo_settings`, `mcp_avada_settings`, `mcp_elementor_settings`, Tracker's `vgct_nexus` and Environment Lock's `vgc_ainx_envlock`, whether or not the extension is active. An AI cannot switch an extension's disabled tools back on.
+
+**Mail, money and protections (since 2.41.0, review C1).** The review's example: point an SMTP plugin at another server, then ask for an administrator's password reset. Also refused:
+
+| What | Why |
+|---|---|
+| Every name `get_option` refuses | An AI may not change what it may not read |
+| `woocommerce_bacs_accounts` | The bank account customers pay into |
+| `woocommerce_…_settings` | WooCommerce payment gateways, shipping methods and e-mails (who receives order mail) |
+| `recovery_keys` | A planted key would open recovery mode |
+| `wp_mail_…`, `mailserver_…`, `fluentmail…`, `postman_…`, `easy_wp_smtp…`, `swpsmtp_…`, `vgc_mailer_…` | Where the site's mail goes, and core's post-by-email account |
+| `itsec…`, `wordfence…`, `aiowps_…`, `sg_security…`, `cerber…`, `wpcerber…`, `limit_login_…`, `wp_2fa_…`, `two_factor_…`, `jetpack_…`, `sucuri…`, `updraft_…` | Security, login, two-factor and backup plugins |
+| `googlesitekit_…` | Which Google property Site Kit reads, and whose sign-in |
+| `vgct_…`, `vgc_trash_guard_…`, `vgc_lic_…`, `vgc_cookie_…`, `vgc_ainx_…` | VGC plugins whose settings are a protection or a credential |
+
+**Credentials inside a value.** When the stored value holds credential fields (see Read protection above), `update_option` keeps them: a field sent back as `*** hidden by AI Nexus ***`, or left out, keeps its stored value; a different value is refused, and so is replacing the whole setting with something that is not an array or object. An AI can change the other fields of the same setting. A new option has nothing stored to protect.
 
 ---
 
