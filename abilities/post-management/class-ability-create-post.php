@@ -44,6 +44,11 @@ class Create_Post_Ability extends Ability {
         if ( ! post_type_exists( $post_type ) ) {
             return $this->error( "Post type \"{$post_type}\" is not registered. Use list_post_types to see available types." );
         }
+        // Revisions, menu items, privacy requests and the like: not through this tool.
+        $internal = Post_Access::internal_type_error( $post_type );
+        if ( null !== $internal ) {
+            return $this->error( $internal );
+        }
 
         // Check the caller can create posts of this type.
         $type_obj   = get_post_type_object( $post_type );

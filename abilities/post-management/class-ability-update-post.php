@@ -36,6 +36,10 @@ class Update_Post_Ability extends Ability {
         if ( ! $post ) {
             return $this->error( "Post {$post_id} not found." );
         }
+        $internal = Post_Access::internal_type_error( $post->post_type );
+        if ( null !== $internal ) {
+            return $this->error( $internal );
+        }
         if ( ! current_user_can( 'edit_post', $post_id ) ) {
             return $this->error( 'You do not have permission to edit this post.' );
         }

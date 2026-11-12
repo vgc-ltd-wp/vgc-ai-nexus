@@ -45,7 +45,7 @@ class Inject_Css_Ability extends Ability {
     /**
      * WordPress's own Customizer and REST API ask `edit_css` before Additional CSS
      * changes. This gates writes only: CSS already stored keeps applying, and
-     * reading it (get_custom_code) or removing it (clear_css) stay manage_options.
+     * reading it (get_custom_code) stays manage_options; removing it (clear_css) asks edit_css too.
      */
     public function current_user_can(): bool {
         return parent::current_user_can() && \current_user_can( 'edit_css' );
@@ -54,7 +54,7 @@ class Inject_Css_Ability extends Ability {
     public function refusal_message(): ?string {
         return \current_user_can( 'edit_css' )
             ? null
-            : 'inject_css is refused: writing the site\'s custom CSS needs the "edit_css" capability on top of "manage_options", and this WordPress account does not have it on this site (multisite gives it only to super admins; DISALLOW_UNFILTERED_HTML takes it from everyone). CSS already stored keeps applying; get_custom_code can still read it and clear_css can still remove it.';
+            : 'inject_css is refused: writing the site\'s custom CSS needs the "edit_css" capability on top of "manage_options", and this WordPress account does not have it on this site (multisite gives it only to super admins; DISALLOW_UNFILTERED_HTML takes it from everyone). CSS already stored keeps applying; get_custom_code can still read it.';
     }
 
     public function execute( array $params ): array {

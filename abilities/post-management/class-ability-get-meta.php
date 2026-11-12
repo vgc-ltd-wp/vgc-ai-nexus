@@ -49,8 +49,9 @@ class Get_Meta_Ability extends Ability {
                 $items[] = [ 'id' => $id, 'missing' => true ];
                 continue;
             }
-            if ( ! Post_Access::can_read( $post ) ) {
-                $items[] = [ 'id' => $id, 'forbidden' => true, 'error' => 'You do not have permission to read this item.' ];
+            $read_error = Post_Access::read_error( $post );
+            if ( null !== $read_error ) {
+                $items[] = [ 'id' => $id, 'forbidden' => true, 'error' => $read_error ];
                 continue;
             }
             $hidden = [];

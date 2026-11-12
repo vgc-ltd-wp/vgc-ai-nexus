@@ -31,6 +31,12 @@ class Delete_User_Ability extends Ability {
             return $this->error( 'You cannot delete yourself.' );
         }
 
+        // Content goes to an account that exists and stays, as WordPress's REST API
+        // asks; otherwise it would be left with an author who is gone.
+        if ( null !== $reassign && ( $reassign === $user_id || ! get_userdata( $reassign ) ) ) {
+            return $this->error( sprintf( 'reassign_to must be another existing user: user %d %s.', $reassign, $reassign === $user_id ? 'is the account being deleted' : 'does not exist' ) );
+        }
+
         $target = get_user_by( 'id', $user_id );
         if ( $target ) {
             // Prevent deleting accounts that outrank the current user.

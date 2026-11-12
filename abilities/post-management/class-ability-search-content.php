@@ -95,7 +95,7 @@ class Search_Content_Ability extends Ability {
         foreach ( $types as $type ) {
             if ( ! Post_Access::can_see_type( $type ) ) {
                 if ( 'any' !== $post_type ) {
-                    return $this->error( sprintf( 'You do not have permission to search "%s" items.', $type ) );
+                    return $this->error( Post_Access::internal_type_error( $type ) ?? sprintf( 'You do not have permission to search "%s" items.', $type ) );
                 }
                 continue;
             }

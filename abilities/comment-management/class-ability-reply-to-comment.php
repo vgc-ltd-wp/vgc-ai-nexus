@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Comment_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,6 +27,11 @@ class Reply_To_Comment_Ability extends Ability {
         $parent = get_comment( absint( $params['id'] ) );
         if ( ! $parent ) {
             return $this->error( 'Comment not found.' );
+        }
+        // A reply goes on the same item: WordPress asks edit_post on it.
+        $refused = Comment_Access::edit_error( $parent );
+        if ( null !== $refused ) {
+            return $this->error( $refused );
         }
 
         $content = sanitize_textarea_field( $params['content'] );

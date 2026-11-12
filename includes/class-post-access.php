@@ -16,11 +16,22 @@ defined( 'ABSPATH' ) || exit;
  *   `edit_post`.
  * - Listing: other authors' unpublished posts need the type's
  *   `edit_others_posts` (and `read_private_posts` for private ones).
- * - Meta: protected keys (`is_protected_meta()`, e.g. a leading underscore)
- *   need `edit_post_meta` for that key, or the type's `edit_others_posts`.
+ * - Meta: a key with a permission rule of its own (a register_meta()
+ *   auth_callback, or an auth_post_meta_{$key} filter) follows that rule,
+ *   through `edit_post_meta`, as in WordPress's editor and REST API. Other
+ *   protected keys (`is_protected_meta()`, e.g. a leading underscore) need
+ *   `edit_post_meta` for that key, or the type's `edit_others_posts`.
  *   The attachment file keys are never taken from input.
  * - Status: publish, future and private need `publish_post`; without it an
  *   update is saved as pending (what `_wp_translate_postdata()` does).
+ * - Internal types: a post type without an admin screen (show_ui
+ *   false) is not read, listed, created, changed or deleted through the
+ *   general post tools at all. WordPress and plugins keep their own records
+ *   there (revisions, menu items, privacy requests, oEmbed cache, block
+ *   templates, global styles, fonts, WooCommerce variations, refunds and
+ *   order placeholders), often with capabilities that do not say who may
+ *   really touch them; their own tools (menus, templates, revisions,
+ *   WooCommerce) have their own checks.
  */
 final class Post_Access {
 
@@ -30,13 +41,42 @@ final class Post_Access {
     /** Statuses that put a post live, schedule it or make it private. */
     public const PUBLISH_STATUSES = [ 'publish', 'future', 'private' ];
 
-    /** Whether the caller may see items of this post type at all. */
+    /** Whether the caller may see items of this post type at all. Internal types: never. */
     public static function can_see_type( string $post_type ): bool {
         $pto = get_post_type_object( $post_type );
-        if ( ! $pto ) {
+        if ( ! $pto || ! $pto->show_ui ) {
             return false;
         }
         return $pto->public || current_user_can( $pto->cap->edit_posts );
+    }
+
+    /**
+     * Whether a post type is internal: it has no admin screen (show_ui false),
+     * or it does not exist. See the class comment.
+     */
+    public static function is_internal_type( string $post_type ): bool {
+        $pto = get_post_type_object( $post_type );
+        return ! $pto || ! $pto->show_ui;
+    }
+
+    /** Why the general post tools do not touch items of this post type, or null when they do. */
+    public static function internal_type_error( string $post_type ): ?string {
+        if ( ! self::is_internal_type( $post_type ) ) {
+            return null;
+        }
+        return sprintf(
+            'Post type "%s" is internal: it has no admin screen, and WordPress or a plugin manages these items itself, so the general post tools do not read, list, create, change or delete them. Menus, templates, global styles, revisions and WooCommerce products and orders have their own tools.',
+            $post_type
+        );
+    }
+
+    /** Why the caller may not read this post, or null when they may. */
+    public static function read_error( \WP_Post $post ): ?string {
+        $internal = self::internal_type_error( $post->post_type );
+        if ( null !== $internal ) {
+            return $internal;
+        }
+        return self::can_read( $post ) ? null : 'You do not have permission to read this item.';
     }
 
     /** Whether everyone may see this post as it is (public status, no password). */
@@ -103,12 +143,26 @@ final class Post_Access {
             ];
         }
 
-        $type  = $args['post_type'] ?? 'post';
-        $types = 'any' === $type
-            ? array_values( get_post_types( [ 'exclude_from_search' => false ] ) )
-            : (array) $type;
+        $type = $args['post_type'] ?? 'post';
+        if ( 'any' === $type ) {
+            // What WP_Query's "any" covers, less what the caller may not see.
+            $all   = array_values( get_post_types( [ 'exclude_from_search' => false ] ) );
+            $types = array_values( array_filter( $all, fn( $t ): bool => self::can_see_type( (string) $t ) ) );
+            if ( ! $types ) {
+                return [ 'error' => 'There is no content type this account may list.', 'note' => null ];
+            }
+            if ( $types !== $all ) {
+                $args['post_type'] = $types;
+            }
+        } else {
+            $types = (array) $type;
+        }
         foreach ( $types as $t ) {
-            if ( 'any' !== $type && ! self::can_see_type( (string) $t ) ) {
+            $internal = self::internal_type_error( (string) $t );
+            if ( null !== $internal ) {
+                return [ 'error' => $internal, 'note' => null ];
+            }
+            if ( ! self::can_see_type( (string) $t ) ) {
                 return [ 'error' => sprintf( 'You do not have permission to list "%s" items.', $t ), 'note' => null ];
             }
         }
@@ -135,6 +189,10 @@ final class Post_Access {
 
     /** Whether the caller may read or write this meta key of this post. */
     public static function can_use_meta_key( int $post_id, string $key ): bool {
+        // A key with a rule of its own: that rule decides, protected or not.
+        if ( self::has_meta_auth_rule( $post_id, $key ) ) {
+            return current_user_can( 'edit_post_meta', $post_id, $key );
+        }
         if ( ! is_protected_meta( $key, 'post' ) ) {
             return true;
         }
@@ -143,6 +201,45 @@ final class Post_Access {
         }
         $pto = get_post_type_object( (string) get_post_type( $post_id ) );
         return $pto && current_user_can( $pto->cap->edit_others_posts ) && current_user_can( 'edit_post', $post_id );
+    }
+
+    /**
+     * Whether WordPress has a permission rule of its own for this meta key on this
+     * post: an auth_callback given to register_meta() / register_post_meta(), or an
+     * auth_post_meta_{$key}(_for_{$post_type}) filter (or the old
+     * auth_post_{$post_type}_meta_{$key} one). map_meta_cap() asks that rule for
+     * `edit_post_meta`, as the block editor and the REST API do.
+     *
+     * A key registered without an auth_callback gets WordPress's default one, which
+     * only repeats is_protected_meta() (__return_true or __return_false); that is no
+     * rule of its own, and the protected-key rule in can_use_meta_key() applies as
+     * before.
+     */
+    private static function has_meta_auth_rule( int $post_id, string $key ): bool {
+        $subtype = (string) get_object_subtype( 'post', $post_id );
+        if ( '' !== $subtype && has_filter( "auth_post_{$subtype}_meta_{$key}" ) ) {
+            return true;
+        }
+        $hook = "auth_post_meta_{$key}";
+        // The hook map_meta_cap() reads: the post type's own one when it has callbacks.
+        if ( '' !== $subtype && has_filter( "{$hook}_for_{$subtype}" ) ) {
+            $hook = "{$hook}_for_{$subtype}";
+        } elseif ( ! has_filter( $hook ) ) {
+            return false;
+        }
+        $default = is_protected_meta( $key, 'post' ) ? '__return_false' : '__return_true';
+        $wp_hook = $GLOBALS['wp_filter'][ $hook ] ?? null;
+        if ( ! $wp_hook instanceof \WP_Hook ) {
+            return true;
+        }
+        foreach ( $wp_hook->callbacks as $at_priority ) {
+            foreach ( (array) $at_priority as $callback ) {
+                if ( $default !== ( $callback['function'] ?? null ) ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

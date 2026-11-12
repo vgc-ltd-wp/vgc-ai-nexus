@@ -30,8 +30,9 @@ class Get_Post_Ability extends Ability {
         if ( ! $post ) {
             return $this->error( 'Post not found.' );
         }
-        if ( ! Post_Access::can_read( $post ) ) {
-            return $this->error( 'You do not have permission to read this item.' );
+        $read_error = Post_Access::read_error( $post );
+        if ( null !== $read_error ) {
+            return $this->error( $read_error );
         }
 
         $categories  = wp_get_post_categories( $post->ID, [ 'fields' => 'all' ] );

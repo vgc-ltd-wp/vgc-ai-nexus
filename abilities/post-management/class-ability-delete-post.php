@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,8 +27,13 @@ class Delete_Post_Ability extends Ability {
         $post_id = absint( $params['id'] );
         $force   = ! empty( $params['force'] );
 
-        if ( ! get_post( $post_id ) ) {
+        $post = get_post( $post_id );
+        if ( ! $post ) {
             return $this->error( "Post {$post_id} not found." );
+        }
+        $internal = Post_Access::internal_type_error( $post->post_type );
+        if ( null !== $internal ) {
+            return $this->error( $internal );
         }
         if ( ! current_user_can( 'delete_post', $post_id ) ) {
             return $this->error( 'You do not have permission to delete this post.' );

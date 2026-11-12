@@ -119,10 +119,21 @@ final class Request_Context {
         return $result;
     }
 
+    /**
+     * A REST route as WordPress matches it: in any letter case, and with one
+     * trailing newline ignored. WordPress matches '@^' . $route . '$@i', and "$"
+     * also matches before a final "\n", so "?rest_route=/woocommerce/mcp%0A" runs
+     * the /woocommerce/mcp route; a plain string comparison would miss it.
+     */
+    public static function normalize_route( string $route ): string {
+        $route = strtolower( '/' . ltrim( $route, '/' ) );
+        return "\n" === substr( $route, -1 ) ? substr( $route, 0, -1 ) : $route;
+    }
+
     /** 'http' for an MCP server route, 'abilities-rest' for the run route, '' otherwise. */
     public static function route_kind( string $route ): string {
-        // WordPress matches REST routes in any letter case.
-        $route = strtolower( '/' . ltrim( $route, '/' ) );
+        // WordPress matches REST routes in any letter case, and past one trailing newline.
+        $route = self::normalize_route( $route );
         if ( preg_match( '#^/wp-abilities/v\d+/abilities/.+/run/?$#', $route ) ) {
             return 'abilities-rest';
         }

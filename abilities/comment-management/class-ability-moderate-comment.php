@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Comment_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -36,14 +37,17 @@ class Moderate_Comment_Ability extends Ability {
             $action = (string) $params['action'];
         }
 
-        if ( ! get_comment( $id ) ) {
+        $comment = get_comment( $id );
+        if ( ! $comment ) {
             return $this->error( "Comment {$id} not found." );
         }
 
-        // Permanent removal needs the right to edit this comment too, as in
-        // WordPress's own REST API: moderate_comments alone only changes its status.
-        if ( 'delete' === $action && ! current_user_can( 'edit_comment', $id ) ) {
-            return $this->error( 'You do not have permission to permanently delete this comment. You can still approve, hold, spam or trash it.' );
+        // Every moderation needs the right to edit this comment (edit_comment, the
+        // item it belongs to), as WordPress's comment screens and REST API ask;
+        // WooCommerce order notes need the permission to edit orders.
+        $refused = Comment_Access::edit_error( $comment );
+        if ( null !== $refused ) {
+            return $this->error( $refused );
         }
 
         switch ( $action ) {

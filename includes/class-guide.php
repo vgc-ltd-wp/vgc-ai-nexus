@@ -42,7 +42,7 @@ class Guide {
             'Before improvising or working around an apparent limitation, call the "mcp-abilities-usage-guide" tool. It returns a short guide for THIS site: exact post type slugs, what each installed extension can do, and known anti-patterns.',
             '',
             'Rules that prevent the most common mistakes:',
-            '- These tools run server-side (WP_Query / wp_insert_post). They work with EVERY registered post type, including ones NOT exposed via the WordPress REST API. A post type with rest_base/show_in_rest false is fully usable here.',
+            '- These tools run server-side (WP_Query / wp_insert_post). They work with EVERY registered post type that has an admin screen, including ones NOT exposed via the WordPress REST API. A post type with rest_base/show_in_rest false is fully usable here.',
             '- Never move large content through your own output. Use the server-side copy tools (e.g. create_from_template, import_template with url=) instead of reading markup and pasting it back.',
             '- If a filter appears to have been ignored, check "ignored_parameters" in the response: parameters this site does not support are reported there, and the results are UNFILTERED with respect to them.',
             '- Never guess a post type, taxonomy or template slug. Call list_post_types (or usage_guide) — error messages also list the valid options.',
@@ -115,7 +115,7 @@ class Guide {
         $out[] = 'Guide version: ' . self::version() . '. Re-run the "usage_guide" tool if the site changes, or for anything not covered here.';
         $out[] = '';
         $out[] = '## Always';
-        $out[] = '- These tools run server-side. EVERY registered post type is usable, including ones not exposed via the WordPress REST API. Never treat rest_base/show_in_rest as a limit.';
+        $out[] = '- These tools run server-side. EVERY registered post type with an admin screen is usable, including ones not exposed via the WordPress REST API. Never treat rest_base/show_in_rest as a limit. Types without an admin screen (revisions, menu items, templates, WooCommerce variations) are internal and have their own tools.';
         $out[] = '- Never move large content through your own output. Use the server-side copy tools (create_from_template, import_template with url) instead of reading markup and pasting it back.';
         $out[] = '- If a response contains "ignored_parameters", those parameters did nothing and the results are unfiltered with respect to them. Fix the call rather than reasoning about the results.';
         $out[] = '- Never guess a post type, taxonomy, template or icon slug. list_post_types and the tools\' own error messages give the valid options.';

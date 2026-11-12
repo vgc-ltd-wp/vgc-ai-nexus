@@ -634,12 +634,18 @@ final class Other_Tools {
             return self::$tool_cache[ $key ];
         }
         $ability = self::ability_name_of( $mcp_tool );
-        if ( '' !== $ability ) {
-            $info = self::ability( $ability );
-            $out  = ( null === $info || $info['own'] ) ? null : [ 'type' => 'ability', 'id' => $ability, 'marked' => self::marked( $info['readonly'] ) ];
-        } elseif ( self::DEFAULT_SERVER === $server_id && Connection_Approval::STATUS_TOOL === $name ) {
+        $info    = '' !== $ability ? self::ability( $ability ) : null;
+        // A tool built from an ability that was never registered (a WP_Ability made
+        // by hand) has no registration to judge it by: what it runs decides, as for a
+        // tool with a handler of its own. Only a tool that really closes over an AI
+        // Nexus ability is AI Nexus's own; anything else follows the switches.
+        $wp_ability = '' !== $ability && null === $info ? self::property( $mcp_tool, 'ability' ) : null;
+        if ( null !== $info ) {
+            $out = $info['own'] ? null : [ 'type' => 'ability', 'id' => $ability, 'marked' => self::marked( $info['readonly'] ) ];
+        } elseif ( '' === $ability && self::DEFAULT_SERVER === $server_id && Connection_Approval::STATUS_TOOL === $name ) {
             $out = null;
-        } elseif ( self::closes_over_ability( self::property( $mcp_tool, 'handler' ) ) || self::closes_over_ability( self::property( $mcp_tool, 'permission_callback' ) ) ) {
+        } elseif ( self::closes_over_ability( self::property( $mcp_tool, 'handler' ) ) || self::closes_over_ability( self::property( $mcp_tool, 'permission_callback' ) )
+            || ( is_object( $wp_ability ) && self::closes_over_ability( self::property( $wp_ability, 'execute_callback' ) ) ) ) {
             $out = null;
         } else {
             $readonly = null;
@@ -650,7 +656,8 @@ final class Other_Tools {
                     $readonly = $annotations->getReadOnlyHint();
                 }
             }
-            $out = [ 'type' => 'handler', 'id' => $server_id . ':' . $name, 'marked' => self::marked( $readonly ), 'file' => self::file_of( self::property( $mcp_tool, 'handler' ) ) ];
+            $runs = is_object( $wp_ability ) ? self::property( $wp_ability, 'execute_callback' ) : self::property( $mcp_tool, 'handler' );
+            $out  = [ 'type' => 'handler', 'id' => $server_id . ':' . $name, 'marked' => self::marked( $readonly ), 'file' => self::file_of( $runs ) ];
         }
         self::$tool_cache[ $key ] = $out;
         return $out;
@@ -1029,7 +1036,8 @@ final class Other_Tools {
         if ( ! $request instanceof \WP_REST_Request ) {
             return $result;
         }
-        $path = strtolower( '/' . ltrim( (string) $request->get_route(), '/' ) );
+        // As WordPress matches it: any letter case, one trailing newline ignored.
+        $path = Request_Context::normalize_route( (string) $request->get_route() );
         if ( self::is_own_route( $path ) ) {
             return $result;
         }

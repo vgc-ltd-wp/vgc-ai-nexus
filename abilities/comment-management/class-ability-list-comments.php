@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Comment_Access;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -10,7 +11,7 @@ class List_Comments_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'list_comments';
         $this->label        = __( 'List Comments', 'mcp-abilities' );
-        $this->description  = 'List comments with filtering by status, post or author.';
+        $this->description  = 'List comments with filtering by status, post or author. Only comments this account may see are listed (the result says how many were left out in "not_shown").';
         $this->required_cap = 'moderate_comments';
         $this->input_schema = [
             'type'       => [ 'object', 'array' ],
@@ -41,8 +42,13 @@ class List_Comments_Ability extends Ability {
         if ( ! empty( $params['post_id'] ) ) $args['post_id'] = absint( $params['post_id'] );
         if ( ! empty( $params['search'] ) )  $args['search']  = sanitize_text_field( $params['search'] );
 
-        $comments = get_comments( $args );
-        $result   = array_map( fn( $c ) => [
+        // Only what this account may see (Comment_Access): comments it may edit, and
+        // approved ones on items it may read; never notes on internal items.
+        $comments  = get_comments( $args );
+        $readable  = array_values( array_filter( $comments, [ Comment_Access::class, 'can_read' ] ) );
+        $not_shown = count( $comments ) - count( $readable );
+        $comments  = $readable;
+        $result    = array_map( fn( $c ) => [
             'id'      => $c->comment_ID,
             'post_id' => $c->comment_post_ID,
             'author'  => $c->comment_author,
@@ -53,6 +59,11 @@ class List_Comments_Ability extends Ability {
             'parent'  => $c->comment_parent,
         ], $comments );
 
-        return $this->json_result( [ 'comments' => $result ] );
+        $out = [ 'comments' => $result ];
+        if ( $not_shown ) {
+            $out['not_shown'] = $not_shown;
+            $out['note']      = sprintf( '%d comment(s) on this page are not shown: this account may not see them.', $not_shown );
+        }
+        return $this->json_result( $out );
     }
 }

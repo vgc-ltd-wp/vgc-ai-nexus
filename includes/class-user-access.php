@@ -49,6 +49,23 @@ final class User_Access {
     }
 
     /**
+     * Why the current user may not give themselves this role, or null (also when the
+     * account is someone else's). The new role must keep edit_users and promote_users:
+     * the REST API asks the first, the profile screen the second. A multisite super
+     * admin may, as in WordPress.
+     */
+    public static function own_role_error( \WP_User $target, string $role ): ?string {
+        if ( (int) $target->ID !== get_current_user_id() || ( is_multisite() && current_user_can( 'manage_network_users' ) ) ) {
+            return null;
+        }
+        $role_object = get_role( $role );
+        if ( $role_object && $role_object->has_cap( 'edit_users' ) && $role_object->has_cap( 'promote_users' ) ) {
+            return null;
+        }
+        return sprintf( 'You cannot give your own account the "%s" role: it would take away your permission to manage users. Ask another administrator.', $role );
+    }
+
+    /**
      * Why the current user may not assign this role, or null when they may.
      */
     public static function role_error( string $role ): ?string {

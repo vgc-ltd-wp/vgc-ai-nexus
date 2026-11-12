@@ -60,6 +60,16 @@ class Update_User_Ability extends Ability {
             if ( null !== $role_error ) {
                 return $this->error( $role_error );
             }
+            // Nobody locks the site or themselves out: the last administrator keeps
+            // the role, and your own new role must keep the user-management
+            // permissions (WordPress's profile screen and REST API ask the same).
+            if ( 'administrator' !== $new_role && User_Access::is_last_admin( $target ) ) {
+                return $this->error( 'This is the last administrator account: its role cannot be changed, or nobody could manage the site. Make another account an administrator first.' );
+            }
+            $self_error = User_Access::own_role_error( $target, $new_role );
+            if ( null !== $self_error ) {
+                return $this->error( $self_error );
+            }
         }
 
         $data = [ 'ID' => $user_id ];
