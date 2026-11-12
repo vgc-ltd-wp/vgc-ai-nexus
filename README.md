@@ -213,6 +213,21 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.42.0
+
+Security review of 2026-11-10, low findings in the core plugin. Everything here tightens; nothing that was refused before is allowed now.
+
+- **Internal content stays internal.** The general post tools no longer read, list, search, create, change or delete content types that have no admin screen: revisions, menu items, privacy requests, oEmbed cache, block templates, global styles, fonts, WooCommerce variations, refunds and order placeholders. An Editor could read privacy-request e-mail addresses and change or delete a WooCommerce order's placeholder post, and an Author could plant a revision under someone else's post. Menus, templates and WooCommerce keep their own tools.
+- **Comments.** Approving, holding, marking as spam, trashing, deleting or replying to a comment needs permission to edit that comment, as on WordPress's Comments screen. WooCommerce order notes need permission to edit orders. The comment list shows only comments the account may see.
+- **Registered custom fields** follow the permission rule the plugin that registered them gave.
+- **Other plugins' tools** built from an ability that was never registered are treated as that plugin's tools, so the Other AI tools switches and read-only mode apply.
+- **Users and CSS.** The last administrator can no longer be given another role, nobody can take away their own permission to manage users, deleting a user checks the account that gets the content, and clearing the custom CSS needs the same permission as writing it.
+- **Encoded line breaks.** An address ending in `%0A` no longer gets past read-only mode and the Other AI tools switches when another plugin's older MCP adapter is loaded.
+- **Sign-in.** A return address that WordPress would store differently from the one checked is refused; an unexpected stored value for which apps may connect counts as Claude only; adding or removing a user's role ends their claude.ai connections; ending a connection resets its admin approval.
+- **Application Passwords.** New setting on AI Nexus → Connections, off by default: also switch off Application Passwords not made on AI Nexus after 14 days without use. New ones are marked "New" in the list. A password past its 14 unused days is refused and deleted when it is next used, even when the site's scheduled tasks do not run. Deleting another user's Application Password needs permission to edit that user (multisite).
+- **Licence answers** must belong to the request that asked for them; oversized answers are ignored.
+- **Floods.** Many unknown sign-in tokens from one address get "too many requests"; a notice explains what to set when the site is behind Cloudflare or another proxy; a flood of app registrations can no longer cancel a connection someone is approving.
+
 ### 2.41.0
 
 Security review of 2026-11-10, medium findings in the core plugin.
