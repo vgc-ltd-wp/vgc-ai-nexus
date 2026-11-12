@@ -37,7 +37,18 @@ defined( 'ABSPATH' ) || exit;
  *    once it has not been used for Lifecycle::idle_days() (14), judged by the
  *    later of WordPress's own last_used and the last activity here, or its
  *    creation date if never used. Other Application Passwords are only
- *    listed, never removed. Every removal is written to the activity log.
+ *    listed, never removed (the owner's decision, 2026-11-06), unless an
+ *    administrator switches on "Also switch off other Application Passwords"
+ *    (option IDLE_OTHERS, off by default, 2.42.0): then every Application
+ *    Password of this site's users goes after the same idle time, counted from
+ *    the moment it was switched on at the earliest. Every removal is written
+ *    to the activity log.
+ *
+ *  - Since 2.42.0 such a password is also refused at use once its idle time
+ *    is over (wp_authenticate_application_password_errors) and deleted then,
+ *    so a site whose cron does not run still ends it. The list flags an
+ *    Application Password made in the last NEW_DAYS days, so an administrator
+ *    sees one that someone made with a stolen login.
  *
  *  - Disconnect (AI Nexus → Connections, manage_options) and Revoke on each
  *    user's own profile ("Your AI connections", own connections only).
@@ -50,6 +61,10 @@ final class Connections {
     public const NONCE_OWN      = 'mcp_abilities_own_connections';
     public const TOUCH_EVERY    = 60;
     public const MAX            = 1000;
+    /** "Also switch off other Application Passwords": 0 off, else when it was switched on (2.42.0). */
+    public const IDLE_OTHERS    = 'mcp_abilities_idle_others';
+    /** An Application Password made this many days ago or less is flagged as new in the list (2.42.0). */
+    public const NEW_DAYS       = 7;
 
     private static bool $booted = false;
 
@@ -66,6 +81,8 @@ final class Connections {
         add_filter( 'rest_pre_dispatch', [ self::class, 'on_rest' ], 2, 3 );
 
         add_action( 'wp_delete_application_password', [ self::class, 'on_app_password_deleted' ], 10, 2 );
+        // Past its idle time an Application Password is refused, cron or not (2.42.0).
+        add_action( 'wp_authenticate_application_password_errors', [ self::class, 'refuse_idle_app_password' ], 10, 4 );
         add_action( 'deleted_user', [ self::class, 'forget_user' ], 20, 1 );
         add_action( 'remove_user_from_blog', [ self::class, 'forget_user' ], 20, 1 );
 
@@ -304,7 +321,7 @@ final class Connections {
      * Every connection that is on, most recently used first.
      *
      * @param int|null $user_id Only this user's.
-     * @return array<int, array{key:string,kind:string,user_id:int,client_id:string,uuid:string,app:string,operator:string,since:int,last_active:int,ip:string,disconnects_at:int,made_here:bool,approval:string}>
+     * @return array<int, array{key:string,kind:string,user_id:int,client_id:string,uuid:string,app:string,operator:string,since:int,last_active:int,ip:string,disconnects_at:int,made_here:bool,approval:string,new:bool}>
      */
     public static function live( ?int $user_id = null ): array {
         $entries = self::entries();
@@ -331,6 +348,7 @@ final class Connections {
                 'disconnects_at' => $o['until'],
                 'made_here'      => true,
                 'approval'       => self::approval_of( $key, $o['user_id'] ),
+                'new'            => false,
             ];
         }
 
@@ -358,6 +376,7 @@ final class Connections {
                 $wp_last   = (int) ( $item['last_used'] ?? 0 );
                 $here_last = (int) ( $e['last_active'] ?? 0 );
                 $ours      = isset( $made[ $uid ] ) && $made[ $uid ] === $uuid;
+                $off_from  = self::switch_off_from( $uid, $item, $entries );
                 $rows[]    = [
                     'key'            => $key,
                     'kind'           => 'app_password',
@@ -369,9 +388,11 @@ final class Connections {
                     'since'          => (int) ( $item['created'] ?? 0 ),
                     'last_active'    => max( $wp_last, $here_last ),
                     'ip'             => $here_last >= $wp_last ? (string) ( $e['ip'] ?? '' ) : (string) ( $item['last_ip'] ?? '' ),
-                    'disconnects_at' => $ours ? self::idle_from( $item, $here_last ) + Lifecycle::idle_seconds() : 0,
+                    'disconnects_at' => null !== $off_from ? $off_from + Lifecycle::idle_seconds() : 0,
                     'made_here'      => $ours,
                     'approval'       => self::approval_of( $key, $uid ),
+                    // Made in the last NEW_DAYS days: check that its user made it (2.42.0).
+                    'new'            => (int) ( $item['created'] ?? 0 ) >= time() - self::NEW_DAYS * DAY_IN_SECONDS,
                 ];
             }
         }
@@ -399,6 +420,142 @@ final class Connections {
     private static function counting_since(): int {
         $done = get_option( Lifecycle::UPGRADES, [] );
         return is_array( $done ) ? (int) ( $done['refresh_cap_239'] ?? 0 ) : 0;
+    }
+
+    // ── Application Passwords not made on AI Nexus (2.42.0) ─────────────────
+
+    /** "Also switch off other Application Passwords": 0 when off, else when it was switched on. */
+    public static function idle_others_since(): int {
+        return max( 0, (int) get_option( self::IDLE_OTHERS, 0 ) );
+    }
+
+    /**
+     * Switch "Also switch off other Application Passwords" on or off. Switching
+     * on starts every such password's idle time now at the earliest, so nothing
+     * is switched off the first night. Logged in the activity log.
+     */
+    public static function set_idle_others( bool $on ): void {
+        if ( $on === ( self::idle_others_since() > 0 ) ) {
+            return;
+        }
+        update_option( self::IDLE_OTHERS, $on ? time() : 0, true );
+        Logger::log( 'connection_idle_others', [ 'success' => true ], [ [
+            'type'   => 'setting',
+            'id'     => 0,
+            'action' => $on
+                ? sprintf( 'other Application Passwords are switched off after %d days without use', Lifecycle::idle_days() )
+                : 'other Application Passwords are only listed',
+        ] ] );
+    }
+
+    /**
+     * When an Application Password's idle time started, or null when it never
+     * switches off (not made on AI Nexus, and the setting above is off).
+     *
+     * @param array<string, mixed>                     $item    WordPress's record of it.
+     * @param array<string, array<string, mixed>>|null $entries The registry, when already read.
+     */
+    private static function switch_off_from( int $uid, array $item, ?array $entries = null ): ?int {
+        $uuid = (string) ( $item['uuid'] ?? '' );
+        if ( $uid <= 0 || '' === $uuid ) {
+            return null;
+        }
+        $ours   = ( self::made_here()[ $uid ] ?? '' ) === $uuid;
+        $others = self::idle_others_since();
+        if ( ! $ours && 0 === $others ) {
+            return null;
+        }
+        $entries = $entries ?? self::entries();
+        $key     = Connection_Approval::key( 'app_password', $uuid, $uid );
+        $from    = self::idle_from( $item, (int) ( $entries[ $key ]['last_active'] ?? 0 ) );
+        return $ours ? $from : max( $from, $others );
+    }
+
+    /**
+     * wp_authenticate_application_password_errors: an Application Password
+     * whose idle time is over is refused, and deleted as the sweep would
+     * have, so a site whose cron does not run still ends it (VT-39).
+     *
+     * @param \WP_Error $error
+     * @param \WP_User  $user
+     * @param array     $item
+     * @param string    $password
+     */
+    public static function refuse_idle_app_password( $error, $user = null, $item = [], $password = '' ): void {
+        if ( ! $error instanceof \WP_Error || ! $user instanceof \WP_User || ! is_array( $item ) ) {
+            return;
+        }
+        $uid  = (int) $user->ID;
+        $from = self::switch_off_from( $uid, $item );
+        if ( null === $from || time() - $from < Lifecycle::idle_seconds() ) {
+            return;
+        }
+        $days = Lifecycle::idle_days();
+        $error->add(
+            'mcp_abilities_idle_app_password',
+            /* translators: %d: number of days */
+            sprintf( __( 'This Application Password was switched off because it was not used for %d days. Make a new one.', 'mcp-abilities' ), $days ),
+            [ 'status' => 401 ]
+        );
+        $ours = ( self::made_here()[ $uid ] ?? '' ) === (string) $item['uuid'];
+        self::remove_idle_app_password( $uid, $item, $ours, 'refused at use' );
+    }
+
+    /** Delete an Application Password that went unused for the idle time, and log it. */
+    private static function remove_idle_app_password( int $uid, array $item, bool $ours, string $when ): void {
+        $uuid = (string) ( $item['uuid'] ?? '' );
+        if ( '' === $uuid || ! class_exists( '\WP_Application_Passwords' ) ) {
+            return;
+        }
+        // Its registry entry and the Connect page's record go with it (on_app_password_deleted).
+        \WP_Application_Passwords::delete_application_password( $uid, $uuid );
+        self::log_event( 'connection_idle_removed', $uid, [
+            'type'   => 'connection',
+            'id'     => 0,
+            'key'    => Connection_Approval::key( 'app_password', $uuid, $uid ),
+            'app'    => (string) ( $item['name'] ?? '' ),
+            'action' => sprintf(
+                'Application Password deleted: not used for %d days%s%s',
+                Lifecycle::idle_days(),
+                $ours ? '' : ' (not made on AI Nexus; other Application Passwords are switched off too)',
+                'sweep' === $when ? '' : ' (' . $when . ')'
+            ),
+        ] );
+    }
+
+    /**
+     * The sweep's part for Application Passwords not made on AI Nexus, while
+     * the setting is on: every one of this site's users (on a network, the
+     * users of this site).
+     *
+     * @return int How many were deleted.
+     */
+    private static function sweep_others( int $now, int $idle ): int {
+        if ( 0 === self::idle_others_since() || ! class_exists( '\WP_Application_Passwords' ) ) {
+            return 0;
+        }
+        $made    = self::made_here();
+        $entries = self::entries();
+        $removed = 0;
+        $users   = new \WP_User_Query( [
+            'meta_key' => '_application_passwords', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+            'fields'   => 'ID',
+            'number'   => -1,
+        ] );
+        foreach ( (array) $users->get_results() as $uid ) {
+            $uid = (int) $uid;
+            foreach ( (array) \WP_Application_Passwords::get_user_application_passwords( $uid ) as $item ) {
+                if ( ! is_array( $item ) || '' === (string) ( $item['uuid'] ?? '' ) || ( $made[ $uid ] ?? '' ) === (string) $item['uuid'] ) {
+                    continue; // The Connect page's own are handled by the sweep above.
+                }
+                $from = self::switch_off_from( $uid, $item, $entries );
+                if ( null !== $from && $now - $from >= $idle ) {
+                    self::remove_idle_app_password( $uid, $item, false, 'sweep' );
+                    ++$removed;
+                }
+            }
+        }
+        return $removed;
     }
 
     /** '' (approval off), 'exempt', 'approved', 'pending', 'rejected' or 'unknown' (not decided yet). */
@@ -546,6 +703,9 @@ final class Connections {
             }
             update_option( self::CONNECT_OPTION, $now_made, false );
         }
+
+        // Other Application Passwords, when an administrator switched that on (2.42.0).
+        $apps += self::sweep_others( $now, $idle );
 
         // Entries of Application Passwords that no longer exist.
         $entries = self::entries();

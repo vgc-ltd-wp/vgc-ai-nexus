@@ -104,6 +104,9 @@ class Installer {
             Connections::OPTION,
             OAuth\Lifecycle::UPGRADES,
             OAuth\Lifecycle::POLICY_NOTICE,
+            // 2.42.0: the proxy notice. ("Also switch off other Application
+            // Passwords" stays, like "require admin approval".)
+            OAuth\Proxy_Hint::OPTION,
         ] as $opt ) {
             delete_option( $opt );
         }

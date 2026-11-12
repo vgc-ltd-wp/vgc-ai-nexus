@@ -73,13 +73,31 @@ function mcp_time_ago( string $utc_datetime ): string {
     <!-- ── Connections that are on (2.39.0) ───────────────────────────────── -->
     <div class="mcp-doc-section mcp-live" id="mcp-live-connections">
         <h2><?php printf( /* translators: %d: count */ esc_html__( 'Connections that are on (%d)', 'mcp-abilities' ), count( $live_connections ) ); ?></h2>
+        <?php $idle_others = \MCP_Abilities\Connections::idle_others_since() > 0; ?>
         <p class="mcp-section-sub"><?php
             printf(
                 /* translators: %d: number of days */
-                esc_html__( 'Every AI assistant that can use this site right now, administrators included. A claude.ai sign-in, and an Application Password made on the Connect page, switch off by themselves after %d days without use. Other Application Passwords are only listed here.', 'mcp-abilities' ),
+                $idle_others
+                    ? esc_html__( 'Every AI assistant that can use this site right now, administrators included. A claude.ai sign-in and every Application Password switch off by themselves after %d days without use.', 'mcp-abilities' )
+                    : esc_html__( 'Every AI assistant that can use this site right now, administrators included. A claude.ai sign-in, and an Application Password made on the Connect page, switch off by themselves after %d days without use. Other Application Passwords are only listed here.', 'mcp-abilities' ),
                 (int) \MCP_Abilities\OAuth\Lifecycle::idle_days()
             );
         ?></p>
+        <?php // 2.42.0: off by default (the owner's decision of 2026-11-06 stands until an administrator chooses). ?>
+        <p class="mcp-live__setting">
+            <label>
+                <input type="checkbox" id="mcp-idle-others" <?php checked( $idle_others ); ?> <?php disabled( ! current_user_can( 'edit_users' ) ); ?>>
+                <?php
+                printf(
+                    /* translators: %d: number of days */
+                    esc_html__( 'Also switch off other Application Passwords after %d days without use', 'mcp-abilities' ),
+                    (int) \MCP_Abilities\OAuth\Lifecycle::idle_days()
+                );
+                ?>
+            </label>
+            <span id="mcp-idle-others-status" class="mcp-save-status" role="status"></span>
+            <br><span class="mcp-section-sub"><?php esc_html_e( 'Any Application Password of this site\'s users, also ones made on the profile screen, by another plugin or with a stolen login, and also ones never used by an AI: it is deleted once unused for that long, counted from when you switch this on at the earliest. Apps that use one every few days are not affected.', 'mcp-abilities' ); ?></span>
+        </p>
         <div class="mcp-table-scroll">
         <table class="widefat striped mcp-live-table" id="mcp-live-table">
             <thead><tr>
@@ -112,6 +130,7 @@ function mcp_time_ago( string $utc_datetime ): string {
                     <td class="mcp-live__kind" data-label="<?php esc_attr_e( 'Signed in with', 'mcp-abilities' ); ?>">
                         <?php echo esc_html( \MCP_Abilities\Connections::kind_label( $conn['kind'] ) ); ?>
                         <?php if ( 'app_password' === $conn['kind'] && ! $conn['made_here'] ) : ?><br><span class="mcp-section-sub"><?php esc_html_e( 'not made on AI Nexus', 'mcp-abilities' ); ?></span><?php endif; ?>
+                        <?php if ( ! empty( $conn['new'] ) ) : ?><br><span class="mcp-approval-badge" title="<?php esc_attr_e( 'Made in the last 7 days. Check that its user made it.', 'mcp-abilities' ); ?>"><?php esc_html_e( 'New', 'mcp-abilities' ); ?></span><?php endif; ?>
                     </td>
                     <td class="mcp-live__since" data-label="<?php esc_attr_e( 'Connected since', 'mcp-abilities' ); ?>"><?php echo esc_html( \MCP_Abilities\Connections::when( $conn['since'] ) ?: '—' ); ?></td>
                     <td class="mcp-live__last" data-label="<?php esc_attr_e( 'Last active', 'mcp-abilities' ); ?>">
@@ -123,6 +142,9 @@ function mcp_time_ago( string $utc_datetime ): string {
                         <td class="mcp-live__approval" data-label="<?php esc_attr_e( 'Approval', 'mcp-abilities' ); ?>"><?php echo esc_html( \MCP_Abilities\Connections::approval_label( $conn['approval'] ) ); ?></td>
                     <?php endif; ?>
                     <td class="mcp-live__actions">
+                        <?php if ( ! \MCP_Abilities\Admin\Connections_Page::may_end( (string) $conn['kind'], (int) $conn['user_id'] ) ) : ?>
+                            <span class="mcp-section-sub"><?php esc_html_e( 'Only someone who can edit this user can delete it.', 'mcp-abilities' ); ?></span>
+                        <?php else : ?>
                         <button type="button" class="mcp-btn mcp-btn--link mcp-live-disconnect"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
                         <span class="mcp-live__confirm" hidden>
                             <?php echo 'oauth' === $conn['kind']
@@ -131,6 +153,7 @@ function mcp_time_ago( string $utc_datetime ): string {
                             <button type="button" class="mcp-btn mcp-btn--danger mcp-live-disconnect-yes"><?php esc_html_e( 'Disconnect', 'mcp-abilities' ); ?></button>
                             <button type="button" class="mcp-btn mcp-btn--ghost mcp-live-disconnect-no"><?php esc_html_e( 'Cancel', 'mcp-abilities' ); ?></button>
                         </span>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>

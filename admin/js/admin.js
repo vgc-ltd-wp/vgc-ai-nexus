@@ -625,6 +625,30 @@
             .always( function () { $box.prop( 'disabled', false ); } );
     } );
 
+    // ── Connections: "Also switch off other Application Passwords" (2.42.0) ─
+    $( document ).on( 'change', '#mcp-idle-others', function () {
+        const $box    = $( this );
+        const on      = $box.is( ':checked' );
+        const $status = $( '#mcp-idle-others-status' );
+        $box.prop( 'disabled', true );
+        $status.removeClass( 'is-error is-success' ).text( ( mcpAbilities.i18n && mcpAbilities.i18n.working ) || 'Working…' );
+        $.post( mcpAbilities.ajaxUrl, { action: 'mcp_idle_others', nonce: mcpAbilities.nonce, on: on ? 1 : 0 } )
+            .done( function ( res ) {
+                if ( res && res.success ) {
+                    $box.prop( 'checked', !! res.data.on );
+                    $status.addClass( 'is-success' ).text( res.data.message || 'Saved.' );
+                } else {
+                    $box.prop( 'checked', ! on );
+                    $status.addClass( 'is-error' ).text( ( res && res.data && res.data.message ) || 'Failed.' );
+                }
+            } )
+            .fail( function () {
+                $box.prop( 'checked', ! on );
+                $status.addClass( 'is-error' ).text( 'Failed.' );
+            } )
+            .always( function () { $box.prop( 'disabled', false ); } );
+    } );
+
     // ── Connections that are on → Disconnect; profile → Revoke (2.39.0) ─────
     // One pattern for both: the button opens an inline confirmation in its row.
 

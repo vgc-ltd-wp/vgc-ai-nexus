@@ -13,7 +13,10 @@
  * and at most MAX_PENDING are kept; claude.ai registers once per "Connect",
  * so a real one is approved within minutes. Clients without 'used_at'
  * (manual ones, and registrations from before 2.35.0) count as used and are
- * never removed automatically.
+ * never removed automatically. Since 2.42.0 an unused one whose consent page a
+ * signed-in person opened in the last OPENED_KEEP seconds ('opened_at') is not
+ * removed to make room either, so a flood of registrations cannot cut off a
+ * Connect that is half done.
  *
  * @package mcp-abilities
  */
@@ -30,6 +33,9 @@ final class Client_Manager {
 	/** Registrations nobody has approved yet: how many are kept, and for how long. */
 	const MAX_PENDING = 50;
 	const PENDING_TTL = 86400;
+
+	/** An unused registration whose consent page was opened this recently is kept (2.42.0). */
+	const OPENED_KEEP = 900;
 
 	/**
 	 * All dynamic clients together. At this size the oldest ones that hold no
@@ -105,6 +111,28 @@ final class Client_Manager {
 	}
 
 	/**
+	 * A signed-in person has the consent page of this unused registration in
+	 * front of them (2.42.0): it is kept for OPENED_KEEP seconds even when
+	 * room is needed. Written at most once a minute.
+	 */
+	public static function mark_opened( string $client_id ): void {
+		$clients = self::get_all();
+		if ( ! isset( $clients[ $client_id ] ) || ! self::is_pending( (array) $clients[ $client_id ] ) ) {
+			return;
+		}
+		if ( time() - (int) ( $clients[ $client_id ]['opened_at'] ?? 0 ) < 60 ) {
+			return;
+		}
+		$clients[ $client_id ]['opened_at'] = time();
+		update_option( Options::CLIENTS, $clients, false );
+	}
+
+	/** An unused registration whose consent page was opened in the last OPENED_KEEP seconds. */
+	private static function is_being_approved( array $client ): bool {
+		return self::is_pending( $client ) && (int) ( $client['opened_at'] ?? 0 ) >= time() - self::OPENED_KEEP;
+	}
+
+	/**
 	 * Make room for one more dynamic registration.
 	 *
 	 * @param array<string, array<string, mixed>> $clients
@@ -117,16 +145,20 @@ final class Client_Manager {
 			$removed[] = $id;
 		};
 
+		// Never one whose consent page a signed-in person has open (2.42.0).
+		$kept = static fn( $c ): bool => self::is_being_approved( (array) $c );
+
 		// 1. Unused registrations older than a day.
 		foreach ( $clients as $id => $c ) {
-			if ( self::is_pending( (array) $c ) && (int) ( $c['created_at'] ?? 0 ) < time() - self::PENDING_TTL ) {
+			if ( self::is_pending( (array) $c ) && ! $kept( $c ) && (int) ( $c['created_at'] ?? 0 ) < time() - self::PENDING_TTL ) {
 				$drop( (string) $id );
 			}
 		}
 
 		// 2. At most MAX_PENDING unused ones, the new one included: the oldest go.
-		$pending = array_keys( array_filter( $clients, static fn( $c ) => self::is_pending( (array) $c ) ) );
-		foreach ( array_slice( self::sort_by_age( $clients, $pending ), 0, max( 0, count( $pending ) - self::MAX_PENDING + 1 ) ) as $id ) {
+		$pending   = array_keys( array_filter( $clients, static fn( $c ) => self::is_pending( (array) $c ) ) );
+		$removable = array_values( array_filter( $pending, static fn( $id ) => ! $kept( $clients[ $id ] ) ) );
+		foreach ( array_slice( self::sort_by_age( $clients, $removable ), 0, max( 0, count( $pending ) - self::MAX_PENDING + 1 ) ) as $id ) {
 			$drop( (string) $id );
 		}
 
@@ -135,7 +167,7 @@ final class Client_Manager {
 		$excess  = count( $dynamic ) - self::MAX_DYNAMIC + 1;
 		if ( $excess > 0 ) {
 			$live = Token_Store::summary_by_client();
-			$idle = array_values( array_filter( $dynamic, static fn( $id ) => empty( $live[ (string) $id ] ) ) );
+			$idle = array_values( array_filter( $dynamic, static fn( $id ) => empty( $live[ (string) $id ] ) && ! $kept( $clients[ $id ] ) ) );
 			foreach ( array_slice( self::sort_by_age( $clients, $idle ), 0, $excess ) as $id ) {
 				$drop( (string) $id );
 				Operators::delete_for_client( (string) $id );
@@ -169,7 +201,10 @@ final class Client_Manager {
 	 * @return array{client_id:string,client_secret:string,...}|\WP_Error
 	 */
 	public static function dynamic_register( array $registration_request, int $default_user_id ) {
-		$policy = (string) get_option( Options::REG_POLICY, 'restricted' );
+		// 2.42.0: through the one reader that turns an unexpected stored value
+		// into "restricted"; reading the option here let any other value skip
+		// the address checks.
+		$policy = Options::policy();
 
 		if ( 'closed' === $policy ) {
 			return new \WP_Error(
@@ -195,6 +230,14 @@ final class Client_Manager {
 			if ( ! is_string( $uri ) || '' === $uri || strlen( $uri ) > self::MAX_URI_LENGTH ) {
 				/* translators: %d: maximum length of a redirect URI */
 				return new \WP_Error( 'invalid_redirect_uri', sprintf( __( 'Each redirect_uri must be an address of at most %d characters.', 'mcp-abilities' ), self::MAX_URI_LENGTH ), array( 'status' => 400 ) );
+			}
+			// 2.42.0: what is checked is what is stored. insert() stores the
+			// address through esc_url_raw(), which drops characters it does not
+			// allow ("/api/mcp/.{}./x" became "/api/mcp/../x"), so an address it
+			// would change is refused, under every policy.
+			if ( esc_url_raw( $uri ) !== $uri ) {
+				/* translators: %s: rejected redirect URI */
+				return new \WP_Error( 'invalid_redirect_uri', sprintf( __( 'redirect_uri "%s" has characters that are not allowed in an address.', 'mcp-abilities' ), mb_substr( $uri, 0, 200 ) ), array( 'status' => 400 ) );
 			}
 		}
 

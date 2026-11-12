@@ -34,8 +34,9 @@ final class Options {
 
 	/** 'restricted' (Claude's own addresses, loopback with PKCE, hosts an administrator added), 'open', or 'closed'. */
 	public static function policy(): string {
-		$p = (string) get_option( self::REG_POLICY, 'restricted' );
-		return in_array( $p, array( 'restricted', 'open', 'closed' ), true ) ? $p : 'restricted';
+		$p = get_option( self::REG_POLICY, 'restricted' );
+		// 2.42.0: anything unexpected (also not a string) is "restricted", without a PHP warning.
+		return is_string( $p ) && in_array( $p, array( 'restricted', 'open', 'closed' ), true ) ? $p : 'restricted';
 	}
 
 	public static function set_policy( string $policy ): bool {

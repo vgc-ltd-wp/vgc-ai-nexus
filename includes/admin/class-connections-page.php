@@ -21,6 +21,18 @@ class Connections_Page {
         add_action( 'admin_menu',            [ $this, 'add_submenu' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
         add_action( 'wp_ajax_mcp_connection_disconnect', [ $this, 'ajax_disconnect' ] );
+        add_action( 'wp_ajax_mcp_idle_others', [ $this, 'ajax_idle_others' ] );
+    }
+
+    /**
+     * Whether the current administrator may end this connection. An
+     * Application Password belongs to its user (on a network it opens every
+     * site), so deleting someone else's needs edit_user on them, as the Connect
+     * page's Revoke does (2.42.0). A claude.ai sign-in only opens this site:
+     * manage_options here is enough, as for "Disconnect" of a whole app.
+     */
+    public static function may_end( string $kind, int $owner ): bool {
+        return 'oauth' === $kind || get_current_user_id() === $owner || current_user_can( 'edit_user', $owner );
     }
 
     /** AJAX: switch one connection off ("Connections that are on" → Disconnect). */
@@ -33,10 +45,40 @@ class Connections_Page {
         }
         $key  = isset( $_POST['key'] ) ? sanitize_text_field( wp_unslash( $_POST['key'] ) ) : '';
         $user = wp_get_current_user();
+        if ( \MCP_Abilities\Connections::valid_key( $key ) ) {
+            [ $kind, , $owner ] = explode( ':', $key, 3 );
+            if ( ! self::may_end( $kind, (int) $owner ) ) {
+                wp_send_json_error( [ 'message' => __( 'You cannot edit that user, so you cannot delete their Application Password.', 'mcp-abilities' ) ], 403 );
+            }
+        }
         if ( ! \MCP_Abilities\Connections::disconnect( $key, sprintf( 'the administrator %s', $user->user_login ) ) ) {
             wp_send_json_error( [ 'message' => __( 'That connection is not on any more.', 'mcp-abilities' ) ] );
         }
         wp_send_json_success( [ 'message' => __( 'Disconnected. The assistant has to connect again to use this site.', 'mcp-abilities' ) ] );
+    }
+
+    /**
+     * AJAX: "Also switch off other Application Passwords" (2.42.0). It deletes
+     * passwords that belong to other users, so it needs edit_users as well
+     * (on a network: a network administrator).
+     */
+    public function ajax_idle_others(): void {
+        if ( ! check_ajax_referer( 'mcp_abilities_nonce', 'nonce', false ) ) {
+            wp_send_json_error( [ 'message' => __( 'The page has expired. Reload it and try again.', 'mcp-abilities' ) ], 403 );
+        }
+        if ( ! current_user_can( 'manage_options' ) || ! current_user_can( 'edit_users' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'mcp-abilities' ) ], 403 );
+        }
+        $on = ! empty( $_POST['on'] );
+        \MCP_Abilities\Connections::set_idle_others( $on );
+        $days = \MCP_Abilities\OAuth\Lifecycle::idle_days();
+        wp_send_json_success( [
+            'on'      => \MCP_Abilities\Connections::idle_others_since() > 0,
+            'message' => $on
+                /* translators: %d: number of days */
+                ? sprintf( __( 'On. Every Application Password of this site\'s users is switched off after %d days without use, counted from today at the earliest.', 'mcp-abilities' ), $days )
+                : __( 'Off. Application Passwords not made on AI Nexus are only listed.', 'mcp-abilities' ),
+        ] );
     }
 
     public function add_submenu(): void {

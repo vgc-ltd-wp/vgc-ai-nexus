@@ -49,6 +49,15 @@ final class Server {
 	 */
 	private static ?array $authenticated = null;
 
+	/**
+	 * This request sent a bearer token that is not known, from an address past
+	 * Rate_Limit's 'bearer' limit: seconds to wait (0: not limited). 2.42.0.
+	 */
+	private static int $bearer_wait = 0;
+
+	/** @var array<string, true> Unknown tokens already counted in this request (by hash). */
+	private static array $bearer_counted = array();
+
 	// ── Boot ───────────────────────────────────────────────────────────────
 
 	public static function init(): void {
@@ -1071,6 +1080,10 @@ final class Server {
 			exit;
 		}
 
+		// 2.42.0: a person is about to approve this app; registrations from a
+		// flood must not push it out meanwhile (Client_Manager::make_room()).
+		Client_Manager::mark_opened( $params['client_id'] );
+
 		$client    = Client_Manager::get( $params['client_id'] );
 		$user      = wp_get_current_user();
 		$is_claude = Client_Manager::is_claude_redirect( $params['redirect_uri'] );
@@ -1341,6 +1354,7 @@ final class Server {
 
 		$data = Token_Store::get( 'token', $token );
 		if ( ! $data ) {
+			self::count_unknown_token( $token );
 			self::log_unknown_token( $token );
 			return null;
 		}
@@ -1366,6 +1380,25 @@ final class Server {
 			'user_id'   => (int) $data['user_id'],
 		);
 		return (int) $data['user_id'];
+	}
+
+	/**
+	 * Count an unknown or expired bearer token against the caller's address
+	 * (2.42.0; once per token per request: WordPress may ask who is signed in
+	 * twice). Past the limit Bearer_Authenticator answers 429.
+	 */
+	private static function count_unknown_token( string $token ): void {
+		$hash = hash( 'sha256', $token );
+		if ( isset( self::$bearer_counted[ $hash ] ) ) {
+			return;
+		}
+		self::$bearer_counted[ $hash ] = true;
+		self::$bearer_wait             = max( self::$bearer_wait, Rate_Limit::hit( 'bearer' ) );
+	}
+
+	/** Seconds this request's caller must wait after too many unknown tokens (0: not limited). */
+	public static function bearer_wait(): int {
+		return self::$bearer_wait;
 	}
 
 	/**
@@ -1473,7 +1506,9 @@ final class Server {
 
 	/** Tests that simulate several requests in one process. */
 	public static function forget_authenticated_client(): void {
-		self::$authenticated = null;
+		self::$authenticated  = null;
+		self::$bearer_wait    = 0;
+		self::$bearer_counted = array();
 	}
 
 	/**

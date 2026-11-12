@@ -51,6 +51,14 @@ final class Licence {
     /** A stored answer of more than this is not one the server sent. */
     private const MAX_PAYLOAD = 262144;
 
+    /**
+     * The most of an answer that is read (2.42.0): the largest payload fits
+     * even when every character of it is escaped (at most 3 times as long) and
+     * the signature is added. A longer answer is cut off, does not count, and is
+     * never held in memory whole.
+     */
+    private const MAX_RESPONSE = 1048576;
+
     /** Answers that can be stored as this site's licence. */
     private const STATUSES = [ 'valid', 'expired', 'revoked', 'unknown', 'seat_taken', 'not_activated', 'released' ];
 
@@ -206,17 +214,27 @@ final class Licence {
     /**
      * One call to the licence server.
      *
+     * 2.42.0: each call sends a fresh random "nonce". An answer whose signed
+     * payload carries a nonce counts only when it is this call's, so an old
+     * signed answer cannot be played back as the answer to this call. An answer
+     * without one (the server as it is today) is taken as before; the rule that
+     * an answer may not be older than the stored one still holds. At most
+     * MAX_RESPONSE bytes of the answer are read.
+     *
      * @return array{ok:true, answer:array, data:array}|array{ok:false, error:string, detail:string, retry_after:int}
      */
     private static function call( string $route, array $body ): array {
-        $response = wp_remote_post(
+        $nonce         = bin2hex( random_bytes( 16 ) );
+        $body['nonce'] = $nonce;
+        $response      = wp_remote_post(
             trailingslashit( self::server()['url'] ) . $route,
             [
-                'timeout'     => self::TIMEOUT,
-                'redirection' => 0,
-                'user-agent'  => 'VGC-AI-Nexus/' . self::nexus_version(),
-                'headers'     => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
-                'body'        => (string) wp_json_encode( $body ),
+                'timeout'             => self::TIMEOUT,
+                'redirection'         => 0,
+                'limit_response_size' => self::MAX_RESPONSE,
+                'user-agent'          => 'VGC-AI-Nexus/' . self::nexus_version(),
+                'headers'             => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
+                'body'                => (string) wp_json_encode( $body ),
             ]
         );
         if ( is_wp_error( $response ) ) {
@@ -234,10 +252,13 @@ final class Licence {
             $error = json_decode( $text, true );
             return self::failed( 'refused', is_array( $error ) ? sanitize_key( (string) ( $error['code'] ?? '' ) ) : 'HTTP ' . $code );
         }
-        $answer = json_decode( $text, true );
+        $answer = strlen( $text ) < self::MAX_RESPONSE ? json_decode( $text, true ) : null;
         $data   = is_array( $answer ) ? self::verified_data( $answer ) : null;
         if ( null === $data ) {
             return self::failed( 'not_verified', '' );
+        }
+        if ( array_key_exists( 'nonce', $data ) && ( ! is_string( $data['nonce'] ) || ! hash_equals( $nonce, $data['nonce'] ) ) ) {
+            return self::failed( 'not_verified', 'the answer is not for this request' );
         }
         return [
             'ok'     => true,

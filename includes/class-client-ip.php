@@ -49,6 +49,21 @@ final class Client_Ip {
         return $remote;
     }
 
+    /** REMOTE_ADDR in its plain form, or '' (2.42.0). */
+    public static function remote(): string {
+        return isset( $_SERVER['REMOTE_ADDR'] ) ? self::normal( (string) $_SERVER['REMOTE_ADDR'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+    }
+
+    /** Whether the site names this address as a proxy (filter mcp_abilities_trusted_proxies). 2.42.0. */
+    public static function is_trusted_proxy( string $ip ): bool {
+        $ip = self::normal( $ip );
+        if ( '' === $ip ) {
+            return false;
+        }
+        $trusted = (array) apply_filters( 'mcp_abilities_trusted_proxies', [], $ip );
+        return $trusted && self::in_list( $ip, $trusted );
+    }
+
     /** A valid address in its plain form, or ''. IPv4 inside IPv6 comes out as IPv4. */
     private static function normal( string $ip ): string {
         $ip = trim( $ip );

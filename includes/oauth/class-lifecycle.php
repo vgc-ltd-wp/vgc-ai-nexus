@@ -7,6 +7,7 @@
 
 namespace MCP_Abilities\OAuth;
 
+use MCP_Abilities\Connection_Approval;
 use MCP_Abilities\Connections;
 
 defined( 'ABSPATH' ) || exit;
@@ -25,6 +26,11 @@ defined( 'ABSPATH' ) || exit;
  *  - A token whose user or app is gone is refused and deleted too, and a
  *    user's codes and tokens are deleted as soon as the user is deleted,
  *    removed from the site, or given another role (they connect again).
+ *    Since 2.42.0 also when a role is added or removed (add_user_role,
+ *    remove_user_role: WP_User::add_role(), remove_role() and other plugins
+ *    that never call set_role()), and whatever ends a connection here also
+ *    resets its "require admin approval" record, so connecting again waits
+ *    for approval again while approval is on (a rejection stays).
  *  - An unused refresh token lives idle_days() (14, filter
  *    mcp_abilities_idle_days, 1–365), pushed forward on each use.
  *
@@ -56,6 +62,10 @@ final class Lifecycle {
 		add_action( 'deleted_user', array( self::class, 'on_deleted_user' ), 10, 1 );
 		add_action( 'remove_user_from_blog', array( self::class, 'on_removed_from_site' ), 10, 1 );
 		add_action( 'set_user_role', array( self::class, 'on_role_changed' ), 10, 3 );
+		// 2.42.0: a role added or taken away is a new role too. set_role() fires
+		// these as well; the second and third call find nothing left to remove.
+		add_action( 'add_user_role', array( self::class, 'on_role_added' ), 10, 2 );
+		add_action( 'remove_user_role', array( self::class, 'on_role_removed' ), 10, 2 );
 
 		if ( did_action( 'init' ) ) {
 			self::maybe_upgrade();
@@ -170,8 +180,9 @@ final class Lifecycle {
 	// ── Revoking ─────────────────────────────────────────────────────────────
 
 	/**
-	 * Delete a user's codes and tokens (of one app, or all) and their entries in
-	 * the list of connections. Logged when anything was removed.
+	 * Delete a user's codes and tokens (of one app, or all), their entries in
+	 * the list of connections and (2.42.0) their approval records, except a
+	 * rejection. Logged when anything was removed.
 	 *
 	 * @return int Rows removed.
 	 */
@@ -183,8 +194,14 @@ final class Lifecycle {
 		if ( class_exists( Connections::class ) ) {
 			Connections::forget_oauth( $user_id, $client_id );
 		}
+		// Whether or not a token was still there: an "approved" record left
+		// behind would let the next sign-in of this app and user straight through.
+		$a = class_exists( Connection_Approval::class ) ? Connection_Approval::forget_oauth( $user_id, $client_id ) : 0;
 		if ( $n > 0 ) {
 			Server::log( sprintf( 'removed %d code(s)/token(s) of user_id=%d%s: %s', $n, $user_id, null !== $client_id ? ' client=' . $client_id : '', $why ) );
+		}
+		if ( $a > 0 ) {
+			Server::log( sprintf( 'reset the approval of %d connection(s) of user_id=%d%s: %s; connecting again waits for approval while it is required', $a, $user_id, null !== $client_id ? ' client=' . $client_id : '', $why ) );
 		}
 		return $n;
 	}
@@ -232,6 +249,27 @@ final class Lifecycle {
 			return;
 		}
 		self::revoke( (int) $user_id, null, sprintf( 'role changed from %s to %s', implode( ',', $old_roles ), (string) $role ) );
+	}
+
+	/**
+	 * add_user_role (2.42.0). A new account gets its first role this way too;
+	 * it has nothing to revoke, so nothing is logged for it.
+	 *
+	 * @param int    $user_id
+	 * @param string $role
+	 */
+	public static function on_role_added( $user_id, $role = '' ): void {
+		self::revoke( (int) $user_id, null, sprintf( 'role %s added', (string) $role ) );
+	}
+
+	/**
+	 * remove_user_role (2.42.0).
+	 *
+	 * @param int    $user_id
+	 * @param string $role
+	 */
+	public static function on_role_removed( $user_id, $role = '' ): void {
+		self::revoke( (int) $user_id, null, sprintf( 'role %s removed', (string) $role ) );
 	}
 
 	// ── Upgrade steps ────────────────────────────────────────────────────────

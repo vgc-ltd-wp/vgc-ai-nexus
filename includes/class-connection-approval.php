@@ -410,6 +410,33 @@ final class Connection_Approval {
         return true;
     }
 
+    /**
+     * A user's claude.ai connection ended (role changed, Disconnect, Revoke,
+     * a reused refresh token, user removed): its record goes with it, so the
+     * next sign-in of that app and user is held again while approval is on.
+     * A rejection stays: an administrator's "no" outlives a reconnect. 2.42.0.
+     *
+     * @param string|null $client_id One app, or all of the user's.
+     * @return int Records removed.
+     */
+    public static function forget_oauth( int $user_id, ?string $client_id = null ): int {
+        $records = self::records();
+        $removed = 0;
+        foreach ( $records as $key => $r ) {
+            if ( is_array( $r ) && 'oauth' === ( $r['auth'] ?? '' ) && (int) ( $r['user_id'] ?? 0 ) === $user_id
+                && ( null === $client_id || (string) ( $r['client_id'] ?? '' ) === $client_id )
+                && 'rejected' !== ( $r['status'] ?? '' ) ) {
+                unset( $records[ $key ] );
+                ++$removed;
+            }
+        }
+        if ( $removed > 0 ) {
+            self::save( $records );
+            self::$state = null;
+        }
+        return $removed;
+    }
+
     public static function pending_count(): int {
         return count( array_filter( self::records(), static fn( $r ) => is_array( $r ) && 'pending' === ( $r['status'] ?? '' ) ) );
     }

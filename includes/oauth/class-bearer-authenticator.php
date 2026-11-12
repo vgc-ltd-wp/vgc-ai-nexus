@@ -25,6 +25,7 @@ final class Bearer_Authenticator {
 	public static function init(): void {
 		add_filter( 'determine_current_user',    array( self::class, 'authenticate' ), 20 );
 		add_filter( 'rest_authentication_errors', array( self::class, 'suppress_auth_error' ), 20 );
+		add_filter( 'rest_post_dispatch',         array( self::class, 'retry_after' ), 100, 3 );
 	}
 
 	public static function authenticate( $user_id ) {
@@ -65,6 +66,32 @@ final class Bearer_Authenticator {
 		$auth = Server::authenticated_client();
 		if ( null !== $auth && is_user_logged_in() && get_current_user_id() === (int) $auth['user_id'] ) {
 			return true;
+		}
+		// 2.42.0: too many unknown tokens from this address. Only a request whose
+		// own token was not accepted (and that nothing else signed in) gets it.
+		$wait = Server::bearer_wait();
+		if ( $wait > 0 && null === $auth && ! is_user_logged_in() ) {
+			return new \WP_Error(
+				'mcp_abilities_too_many_tokens',
+				/* translators: %d: seconds */
+				sprintf( __( 'Too many requests with an unknown or expired token from this address. Try again in %d seconds.', 'mcp-abilities' ), $wait ),
+				array( 'status' => 429 )
+			);
+		}
+		return $result;
+	}
+
+	/**
+	 * rest_post_dispatch: the 429 above says when to try again.
+	 *
+	 * @param mixed $result
+	 * @param mixed $server
+	 * @param mixed $request
+	 * @return mixed
+	 */
+	public static function retry_after( $result, $server = null, $request = null ) {
+		if ( $result instanceof \WP_HTTP_Response && 429 === $result->get_status() && Server::bearer_wait() > 0 ) {
+			$result->header( 'Retry-After', (string) Server::bearer_wait() );
 		}
 		return $result;
 	}

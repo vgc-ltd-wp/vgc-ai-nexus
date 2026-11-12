@@ -20,6 +20,11 @@ defined( 'ABSPATH' ) || exit;
  * The address comes from Client_Ip: REMOTE_ADDR, as X-Forwarded-For can be set
  * by the caller, unless the site names its proxies. Since 2.39.0 an IPv6
  * caller is counted by its /64 network (bucket()).
+ *
+ * Since 2.42.0 also 'bearer': MCP requests with a bearer token that is not
+ * (or no longer) known. Past the limit they get 429 instead of 401; a valid
+ * token from the same address is never refused for it. Past the limit a
+ * counter is not written again until its window ends.
  */
 final class Rate_Limit {
 
@@ -29,6 +34,7 @@ final class Rate_Limit {
 	const LIMITS = array(
 		'register' => array( 30, 3600 ),
 		'token'    => array( 60, 60 ),
+		'bearer'   => array( 30, 60 ),
 	);
 
 	/**
@@ -42,13 +48,17 @@ final class Rate_Limit {
 		 * Filters an OAuth endpoint's limit per address.
 		 *
 		 * @param array{0:int,1:int}|null $limit  [ requests, window in seconds ]; 0 requests turns the limit off.
-		 * @param string                  $bucket 'register' or 'token'.
+		 * @param string                  $bucket 'register', 'token' or 'bearer' (unknown bearer tokens, 2.42.0).
 		 */
 		$limit = apply_filters( 'mcp_abilities_oauth_rate_limit', $limit, $bucket );
 		if ( ! is_array( $limit ) || (int) ( $limit[0] ?? 0 ) <= 0 || (int) ( $limit[1] ?? 0 ) <= 0 ) {
 			return 0;
 		}
 		[ $max, $window ] = array( (int) $limit[0], (int) $limit[1] );
+
+		// Behind a CDN that the site has not named, every caller shares the
+		// CDN's address and so one counter; administrators are told (2.42.0).
+		Proxy_Hint::note();
 
 		// An IPv6 caller is counted by its /64: one machine usually has a whole
 		// /64 to itself and can change the rest of its address at will (2.39.0).
@@ -61,7 +71,11 @@ final class Rate_Limit {
 		}
 		++$hit['n'];
 		$wait = max( 1, (int) $hit['until'] - $now );
-		set_transient( $key, $hit, $wait );
+		if ( $hit['n'] <= $max + 1 ) {
+			// Past the limit the answer is the same until the window ends: no
+			// database write for every refused request of a flood (2.42.0).
+			set_transient( $key, $hit, $wait );
+		}
 
 		if ( $hit['n'] <= $max ) {
 			return 0;

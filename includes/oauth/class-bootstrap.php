@@ -55,6 +55,8 @@ final class Bootstrap {
 		// role change or removal from the site ends them, and the 2.39.0 upgrade
 		// steps run (Lifecycle).
 		Lifecycle::init();
+		// A proxy or CDN the site has not named: administrators are told (2.42.0).
+		Proxy_Hint::init();
 
 		$connector = self::connector_version();
 		if ( null !== $connector && version_compare( $connector, '1.4.0', '<' ) ) {
