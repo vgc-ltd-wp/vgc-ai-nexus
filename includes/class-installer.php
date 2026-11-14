@@ -67,6 +67,10 @@ class Installer {
             self::uninstall_site( $connector );
         }
 
+        // 2.44.0: the refused updates the admin notice shows; a site transient, so
+        // one for the whole network.
+        delete_site_transient( Update_Refusals::STORE );
+
         // User meta is one table for the whole network. Sessions are only worth
         // keeping for another plugin's copy of the adapter that is running now.
         $other_adapter = defined( 'WP_MCP_VERSION' ) && empty( $GLOBALS['mcp_abilities_adapter']['ours'] );

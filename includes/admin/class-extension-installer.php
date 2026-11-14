@@ -135,8 +135,9 @@ class Extension_Installer {
         $name = (string) ( $catalog[ $slug ]['name'] ?? $slug );
 
         // Only from the update channel, from an entry with a sha256 and a valid signature
-        // (or, during the transition, none), and matching that sha256. Fails closed:
-        // a check that throws refuses the install (since 2.43.0).
+        // (an unsigned one is refused since 2.44.0), and matching that sha256. Fails
+        // closed: a check that throws refuses the install (since 2.43.0). The refusal is
+        // shown right here, so it is not recorded for the update notice.
         $guarded = true;
         try {
             $guarded = \MCP_Abilities\Package_Guard::enabled( $package, $slug );

@@ -26,9 +26,11 @@ defined( 'ABSPATH' ) || exit;
  *   }
  *
  * An entry is offered, linked and downloaded only when Package_Guard::entry_error()
- * accepts it (address on the channel, a sha256, a signature that verifies or, during
- * the transition, none), and the download must match the sha256. When the check
- * itself fails, nothing is offered or downloaded.
+ * accepts it (address on the channel, a sha256, a signature that verifies; an
+ * unsigned entry is refused since 2.44.0), and the download must match the sha256.
+ * When the check itself fails, nothing is offered or downloaded. Since 2.44.0 an
+ * update refused for its channel entry is recorded for an admin notice
+ * (Update_Refusals), and the record goes when the entry is accepted again.
  *
  * Usage (from the plugin's main file; the extensions create it on plugins_loaded):
  *   new \MCP_Abilities\VGC_Plugin_Updater( __FILE__, 'vgc-ai-nexus', '2.11.1', $manifest_url );
@@ -99,6 +101,7 @@ class VGC_Plugin_Updater {
                 $info = $this->fresh_entry();
             }
             $refused = Package_Guard::entry_error( $this->slug, $info, $package, $name );
+            $this->note_outcome( $info, $refused );
             if ( null !== $refused ) {
                 return $refused;
             }
@@ -141,11 +144,36 @@ class VGC_Plugin_Updater {
             return false;
         }
         try {
-            return ! Package_Guard::enabled( $package, $this->slug )
-                || null === Package_Guard::entry_error( $this->slug, $info, $package, $this->name_of( $info ) );
+            if ( ! Package_Guard::enabled( $package, $this->slug ) ) {
+                return true;
+            }
+            $refused = Package_Guard::entry_error( $this->slug, $info, $package, $this->name_of( $info ) );
         } catch ( \Throwable $e ) {
             Package_Guard::check_failed( $e, $this->slug, $this->name_of( $info ) );
             return false;
+        }
+        $this->note_outcome( $info, $refused );
+        return null === $refused;
+    }
+
+    /**
+     * For the admin notice (since 2.44.0): a refusal of the channel's entry is
+     * recorded, an accepted entry clears its record. Never changes the decision, and
+     * never stops it: whatever goes wrong here is swallowed.
+     *
+     * @param array<string,mixed> $info    The manifest entry that was checked.
+     * @param \WP_Error|null      $refused Package_Guard's answer.
+     */
+    private function note_outcome( array $info, ?\WP_Error $refused ): void {
+        try {
+            if ( null === $refused ) {
+                Update_Refusals::clear( $this->slug );
+                return;
+            }
+            $version = is_scalar( $info['version'] ?? null ) ? (string) $info['version'] : '';
+            Update_Refusals::record( $this->slug, $this->basename, $this->version, $version, $refused );
+        } catch ( \Throwable $e ) {
+            // The notice is a courtesy; the check has already decided.
         }
     }
 

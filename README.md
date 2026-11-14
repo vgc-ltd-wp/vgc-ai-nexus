@@ -200,7 +200,7 @@ Key protections:
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
-- **Package checks** — AI Nexus's own update, its extensions' updates and the extension installer accept packages only from the VGC update channel, only with VGC's signature on the channel entry (checked with a key built into the plugin; unsigned entries are still accepted until 2.44.0), and only when the download matches the entry's SHA-256
+- **Package checks** — AI Nexus's own update, its extensions' updates and the extension installer accept packages only from the VGC update channel, only with VGC's signature on the channel entry (checked with a key built into the plugin; an unsigned entry is refused since 2.44.0), and only when the download matches the entry's SHA-256; an update refused for its channel entry is named in a notice on the Plugins and Updates screens
 - **Clean uninstall** — deleting the plugin (never deactivating) revokes the Application Passwords the Connect page made and removes its data on every site of a network, keeping what a still-installed legacy connector needs and the audit trail of what an AI changed
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
 - **Other plugins' AI tools** — read-only mode also covers the AI tools other plugins add (WooCommerce, AIOSEO and others), on every MCP server and on WordPress's Abilities REST route; **AI Nexus → Other AI tools** lists every other MCP server, AI tool and MCP-like address on the site and lets an administrator turn each one off, or keep new ones off until they are switched on
@@ -212,6 +212,14 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.44.0
+
+Security review of 2026-11-10, finding C4, second step: only signed updates. Nothing that was refused before is allowed now.
+
+- **Unsigned updates are refused.** An AI Nexus or extension update whose entry in the VGC update channel carries no VGC signature is no longer offered, linked or downloaded, and the Extensions page will not install it. Every current entry is signed, so nothing changes for a site that updates normally. `MCP_ABILITIES_REQUIRE_SIGNED_UPDATES` is no longer needed; setting it to `false` does not turn this off.
+- **Said on screen.** When an update is refused because of its channel entry (not signed, a signature that does not check out, no SHA-256 checksum), a notice on the Plugins and Updates screens and on AI Nexus's pages names the plugin, the version and the reason, and says that nothing was installed. Only people who can update plugins see it. It goes away by itself once VGC publishes the update correctly or that version is installed. Before, only the PHP error log said why an update did not appear.
+- Administrators who must switch the checks off (for example for a private mirror) still can, only with the `mcp_abilities_verify_packages` filter.
 
 ### 2.43.0
 

@@ -23,10 +23,13 @@ defined( 'ABSPATH' ) || exit;
  *    longer put a package on a site. An entry with a signature that does not verify
  *    (a key this site does not know, a changed slug, version, address or hash, another
  *    format) is not offered as an update, gets no download link and is not downloaded.
- *  - An entry without a signature is the transition. 2.43.0 still accepts it (and logs
- *    that once per plugin and version) unless MCP_ABILITIES_REQUIRE_SIGNED_UPDATES is
- *    true. 2.44.0 sets REQUIRE_SIGNATURE to true and refuses every unsigned entry.
+ *  - An entry without a signature is refused the same way (since 2.44.0, on every
+ *    site; 2.43.0 still accepted it for a short transition).
  *  - The downloaded file must match the sha256, or it is deleted and nothing is installed.
+ *
+ * What the update list and the downloads refuse for the channel's own entry (unsigned,
+ * a bad signature, no hash, a package the entry does not name) is also said on screen
+ * since 2.44.0: see Update_Refusals.
  *
  * Fail closed (since 2.43.0): only a check that passes lets a package through. When
  * the check itself fails (this code throws, sodium is missing), the download is
@@ -59,12 +62,12 @@ final class Package_Guard {
     ];
 
     /**
-     * Whether an entry without a signature is refused. False in 2.43.0, the first
-     * release of the transition: unsigned entries are still accepted and logged.
-     * 2.44.0 flips this to true. A site can refuse them before that with
-     * define( 'MCP_ABILITIES_REQUIRE_SIGNED_UPDATES', true ).
+     * Whether an entry without a signature is refused: true since 2.44.0, for every
+     * site. (2.43.0, the transition, had false: unsigned entries were accepted and
+     * logged.) Not a switch: entry_error() refuses an unsigned entry whatever this
+     * says, so no change of a constant can let one through again.
      */
-    public const REQUIRE_SIGNATURE = false;
+    public const REQUIRE_SIGNATURE = true;
 
     /** What has been logged lately (key => time), so each finding is logged once. */
     public const NOTES = 'mcp_abilities_update_notes';
@@ -154,9 +157,15 @@ final class Package_Guard {
         return $keys;
     }
 
-    /** Whether an entry without a signature is refused (see REQUIRE_SIGNATURE). */
+    /**
+     * Whether an entry without a signature is refused: always, since 2.44.0.
+     * MCP_ABILITIES_REQUIRE_SIGNED_UPDATES, 2.43.0's way to refuse them before
+     * everyone did, is redundant now; defined as false it does NOT turn the
+     * requirement off. The only way past the checks is the escape filter
+     * mcp_abilities_verify_packages, which switches all of them off.
+     */
     public static function signature_required(): bool {
-        return self::REQUIRE_SIGNATURE || ( defined( 'MCP_ABILITIES_REQUIRE_SIGNED_UPDATES' ) && MCP_ABILITIES_REQUIRE_SIGNED_UPDATES );
+        return true;
     }
 
     /** The exact bytes VGC signs for one entry. */
@@ -206,8 +215,10 @@ final class Package_Guard {
 
     /**
      * Whether a manifest entry may give this package, or why not: the address is on
-     * the channel and is the entry's own, the entry gives a sha256, and its signature
-     * verifies (or, during the transition, it has none). Refusals are logged once.
+     * the channel and is the entry's own, the entry gives a sha256, and it carries a
+     * signature that verifies (an unsigned entry is refused since 2.44.0). Refusals
+     * are logged once. A signature refusal carries what is wrong with it as the
+     * error's data 'detail', in plain text.
      *
      * @param string $slug    The plugin's slug (its key in the manifest).
      * @param mixed  $entry   The plugin's manifest entry.
@@ -240,16 +251,14 @@ final class Package_Guard {
                 $label
             ) );
         }
+        // Since 2.44.0 an entry without a signature is refused on every site, whatever
+        // REQUIRE_SIGNATURE or MCP_ABILITIES_REQUIRE_SIGNED_UPDATES say.
         if ( null === ( $entry['sig'] ?? null ) ) {
-            if ( self::signature_required() ) {
-                return self::refuse( 'mcp_abilities_package_unsigned', $slug, $version, sprintf(
-                    /* translators: %s: plugin name */
-                    __( '%s was not installed: its entry in the VGC update channel is not signed, and this site accepts only signed updates. Nothing on the site was changed. Tell VGC.', 'mcp-abilities' ),
-                    $label
-                ) );
-            }
-            self::note_once( 'unsigned|' . $slug . '|' . $version, sprintf( 'the VGC update channel\'s entry for %s %s is not signed; accepted during the transition (AI Nexus 2.44.0 refuses unsigned entries).', $slug, $version ) );
-            return null;
+            return self::refuse( 'mcp_abilities_package_unsigned', $slug, $version, sprintf(
+                /* translators: %s: plugin name */
+                __( '%s was not installed: its entry in the VGC update channel is not signed, and this site accepts only signed updates. Nothing on the site was changed. Tell VGC.', 'mcp-abilities' ),
+                $label
+            ) );
         }
         $problem = self::signature_problem( $slug, $entry );
         if ( null !== $problem ) {
@@ -258,7 +267,7 @@ final class Package_Guard {
                 __( '%1$s was not installed: its entry in the VGC update channel does not carry a valid VGC signature (%2$s). Nothing on the site was changed. Tell VGC.', 'mcp-abilities' ),
                 $label,
                 $problem
-            ) );
+            ), $problem );
         }
         return null;
     }
@@ -342,10 +351,14 @@ final class Package_Guard {
         );
     }
 
-    /** A refusal, logged once per plugin, version and reason. */
-    private static function refuse( string $code, string $slug, string $version, string $message ): \WP_Error {
+    /**
+     * A refusal, logged once per plugin, version and reason. $detail (plain text, for
+     * a signature refusal: what is wrong with it) goes with the error as data, for the
+     * on-screen notice (Update_Refusals).
+     */
+    private static function refuse( string $code, string $slug, string $version, string $message, string $detail = '' ): \WP_Error {
         self::note_once( $code . '|' . $slug . '|' . $version, sprintf( 'refused %s %s from the update channel (%s). %s', $slug, $version, $code, wp_strip_all_tags( $message ) ) );
-        return new \WP_Error( $code, $message );
+        return new \WP_Error( $code, $message, '' !== $detail ? [ 'detail' => $detail ] : '' );
     }
 
     /**

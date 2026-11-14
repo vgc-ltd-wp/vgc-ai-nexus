@@ -3,7 +3,7 @@
  * Plugin Name:       VGC AI Nexus
  * Plugin URI:        https://tools.vgc-ltd.com
  * Description:       The AI management layer for WordPress. A single plugin: it bundles the MCP (Model Context Protocol) server and exposes your site's content, users, settings and menus as tools so AI agents can read, create, update and delete data through a secure, permission-controlled interface — connect Claude with an Application Password. Extend with VGC AI Nexus add-ons for WooCommerce, WPML, Avada and more.
- * Version:           2.43.0
+ * Version:           2.44.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            VGC
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────
-define( 'MCP_ABILITIES_VERSION',     '2.43.0' );
+define( 'MCP_ABILITIES_VERSION',     '2.44.0' );
 define( 'MCP_ABILITIES_FILE',        __FILE__ );
 define( 'MCP_ABILITIES_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MCP_ABILITIES_URL',         plugin_dir_url( __FILE__ ) );
@@ -108,6 +108,12 @@ new \MCP_Abilities\VGC_Plugin_Updater(
 
 // AI Nexus's and its extensions' icons on the WordPress Updates screen.
 add_filter( 'site_transient_update_plugins', [ \MCP_Abilities\Icons::class, 'add_update_icons' ], 20 );
+
+// 2.44.0: an update refused because of its entry in the update channel (unsigned, a
+// bad signature, no checksum) is said on the Plugins and Updates screens and AI
+// Nexus's pages, not only in the PHP error log. Not tied to the MCP adapter loading.
+add_action( 'admin_notices', [ \MCP_Abilities\Update_Refusals::class, 'admin_notice' ] );
+add_action( 'network_admin_notices', [ \MCP_Abilities\Update_Refusals::class, 'admin_notice' ] );
 
 // ── OPcache self-heal ────────────────────────────────────────────────────────
 // Some hosts (SiteGround) run OPcache without timestamp validation, so after an
