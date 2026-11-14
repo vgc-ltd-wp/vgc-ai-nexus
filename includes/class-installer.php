@@ -116,6 +116,8 @@ class Installer {
             Security_Status::PROBE_TRANSIENT,
             // This plugin's manifest cache only: every other VGC plugin has its own vgc_upd_*.
             'vgc_upd_' . md5( plugin_basename( MCP_ABILITIES_DIR . 'vgc-ai-nexus.php' ) ),
+            // 2.43.0: what the package check has logged lately.
+            Package_Guard::NOTES,
         ] as $transient ) {
             delete_transient( $transient );
         }

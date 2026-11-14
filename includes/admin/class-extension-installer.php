@@ -9,6 +9,8 @@ defined( 'ABSPATH' ) || exit;
  * Reads a PUBLIC curated list (extensions.json) — only slugs on that list can be
  * installed — and resolves each download URL from the same public update manifest
  * (plugins.json). Installs via WordPress's own Plugin_Upgrader. No arbitrary URLs.
+ * The manifest entry must pass \MCP_Abilities\Package_Guard (channel address, a
+ * sha256, VGC's signature) and the download must match its sha256.
  */
 class Extension_Installer {
 
@@ -29,11 +31,13 @@ class Extension_Installer {
         $catalog  = (array) $this->fetch_json( self::CATALOG_URL );
         $manifest = (array) $this->fetch_json( self::MANIFEST_URL );
 
-        // Merge in version + download_url from the update manifest.
+        // Merge in version + download_url, the hash and the signature from the update
+        // manifest. A signature comes only from there, never from the catalog.
         foreach ( $catalog as $slug => &$entry ) {
             $entry['version']      = $manifest[ $slug ]['version'] ?? '';
             $entry['download_url'] = $manifest[ $slug ]['download_url'] ?? '';
             $entry['sha256']       = $manifest[ $slug ]['sha256'] ?? '';
+            $entry['sig']          = $manifest[ $slug ]['sig'] ?? null;
         }
         unset( $entry );
 
@@ -130,13 +134,18 @@ class Extension_Installer {
         }
         $name = (string) ( $catalog[ $slug ]['name'] ?? $slug );
 
-        // Only from the update channel, and matching the manifest's sha256 if it gives one.
-        $guarded = \MCP_Abilities\Package_Guard::enabled( $package, $slug );
-        if ( $guarded ) {
-            $refused = \MCP_Abilities\Package_Guard::url_error( $package, $name );
-            if ( null !== $refused ) {
-                wp_send_json_error( [ 'message' => $refused->get_error_message() ] );
-            }
+        // Only from the update channel, from an entry with a sha256 and a valid signature
+        // (or, during the transition, none), and matching that sha256. Fails closed:
+        // a check that throws refuses the install (since 2.43.0).
+        $guarded = true;
+        try {
+            $guarded = \MCP_Abilities\Package_Guard::enabled( $package, $slug );
+            $refused = $guarded ? \MCP_Abilities\Package_Guard::entry_error( $slug, $source, $package, $name ) : null;
+        } catch ( \Throwable $e ) {
+            $refused = \MCP_Abilities\Package_Guard::check_failed( $e, $slug, $name );
+        }
+        if ( null !== $refused ) {
+            wp_send_json_error( [ 'message' => $refused->get_error_message() ] );
         }
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -150,15 +159,14 @@ class Extension_Installer {
         // This one download only. The skin keeps no errors, so the refusal is kept
         // here: the message below would otherwise blame the file system.
         $download_error = null;
-        $check          = static function ( $reply, $url, $running = null ) use ( $package, $name, $source, &$download_error ) {
+        $check          = static function ( $reply, $url, $running = null ) use ( $package, $name, $slug, $source, &$download_error ) {
             if ( false !== $reply || $url !== $package ) {
                 return $reply;
             }
             try {
                 $file = \MCP_Abilities\Package_Guard::download( $package, (string) ( $source['sha256'] ?? '' ), $name, $running );
             } catch ( \Throwable $e ) {
-                error_log( 'AI Nexus: the package check stopped with ' . get_class( $e ) . ': ' . $e->getMessage() . '; WordPress downloads the extension itself.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-                return $reply;
+                $file = \MCP_Abilities\Package_Guard::check_failed( $e, $slug, $name );
             }
             if ( is_wp_error( $file ) ) {
                 $download_error = $file;

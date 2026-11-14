@@ -397,22 +397,29 @@ When `REMOTE_ADDR` is on that list, `X-Forwarded-For` is read from the right and
 
 ---
 
-## Updates and Packages (since 2.37.0)
+## Updates and Packages (since 2.37.0; signed since 2.43.0)
 
-WordPress verifies nothing for a plugin that does not come from wordpress.org. For AI Nexus's own update and for the one-click extension install (`includes/class-package-guard.php`):
+WordPress verifies nothing for a plugin that does not come from wordpress.org. For AI Nexus's own update, the updates of its extensions (they use core's updater, `\MCP_Abilities\VGC_Plugin_Updater`, when core is active) and the one-click extension install (`includes/class-package-guard.php`):
 
 - **The package address** must start with `https://github.com/vgc-ltd-wp/vgc-plugin-updates/releases/download/`. GitHub redirects the download to another host, so it is this first address that is checked and then the file's hash, not where the file ends up coming from. `..` and encoded slashes in the address are refused.
-- **When the update manifest gives a `sha256`**, the downloaded file must match it, or it is deleted and nothing is installed, with a message that shows both hashes. An entry without a `sha256` still installs, and so does one with a malformed value.
-- **A cached hash older than a re-published package** does not stop the update: on a mismatch the manifest is read again, and its current hash decides.
-- Only an address off the list or a hash that does not match refuses. If the check itself fails, WordPress downloads the package itself and the error log says so.
+- **The package must be the one the manifest entry names, and the entry must give its `sha256`** (since 2.43.0). An entry without a `sha256`, or with a malformed one, is refused; before 2.43.0 it installed unchecked.
+- **The entry's signature (since 2.43.0, security review 2026-11-10 C4).** Each entry carries `"sig": { "v": 1, "alg": "ed25519", "kid": "2eb03b18afeb32d2", "value": "<base64>" }`: a detached Ed25519 signature, made with VGC's update-signing key, over the exact bytes `"vgc-plugin-update\nv1\n" . slug . "\n" . version . "\n" . download_url . "\n" . lower-case sha256` (UTF-8, no trailing newline). The public key is pinned in the code (`Package_Guard::SIGNING_KEYS`, key id `2eb03b18afeb32d2` = the first 16 hex characters of the key's sha256). The private key is not in the update repository. An entry whose signature does not verify (a key the site does not know, any of slug, version, address or hash changed, another `v` or `alg`, a malformed value) is not offered as an update, gets no download link under "View details", is refused at download (`upgrader_pre_download`) and by the extension installer, with a clear message.
+- **Entries without a signature: the transition.** 2.43.0 is the first release of a short transition: an unsigned entry is still accepted, and the log says so once per plugin and version. A site can refuse unsigned entries now with `define( 'MCP_ABILITIES_REQUIRE_SIGNED_UPDATES', true );` in `wp-config.php`. 2.44.0 sets `Package_Guard::REQUIRE_SIGNATURE` to true and refuses every unsigned entry.
+- **The downloaded file** must match the `sha256`, or it is deleted and nothing is installed, with a message that shows both hashes.
+- **A cached hash older than a re-published package** does not stop the update: on a mismatch the manifest is read again, and its current entry decides, if its signature verifies.
+- **Fail closed (since 2.43.0).** Only a check that passes lets a package through. If the check itself fails (the code throws, sodium is missing), the update or install is refused with an error and the log says why. Before 2.43.0 WordPress then downloaded the package unchecked.
+- Refusals are logged once a week per plugin, version and reason (WordPress reads its update list on every admin page, so the offer is checked often).
 
-Filters: `mcp_abilities_verify_packages` (bool, `$package`, `$slug`; false skips both checks: the way out for a site this wrongly stops) and `mcp_abilities_package_url_prefixes` (where packages may come from, for a site with a mirror).
+Filters:
+- `mcp_abilities_verify_packages` (bool, `$package`, `$slug`): false switches off every check for that package: address, entry, hash and signature. This is an administrator's way out for a site the checks wrongly stop; it works as before and also turns off the signature check.
+- `mcp_abilities_package_url_prefixes`: where packages may come from, for a site with a mirror.
+- `mcp_abilities_update_signing_keys` (array, the pinned keys): for tests only. It may **add** keys (key id => base64 public key, the id must be the key's own); it can never remove or replace a pinned key. This opens nothing new: code that can add a filter can already run any PHP, and can switch the checks off.
 
-**What this protects against:** a poisoned WordPress update cache pointing at another address, a manifest entry pointing away from the channel, and a package changed in storage or on its way.
+**What this protects against:** a poisoned WordPress update cache pointing at another address, a manifest entry pointing away from the channel, a package changed in storage or on its way, and, since 2.43.0, a changed manifest: whoever can write to the update repository can no longer put a package on sites without VGC's signing key.
 
-**What it does not protect against:** a compromise of the update repository itself. The hash is in the same manifest as the address, in the same public repository, so whoever can change the zip can change the hash too. That needs a signature made with a key the repository does not hold.
+**What it does not protect against:** a stolen signing key (a new key would be pinned in a release, and the old one removed); an old, validly signed package offered again (the version must still be newer than the installed one to be offered); unsigned entries until 2.44.0, unless the site sets `MCP_ABILITIES_REQUIRE_SIGNED_UPDATES`.
 
-**What it does not cover:** updates of the extensions and other VGC plugins, which run their own copy of the updater, and a zip someone uploads by hand or installs with `wp plugin install <url>`. Extension installs are only checked against a hash where the manifest gives one.
+**What it does not cover:** other VGC plugins, which run their own copy of the updater; extensions while core is inactive (they fall back to their bundled updater); and a zip someone uploads by hand or installs with `wp plugin install <url>`.
 
 **"Check again" (since 2.39.0).** Core's updater skips its one-hour manifest cache for `?force-check=1` only for a user with `update_plugins`, on the Updates or Plugins screen. Before, any visitor could add it to a request that runs `admin_init` (`admin-post.php`, and `admin-ajax.php` where WordPress or a plugin reads the update list there) and make the site fetch the manifest every time. The extensions' own copies of the updater get the same change with their next releases.
 
@@ -471,7 +478,7 @@ This prevents the AI from silently failing or guessing workarounds, and allows i
 ## What the Plugin Cannot Protect Against
 
 - **A compromised administrator account** — if an attacker gains admin credentials, the `manage_options` cap check passes legitimately.
-- **A compromised update repository** — see [Updates and Packages](#updates-and-packages-since-2370).
+- **A stolen update-signing key** — since 2.43.0 a compromised update repository alone is not enough; see [Updates and Packages](#updates-and-packages-since-2370-signed-since-2430).
 - **A misconfigured allowlist** — if you enable User Management and connect an administrator account to the AI, the AI can manage users as that administrator would.
 - **PHP file execution via uploads** — `upload_file` blocks `.php` MIME types, but WordPress's own upload restrictions should also be in place as a second layer.
 - **An MCP endpoint another plugin serves itself**, outside the MCP adapter — AI Nexus cannot see or limit its tools; AI Nexus → Other AI tools can only switch its address off. See [Other Plugins' AI Tools](#other-plugins-ai-tools-and-mcp-servers-since-2380).

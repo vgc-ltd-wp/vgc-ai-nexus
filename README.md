@@ -200,7 +200,7 @@ Key protections:
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
-- **Package checks** — AI Nexus's own update and the extension installer accept packages only from the VGC update channel, and verify the manifest's SHA-256 where it gives one
+- **Package checks** — AI Nexus's own update, its extensions' updates and the extension installer accept packages only from the VGC update channel, only with VGC's signature on the channel entry (checked with a key built into the plugin; unsigned entries are still accepted until 2.44.0), and only when the download matches the entry's SHA-256
 - **Clean uninstall** — deleting the plugin (never deactivating) revokes the Application Passwords the Connect page made and removes its data on every site of a network, keeping what a still-installed legacy connector needs and the audit trail of what an AI changed
 - **Disabled tools return errors** — if a tool group is disabled, the AI receives a clear message explaining how to re-enable it rather than a silent failure
 - **Other plugins' AI tools** — read-only mode also covers the AI tools other plugins add (WooCommerce, AIOSEO and others), on every MCP server and on WordPress's Abilities REST route; **AI Nexus → Other AI tools** lists every other MCP server, AI tool and MCP-like address on the site and lets an administrator turn each one off, or keep new ones off until they are switched on
@@ -212,6 +212,17 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.43.0
+
+Security review of 2026-11-10, finding C4: updates are signed. Nothing that was refused before is allowed now.
+
+- **Signed updates.** Every AI Nexus and extension entry in the VGC update channel now carries VGC's signature, made with a key that is not kept in the update repository. AI Nexus checks it with a public key built into the plugin. An update whose signature does not check out is not shown on the Updates screen, has no download link under "View details", and is refused if WordPress tries to download it; the Extensions page refuses to install it. So someone who gets write access to the update repository can no longer push a package to your site.
+- **Extensions too.** Extension updates go through the same check when AI Nexus is active.
+- **A checksum is required.** An update or extension without a SHA-256 checksum in the channel is refused (it used to install unchecked).
+- **Fails safe.** If the check itself breaks, the update is refused with a message instead of being installed unchecked.
+- **Transition.** Updates without a signature are still accepted in this version and noted in the PHP error log. To refuse them already, add `define( 'MCP_ABILITIES_REQUIRE_SIGNED_UPDATES', true );` to `wp-config.php`. The next version (2.44.0) refuses them for everyone.
+- Administrators who must switch the checks off (for example for a private mirror) still can with the `mcp_abilities_verify_packages` filter; it now turns off the signature check too.
 
 ### 2.42.0
 

@@ -17,14 +17,20 @@ defined( 'ABSPATH' ) || exit;
  *       "name": "VGC AI Nexus",
  *       "version": "2.11.1",
  *       "download_url": "https://.../vgc-ai-nexus-2.11.1.zip",
- *       "sha256": "<hash of the zip, optional>",
+ *       "sha256": "<hash of the zip, required since 2.43.0>",
+ *       "sig": { "v": 1, "alg": "ed25519", "kid": "...", "value": "..." },
  *       "requires": "6.0", "requires_php": "8.0", "tested": "6.7",
  *       "last_updated": "2026-06-30", "homepage": "https://tools.vgc-ltd.com",
  *       "sections": { "changelog": "<h4>2.11.1</h4>..." }
  *     }
  *   }
  *
- * Usage (from the plugin's main file):
+ * An entry is offered, linked and downloaded only when Package_Guard::entry_error()
+ * accepts it (address on the channel, a sha256, a signature that verifies or, during
+ * the transition, none), and the download must match the sha256. When the check
+ * itself fails, nothing is offered or downloaded.
+ *
+ * Usage (from the plugin's main file; the extensions create it on plugins_loaded):
  *   new \MCP_Abilities\VGC_Plugin_Updater( __FILE__, 'vgc-ai-nexus', '2.11.1', $manifest_url );
  */
 class VGC_Plugin_Updater {
@@ -58,8 +64,9 @@ class VGC_Plugin_Updater {
 
     /**
      * upgrader_pre_download: an update of THIS plugin only comes from the update
-     * channel, and matches the manifest's sha256 when it gives one (Package_Guard).
-     * Any other plugin, and an uploaded zip, go past untouched.
+     * channel, from an entry Package_Guard accepts (a sha256, and a signature that
+     * verifies), and must match that sha256. Any other plugin, and an uploaded zip,
+     * go past untouched. Fails closed: if the check throws, the update is refused.
      *
      * @param mixed $reply      false, or what an earlier filter decided.
      * @param mixed $package    The package WordPress is about to download.
@@ -72,45 +79,74 @@ class VGC_Plugin_Updater {
             || ! is_array( $hook_extra ) || ( $hook_extra['plugin'] ?? '' ) !== $this->basename ) {
             return $reply;
         }
+        $name = $this->slug;
         try {
             if ( ! Package_Guard::enabled( $package, $this->slug ) ) {
                 return $reply;
             }
             $info = $this->entry();
-            $name = isset( $info['name'] ) && is_string( $info['name'] ) ? $info['name'] : $this->slug;
+            $name = $this->name_of( $info );
 
             $refused = Package_Guard::url_error( $package, $name );
             if ( null !== $refused ) {
                 return $refused;
             }
 
-            // The hash goes with the address it was published for. A cached entry that
-            // names another address is older than the package: ask the manifest.
+            // The hash and the signature go with the address they were published for.
+            // A cached entry that names another address is older than the package:
+            // ask the manifest.
             if ( ! $this->entry_is_for( $info, $package ) ) {
                 $info = $this->fresh_entry();
             }
-            $expected = $this->entry_is_for( $info, $package ) ? (string) ( $info['sha256'] ?? '' ) : '';
+            $refused = Package_Guard::entry_error( $this->slug, $info, $package, $name );
+            if ( null !== $refused ) {
+                return $refused;
+            }
 
             return Package_Guard::download(
                 $package,
-                $expected,
+                (string) $info['sha256'],
                 $name,
                 $upgrader,
-                function () use ( $package ) {
+                function () use ( $package, $name ) {
                     $now = $this->fresh_entry();
-                    return $this->entry_is_for( $now, $package ) ? (string) ( $now['sha256'] ?? '' ) : '';
+                    return null === Package_Guard::entry_error( $this->slug, $now, $package, $name ) ? (string) $now['sha256'] : '';
                 }
             );
         } catch ( \Throwable $e ) {
-            // Never let this check be what stops every site updating.
-            error_log( 'AI Nexus: the package check stopped with ' . get_class( $e ) . ': ' . $e->getMessage() . '; WordPress downloads the update itself.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-            return $reply;
+            // Fail closed (since 2.43.0): a check that cannot run lets nothing through.
+            return Package_Guard::check_failed( $e, $this->slug, $name );
         }
     }
 
     /** @param array<string,mixed> $info A manifest entry. */
     private function entry_is_for( array $info, string $package ): bool {
-        return ! empty( $info['download_url'] ) && esc_url_raw( (string) $info['download_url'] ) === $package;
+        return ! empty( $info['download_url'] ) && is_string( $info['download_url'] ) && esc_url_raw( $info['download_url'] ) === $package;
+    }
+
+    /** @param array<string,mixed> $info A manifest entry. */
+    private function name_of( array $info ): string {
+        return isset( $info['name'] ) && is_string( $info['name'] ) && '' !== $info['name'] ? $info['name'] : $this->slug;
+    }
+
+    /**
+     * Whether the entry may be offered as an update and linked from "View details":
+     * Package_Guard accepts it for its own address. A check that throws counts as no.
+     *
+     * @param array<string,mixed> $info A manifest entry.
+     */
+    private function entry_accepted( array $info ): bool {
+        $package = isset( $info['download_url'] ) && is_string( $info['download_url'] ) ? esc_url_raw( $info['download_url'] ) : '';
+        if ( '' === $package ) {
+            return false;
+        }
+        try {
+            return ! Package_Guard::enabled( $package, $this->slug )
+                || null === Package_Guard::entry_error( $this->slug, $info, $package, $this->name_of( $info ) );
+        } catch ( \Throwable $e ) {
+            Package_Guard::check_failed( $e, $this->slug, $this->name_of( $info ) );
+            return false;
+        }
     }
 
     /**
@@ -191,13 +227,20 @@ class VGC_Plugin_Updater {
         return in_array( $screen, [ 'update-core.php', 'plugins.php', 'update.php' ], true );
     }
 
-    /** Add this plugin to the update transient when a newer version is published. */
+    /**
+     * Add this plugin to the update transient when a newer version is published.
+     * An entry Package_Guard refuses is not offered at all (nor kept from before).
+     */
     public function inject_update( $transient ) {
         if ( empty( $transient ) || ! is_object( $transient ) || empty( $transient->checked ) ) {
             return $transient;
         }
         $info = $this->entry();
         if ( empty( $info['version'] ) || empty( $info['download_url'] ) ) {
+            return $transient;
+        }
+        if ( ! $this->entry_accepted( $info ) ) {
+            unset( $transient->response[ $this->basename ], $transient->no_update[ $this->basename ] );
             return $transient;
         }
 
@@ -225,7 +268,10 @@ class VGC_Plugin_Updater {
         return $transient;
     }
 
-    /** Provide the "View details" modal content. */
+    /**
+     * Provide the "View details" modal content. The download link is left out when
+     * Package_Guard refuses the entry.
+     */
     public function plugin_info( $result, $action, $args ) {
         if ( 'plugin_information' !== $action || empty( $args->slug ) || $args->slug !== $this->slug ) {
             return $result;
@@ -254,7 +300,7 @@ class VGC_Plugin_Updater {
             'tested'        => $info['tested'] ?? '',
             'last_updated'  => $info['last_updated'] ?? '',
             'sections'      => $sections,
-            'download_link' => esc_url_raw( $info['download_url'] ?? '' ),
+            'download_link' => $this->entry_accepted( $info ) ? esc_url_raw( (string) $info['download_url'] ) : '',
         ];
     }
 
