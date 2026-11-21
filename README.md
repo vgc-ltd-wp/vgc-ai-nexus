@@ -213,6 +213,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.45.0
+
+- **A tool that runs other tools is logged step by step.** When a tool call is made while another one is running (the new VGC AI Nexus Batch extension does this: one call runs a list of tool calls), each inner call now has its own activity-log row, its own revision label and "last edited by", and counts as a read or a write on its own. Before, it was folded into the outer call: one row named after the first step, and a reading first step could make later changes count as a read, so their revisions were not labelled. The outer call gets its own row, written after its steps. Nothing else changes.
+
 ### 2.44.0
 
 Security review of 2026-11-10, finding C4, second step: only signed updates. Nothing that was refused before is allowed now.

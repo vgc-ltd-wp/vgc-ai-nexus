@@ -31,6 +31,12 @@ defined( 'ABSPATH' ) || exit;
  *      So EVERY ability call is logged once: core tools, extension tools (their
  *      handlers call $ability->execute() directly), the adapter's
  *      execute-ability tool and the Abilities REST route.
+ *      A tool call made while another call is open (a tool that runs other
+ *      tools, such as VGC AI Nexus Batch) is a call of its own (2.45.0): the
+ *      open call is put aside with its frames and state, the inner call gets
+ *      its own log row, revision label, attribution and read/write, and the
+ *      outer call comes back as it was when the inner one ends. Nesting goes
+ *      to any depth; shutdown finishes every call still open, innermost first.
  *
  * Never stores a token or secret: the OAuth client_id is a public identifier,
  * an Application Password is kept by name and UUID, the session by its first
@@ -66,6 +72,14 @@ final class Request_Context {
     private static ?array $call  = null;
     private static int    $seq   = 0;
     private static int    $calls = 0;
+
+    /**
+     * Calls put aside while a tool call made inside them runs (2.45.0),
+     * innermost last: each one's frames and state as they were.
+     *
+     * @var array<int, array{stack:int[], call:array}>
+     */
+    private static array  $suspended = [];
 
     public static function init(): void {
         if ( self::$booted ) {
@@ -545,7 +559,18 @@ final class Request_Context {
     public static function end_call( int $token, $result = null ): void {
         $pos = array_search( $token, self::$stack, true );
         if ( false === $pos ) {
-            return;
+            // A frame of a call put aside by a tool call made inside it: what was
+            // opened inside never closed (an exception went past it). Those calls
+            // end first, each with its own row; then this frame closes.
+            $open = self::suspended_level( $token );
+            while ( $open-- > 0 && null !== self::$call ) {
+                self::$stack = [];
+                self::finish( self::unfinished() );
+            }
+            $pos = array_search( $token, self::$stack, true );
+            if ( false === $pos ) {
+                return;
+            }
         }
         self::$stack = array_slice( self::$stack, 0, $pos );
         if ( self::$stack || null === self::$call ) {
@@ -659,6 +684,37 @@ final class Request_Context {
         }
 
         self::$call = null;
+
+        // A call put aside by this one (a tool call made inside it) comes back
+        // exactly as it was.
+        if ( self::$suspended ) {
+            $outer       = array_pop( self::$suspended );
+            self::$stack = $outer['stack'];
+            self::$call  = $outer['call'];
+        }
+    }
+
+    /**
+     * How many calls end before the call that holds a frame token is the
+     * running one again: 0 when no call put aside holds it.
+     */
+    private static function suspended_level( int $token ): int {
+        $count = count( self::$suspended );
+        foreach ( self::$suspended as $i => $level ) {
+            if ( in_array( $token, $level['stack'], true ) ) {
+                return $count - (int) $i;
+            }
+        }
+        return 0;
+    }
+
+    /** The result of a call that never closed. */
+    private static function unfinished(): \WP_Error {
+        $error   = error_get_last();
+        $message = ( $error && in_array( $error['type'], [ E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR ], true ) )
+            ? 'The call stopped with a fatal error: ' . $error['message']
+            : 'The call did not finish (it stopped with an exception or was refused).';
+        return new \WP_Error( 'mcp_abilities_unfinished', $message );
     }
 
     // ── Frame sources ────────────────────────────────────────────────────────
@@ -683,8 +739,18 @@ final class Request_Context {
             self::$transport = ( defined( 'WP_CLI' ) && WP_CLI ) ? 'stdio' : 'http';
             self::$actor     = null;
         }
+        // A tool call made while another call is open (a tool that runs other
+        // tools) is a call of its own (2.45.0): its own log row, revision label,
+        // attribution and read/write. The open call is put aside as it is and
+        // comes back when this one ends (finish()).
+        if ( null !== self::$call ) {
+            self::$suspended[] = [ 'stack' => self::$stack, 'call' => self::$call ];
+            self::$stack       = [];
+            self::$call        = null;
+        }
         $token = self::begin_call( (string) $tool_name, self::RANK_TOOL );
         self::$call['tool_tokens'][] = $token;
+        self::$call['tool_name']     = (string) $tool_name;
 
         // Name the ability behind a handler-backed tool, so an extension tool
         // (which calls $ability->execute() itself) is logged by its key.
@@ -708,6 +774,19 @@ final class Request_Context {
      * @return mixed Unchanged.
      */
     public static function on_tool_call_result( $result, $args = null, $tool_name = '', $mcp_tool = null, $server = null ) {
+        // The result of a call that was put aside (2.45.0): a tool call made
+        // inside it never closed (its tool threw past it). end_call() ends that
+        // one first, then this call, with its own result.
+        $name = (string) $tool_name;
+        if ( null !== self::$call && self::$suspended && $name !== ( self::$call['tool_name'] ?? null ) ) {
+            for ( $i = count( self::$suspended ) - 1; $i >= 0; $i-- ) {
+                $outer = self::$suspended[ $i ]['call'];
+                if ( $name === ( $outer['tool_name'] ?? null ) && ! empty( $outer['tool_tokens'] ) ) {
+                    self::end_call( (int) end( $outer['tool_tokens'] ), $result );
+                    return $result;
+                }
+            }
+        }
         if ( null !== self::$call && ! empty( self::$call['tool_tokens'] ) ) {
             $token = (int) array_pop( self::$call['tool_tokens'] );
             self::end_call( $token, $result );
@@ -779,17 +858,16 @@ final class Request_Context {
         return $args;
     }
 
-    /** shutdown: finish a call that never closed. */
+    /**
+     * shutdown: finish every call that never closed, innermost first: a call
+     * put aside by a tool call made inside it comes back as that one ends.
+     */
     public static function shutdown(): void {
-        if ( null === self::$call ) {
-            return;
+        $open = null === self::$call ? 0 : 1 + count( self::$suspended );
+        while ( $open-- > 0 && null !== self::$call ) {
+            self::$stack = [];
+            self::finish( self::unfinished() );
         }
-        self::$stack = [];
-        $error       = error_get_last();
-        $message     = ( $error && in_array( $error['type'], [ E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR ], true ) )
-            ? 'The call stopped with a fatal error: ' . $error['message']
-            : 'The call did not finish (it stopped with an exception or was refused).';
-        self::finish( new \WP_Error( 'mcp_abilities_unfinished', $message ) );
     }
 
     /** Back to a fresh request: for tests that run several requests in one process. */
@@ -801,6 +879,7 @@ final class Request_Context {
         self::$app_pass   = null;
         self::$stack      = [];
         self::$call       = null;
+        self::$suspended  = [];
         if ( class_exists( OAuth\Server::class, false ) && method_exists( OAuth\Server::class, 'forget_authenticated_client' ) ) {
             OAuth\Server::forget_authenticated_client();
         }
