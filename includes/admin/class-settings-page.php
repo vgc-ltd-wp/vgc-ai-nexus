@@ -110,7 +110,7 @@ class Settings_Page {
             [ $this, 'render_extensions_page' ]
         );
 
-        // One subpage per installed extension. Hidden from the menu (parent null)
+        // One subpage per installed extension. Hidden from the menu (no parent)
         // but reachable from the overview cards; each shows that extension's
         // usage guide + toggles.
         foreach ( $this->get_extensions() as $extension ) {
@@ -118,16 +118,31 @@ class Settings_Page {
             if ( '' === $ext_id ) {
                 continue;
             }
+            $label      = (string) ( $extension['label'] ?? $ext_id );
+            $page_title = sprintf( /* translators: %s: extension name */ __( '%s – VGC AI Nexus', 'mcp-abilities' ), $label );
             $hook = add_submenu_page(
-                null, // hidden from sidebar — linked from the overview
-                sprintf( /* translators: %s: extension name */ __( '%s – VGC AI Nexus', 'mcp-abilities' ), $extension['label'] ?? $ext_id ),
-                $extension['label'] ?? $ext_id,
+                // Hidden from the sidebar, linked from the overview. '' rather
+                // than null (the same hidden page): older WordPress versions hand
+                // the parent to strpos(), which PHP 8.1+ flags for null.
+                '',
+                $page_title,
+                $label,
                 'manage_options',
                 self::EXTS_SLUG . '-' . $ext_id,
                 [ $this, 'render_extension_subpage' ]
             );
             if ( $hook ) {
                 $this->subpage_hooks[ $hook ] = $ext_id;
+                // A page with no parent has no menu entry for WordPress to take
+                // its title from, so admin-header.php would run strip_tags() on
+                // a null $title (deprecated since PHP 8.1) and the browser tab
+                // would have no name. Set it before the header is printed.
+                add_action(
+                    'load-' . $hook,
+                    static function () use ( $page_title ): void {
+                        $GLOBALS['title'] = $page_title;
+                    }
+                );
             }
         }
     }

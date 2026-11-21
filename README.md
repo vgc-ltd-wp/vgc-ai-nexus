@@ -213,6 +213,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.45.1
+
+- **Extension pages have a title.** Each extension's own page (AI Nexus → Extensions → an extension, such as Tracker or Batch) now has its name in the browser tab ("Tracker – VGC AI Nexus"), and on PHP 8.1 and later it no longer writes a "strip_tags(): Passing null to parameter #1" deprecation notice from `wp-admin/admin-header.php` to the error log on every visit. The pages, their addresses and who can open them (administrators) are unchanged.
+
 ### 2.45.0
 
 - **A tool that runs other tools is logged step by step.** When a tool call is made while another one is running (the new VGC AI Nexus Batch extension does this: one call runs a list of tool calls), each inner call now has its own activity-log row, its own revision label and "last edited by", and counts as a read or a write on its own. Before, it was folded into the outer call: one row named after the first step, and a reading first step could make later changes count as a read, so their revisions were not labelled. The outer call gets its own row, written after its steps. Nothing else changes.
