@@ -47,6 +47,9 @@ class Guide {
             '- If a filter appears to have been ignored, check "ignored_parameters" in the response: parameters this site does not support are reported there, and the results are UNFILTERED with respect to them.',
             '- Never guess a post type, taxonomy or template slug. Call list_post_types (or usage_guide) — error messages also list the valid options.',
         ];
+        foreach ( self::extension_rules() as $rule ) {
+            $lines[] = $rule;
+        }
         if ( Read_Only::active() ) {
             // Lead with it: it changes what every other rule means.
             array_splice( $lines, 2, 0, [ Read_Only::orientation_line(), '' ] );
@@ -57,6 +60,52 @@ class Guide {
             $lines[] = $licence;
         }
         return implode( "\n", $lines );
+    }
+
+    /** How many lines extensions may add to the orientation, and how long each may be. */
+    public const EXTENSION_RULES_MAX  = 3;
+    public const EXTENSION_RULE_CHARS = 400;
+
+    /**
+     * Rules extensions add to the orientation (filter `mcp_abilities_orientation_rules`,
+     * an array of strings). This text is in every conversation on the connector,
+     * so an extension adds one short line, and only one that changes how an AI
+     * calls the tools (VGC AI Nexus Batch: when to use batch-run-steps). Kept: the
+     * first EXTENSION_RULES_MAX non-empty strings, each on one line, starting with
+     * "- ", at most EXTENSION_RULE_CHARS characters. A callback that throws adds
+     * nothing; the orientation is built without it.
+     *
+     * @return string[]
+     */
+    public static function extension_rules(): array {
+        try {
+            $rules = apply_filters( 'mcp_abilities_orientation_rules', [] );
+        } catch ( \Throwable $e ) {
+            return [];
+        }
+        if ( ! is_array( $rules ) ) {
+            return [];
+        }
+        $out = [];
+        foreach ( $rules as $rule ) {
+            if ( ! is_string( $rule ) ) {
+                continue;
+            }
+            $rule = trim( (string) preg_replace( '/\s+/u', ' ', $rule ) );
+            $rule = ltrim( $rule, "- \t" );
+            if ( '' === $rule ) {
+                continue;
+            }
+            $rule = '- ' . $rule;
+            if ( mb_strlen( $rule ) > self::EXTENSION_RULE_CHARS ) {
+                $rule = rtrim( mb_substr( $rule, 0, self::EXTENSION_RULE_CHARS - 1 ) ) . '…';
+            }
+            $out[] = $rule;
+            if ( count( $out ) >= self::EXTENSION_RULES_MAX ) {
+                break;
+            }
+        }
+        return $out;
     }
 
     /** The orientation for an account below `edit_posts`: it has no guide tool, and few tools or none. */

@@ -213,6 +213,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.46.0
+
+- **Extensions can add a short rule to what an assistant reads when it connects.** The few lines AI Nexus sends the moment an AI assistant connects are the only guidance that is surely in its context before it picks a tool (many assistants load the tools' own descriptions only when they look for one). An extension can now add one line there (filter `mcp_abilities_orientation_rules`; at most three lines from all extensions, 400 characters each). VGC AI Nexus Batch uses it to say when to send several calls as one batch and when to call tools one by one. Nothing else changes.
+
 ### 2.45.1
 
 - **Extension pages have a title.** Each extension's own page (AI Nexus → Extensions → an extension, such as Tracker or Batch) now has its name in the browser tab ("Tracker – VGC AI Nexus"), and on PHP 8.1 and later it no longer writes a "strip_tags(): Passing null to parameter #1" deprecation notice from `wp-admin/admin-header.php` to the error log on every visit. The pages, their addresses and who can open them (administrators) are unchanged.
