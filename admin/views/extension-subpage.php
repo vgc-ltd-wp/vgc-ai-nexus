@@ -37,7 +37,7 @@ foreach ( $ext_groups as $g ) {
         <div class="mcp-header__logo">
             <?php echo \MCP_Abilities\Icons::render( (string) ( $extension['id'] ?? '' ), (string) ( $extension['icon'] ?? '' ), 'mcp-header__exticon', 32 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div>
-                <h1><?php echo esc_html( $extension['label'] ); ?></h1>
+                <h1><?php echo esc_html( $extension['label'] ); ?><?php echo \MCP_Abilities\Admin\Settings_Page::badge_html( $extension ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?></h1>
                 <p><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
             </div>
         </div>

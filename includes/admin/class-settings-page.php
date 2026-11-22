@@ -345,6 +345,9 @@ class Settings_Page {
      *   option_key  (string)  — WP option name for this extension's settings
      *   guide       (string)  — OPTIONAL intro shown atop the extension subpage
      *   examples    (string[])— OPTIONAL example prompts shown under the guide
+     *   badge       (string)  — OPTIONAL short tag shown as a bubble after the
+     *                           label, e.g. 'Beta' (2.48.1); plain text, cut to
+     *                           20 characters. A catalog entry may carry one too.
      *
      * Per-group usage content is read from each Ability_Group via get_guide()
      * and get_examples(); set $this->guide / $this->examples in the group's
@@ -357,6 +360,27 @@ class Settings_Page {
      *
      * @return array[]
      */
+    /**
+     * The bubble after an extension's name (its "badge": "Beta", say), or ''.
+     * Plain text only, one line, at most 20 characters, escaped here.
+     *
+     * @param array $extension A registered extension or a catalog entry.
+     */
+    public static function badge_html( array $extension ): string {
+        $raw = $extension['badge'] ?? '';
+        if ( ! is_string( $raw ) ) {
+            return ''; // a catalog is outside data: anything but text is ignored
+        }
+        $text = trim( (string) preg_replace( '/\s+/u', ' ', wp_strip_all_tags( $raw ) ) );
+        if ( '' === $text ) {
+            return '';
+        }
+        if ( function_exists( 'mb_substr' ) ? mb_strlen( $text ) > 20 : strlen( $text ) > 20 ) {
+            $text = function_exists( 'mb_substr' ) ? mb_substr( $text, 0, 20 ) : substr( $text, 0, 20 );
+        }
+        return ' <span class="mcp-badge mcp-badge--tag">' . esc_html( $text ) . '</span>';
+    }
+
     private function get_extensions(): array {
         if ( null === $this->extensions ) {
             $this->extensions = (array) apply_filters( 'mcp_abilities_extensions', [] );

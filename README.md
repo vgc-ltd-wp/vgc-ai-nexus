@@ -213,6 +213,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.48.1
+
+- **An extension can show a tag after its name.** An extension that registers a `badge` (for example `'badge' => 'Beta'`) gets it as a bubble right after its name on AI Nexus → Extensions, in the style of the tags under the description: on its card, on its own page, and on its card under "Available to install" when the catalog entry has one. Plain text, one line, at most 20 characters. VGC AI Nexus Batch 1.2.6 uses it for "Beta". Without a badge nothing changes.
+
 ### 2.48.0
 
 Small list answers without the AI having to know how to ask for them. An AI connected through a claude.ai connector can hold a tool's description from long ago (the connector keeps the first one it saw), so advice in descriptions may never reach it; these changes work from the answer itself.

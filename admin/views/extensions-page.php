@@ -53,7 +53,7 @@ defined( 'ABSPATH' ) || exit;
         <a class="mcp-ext-card" href="<?php echo esc_url( $url ); ?>">
             <?php echo \MCP_Abilities\Icons::render( (string) $ext_id, (string) ( $extension['icon'] ?? '' ), 'mcp-ext-card__icon' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div class="mcp-ext-card__body">
-                <h2 class="mcp-ext-card__label"><?php echo esc_html( $extension['label'] ); ?></h2>
+                <h2 class="mcp-ext-card__label"><?php echo esc_html( $extension['label'] ); ?><?php echo \MCP_Abilities\Admin\Settings_Page::badge_html( $extension ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?></h2>
                 <p class="mcp-ext-card__desc"><?php echo esc_html( $extension['description'] ?? '' ); ?></p>
                 <div class="mcp-ext-card__meta">
                     <span class="mcp-badge"><?php echo (int) count( $ext_groups ); ?> <?php esc_html_e( 'groups', 'mcp-abilities' ); ?></span>
@@ -80,7 +80,7 @@ defined( 'ABSPATH' ) || exit;
         <div class="mcp-ext-card mcp-ext-card--install" data-slug="<?php echo $slug; ?>">
             <?php echo \MCP_Abilities\Icons::render( (string) $ext['slug'], (string) ( $ext['icon'] ?? '' ), 'mcp-ext-card__icon' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?>
             <div class="mcp-ext-card__body">
-                <h2 class="mcp-ext-card__label"><?php echo esc_html( $ext['name'] ?? $slug ); ?></h2>
+                <h2 class="mcp-ext-card__label"><?php echo esc_html( $ext['name'] ?? $slug ); ?><?php echo \MCP_Abilities\Admin\Settings_Page::badge_html( $ext ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside ?></h2>
                 <p class="mcp-ext-card__desc"><?php echo esc_html( $ext['description'] ?? '' ); ?></p>
                 <div class="mcp-ext-card__meta">
                     <?php if ( ! empty( $ext['version'] ) ) : ?>

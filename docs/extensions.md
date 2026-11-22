@@ -35,10 +35,13 @@ add_filter( 'mcp_abilities_extensions', function ( array $extensions ): array {
         'icon'        => 'dashicons-admin-generic',
         'groups'      => my_extension_get_groups(), // Ability_Group[]
         'option_key'  => 'my_extension_settings',
+        'badge'       => 'Beta', // optional (2.48.1): a bubble after the name
     ];
     return $extensions;
 } );
 ```
+
+`badge` (optional, since 2.48.1) is a short tag shown as a bubble right after the extension's name on AI Nexus → Extensions and on its own page, in the style of the tags under the description: plain text, one line, at most 20 characters. A catalog entry (`extensions.json`) may carry a `badge` too; it shows on the "Available to install" card.
 
 Since 2.39.0 core's `update_option` tool refuses the `option_key` every extension registers here, so an AI cannot switch an extension's disabled tools back on. Any other option that holds settings, definitions or credentials needs a name core already protects (see [security.md](security.md#options-protection)).
 
