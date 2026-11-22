@@ -19,8 +19,11 @@ List WordPress posts with optional filters.
 | `search` | string | No | Keyword search |
 | `orderby` | string | No | `date`, `title`, `ID`, `modified`, `rand` (default: `date`) |
 | `order` | string | No | `ASC`, `DESC` (default: `DESC`) |
+| `fields` | string[] | No | Item fields and meta keys to return. Naming an item field (`id`, `title`, `slug`, `status`, `date`, `modified`, `author_id`, `excerpt`, `permalink`, `comment_count`, or `featured_image`, `categories`, `tags`, which only come when named) cuts each item down to `id` and the fields named. Any other name is a meta key, under `meta` (`meta.<key>` is always one). Meta keys alone: whole items plus `meta` |
 
-**Returns:** `{ posts: [...], total: N }`
+**Returns:** `{ items: [...], total, total_pages, page, per_page, offset }`, plus `fields_note` when a name in `fields` gave nothing (a meta key no listed item has a value for, or `meta` alone in cut-down items).
+
+For long lists name only what you need: 100 posts with `"fields": ["id", "title", "_thumbnail_id"]` are about 7,000 characters, against 36,000 for whole items with that meta key (2.47.0).
 
 ---
 
@@ -116,6 +119,7 @@ Retrieve the full content of a specific revision.
 | `per_page` | integer | No | Max 100 (default: 20) |
 | `search` | string | No | Keyword search |
 | `parent_id` | integer | No | Filter by parent page ID |
+| `fields` | string[] | No | As for `list_posts`. Item fields: `id`, `title`, `slug`, `status`, `parent_id`, `menu_order`, `permalink`, `template`, and `featured_image` when named |
 
 ---
 
@@ -167,6 +171,7 @@ Retrieve the full content of a specific revision.
 | `per_page` | integer | No | Max 100 (default: 20) |
 | `search` | string | No | Search title/filename |
 | `mime_type` | string | No | Filter by MIME type (e.g. `image/jpeg`, `application/pdf`) |
+| `fields` | string[] | No | Only these fields of each item (`id` is always kept): `id`, `title`, `filename`, `url`, `mime_type`, `alt`, `date`, `width`, `height`, `filesize`. An unknown name is left out and named in `fields_note` |
 
 ---
 
@@ -270,6 +275,7 @@ Download a document or media file from a URL and import it into the Media Librar
 | `taxonomy` | string | **Yes** | Taxonomy slug (e.g. `category`, `post_tag`). One with an admin screen or public archives; internal ones such as menus are refused |
 | `search` | string | No | Filter by name |
 | `per_page` | integer | No | Max 100 (default: 50) |
+| `fields` | string[] | No | Only these fields of each term (`id` is always kept): `id`, `name`, `slug`, `description`, `parent_id`, `count` (and `language` with WPML). An unknown name is left out and named in `fields_note` |
 
 ---
 
@@ -281,6 +287,8 @@ Download a document or media file from a URL and import it into the Media Librar
 | `slug` | string | No | URL slug (auto-generated if omitted) |
 | `description` | string | No | Term description |
 | `parent_id` | integer | No | Parent term ID (hierarchical taxonomies only) |
+
+**Returns:** `{ id, term_id, term_taxonomy_id }`: `id` and `term_id` are the new term's ID (`id` since 2.47.0).
 
 ---
 

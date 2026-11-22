@@ -11,7 +11,7 @@ class Create_Term_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'create_term';
         $this->label        = __( 'Create Term', 'mcp-abilities' );
-        $this->description  = 'Create a new taxonomy term.';
+        $this->description  = 'Create a new taxonomy term. Its ID comes back as "id" (and "term_id").';
         $this->required_cap = 'manage_categories';
         $this->input_schema = [
             'type'       => 'object',
@@ -43,7 +43,9 @@ class Create_Term_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
+        // "id" as well (2.47.0): a later step referred to "id" and lost a request.
         return $this->json_result( [
+            'id'               => (int) $result['term_id'],
             'term_id'          => $result['term_id'],
             'term_taxonomy_id' => $result['term_taxonomy_id'],
         ] );

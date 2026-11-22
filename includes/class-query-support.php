@@ -18,12 +18,19 @@ final class Query_Support {
      * The query is first limited to what the caller may see
      * (Post_Access::scope_list_query()); a refusal comes back as an error result.
      *
-     * @param array<string,mixed> $args      Base WP_Query args (post_type, post_status, …).
-     * @param array<string,mixed> $params    Raw ability input (per_page, page, offset, language, fields).
-     * @param callable            $formatter fn( \WP_Post $post, string[] $meta_keys ): array
-     * @return array{items:array,total:int,total_pages:int,page:int,per_page:int,offset:int,note?:string}|array{success:false,error:string}
+     * With $item_fields given (2.47.0), "fields" works like get_post's: a name
+     * that is one of $item_fields cuts every item down to id and the fields
+     * named (see split_fields()); meta keys alone keep whole items, as before.
+     * The formatter may give a Closure for a costly value: it is called only
+     * for a field that is kept.
+     *
+     * @param array<string,mixed> $args        Base WP_Query args (post_type, post_status, …).
+     * @param array<string,mixed> $params      Raw ability input (per_page, page, offset, language, fields).
+     * @param callable            $formatter   fn( \WP_Post $post, string[] $meta_keys, ?string[] $keep ): array
+     * @param string[]            $item_fields The item fields "fields" may name; none = every name is a meta key.
+     * @return array{items:array,total:int,total_pages:int,page:int,per_page:int,offset:int,note?:string,fields_note?:string}|array{success:false,error:string}
      */
-    public static function run( array $args, array $params, callable $formatter ): array {
+    public static function run( array $args, array $params, callable $formatter, array $item_fields = [] ): array {
         $scope = Post_Access::scope_list_query( $args );
         if ( null !== $scope['error'] ) {
             return [ 'success' => false, 'error' => $scope['error'] ];
@@ -41,7 +48,16 @@ final class Query_Support {
             $args['paged'] = $page;
         }
 
-        $meta_keys = self::meta_keys( $params );
+        $keep    = null;
+        $dropped = [];
+        if ( $item_fields ) {
+            $split     = self::split_fields( self::meta_keys( $params ), $item_fields );
+            $keep      = $split['keep'];
+            $meta_keys = $split['meta'];
+            $dropped   = $split['unknown'];
+        } else {
+            $meta_keys = self::meta_keys( $params );
+        }
 
         // WPML language scoping (no-op when WPML is inactive or no language given).
         $language = isset( $params['language'] ) ? sanitize_text_field( (string) $params['language'] ) : '';
@@ -50,7 +66,8 @@ final class Query_Support {
         $query = new \WP_Query( $args );
         $items = [];
         foreach ( $query->posts as $post ) {
-            $items[] = $formatter( $post, $meta_keys );
+            $item    = $formatter( $post, $meta_keys, $keep );
+            $items[] = $item_fields ? self::finish_item( $item, $keep, [] !== $meta_keys ) : $item;
         }
         $total       = (int) $query->found_posts;
         $total_pages = (int) ceil( $total / $per_page );
@@ -68,6 +85,12 @@ final class Query_Support {
         if ( null !== $scope['note'] ) {
             $out['note'] = $scope['note'];
         }
+        if ( $item_fields ) {
+            $fields_note = self::fields_note( $items, $meta_keys, $dropped, $item_fields, true );
+            if ( null !== $fields_note ) {
+                $out['fields_note'] = $fields_note;
+            }
+        }
         return $out;
     }
 
@@ -77,6 +100,130 @@ final class Query_Support {
             return [];
         }
         return array_values( array_filter( array_map( 'sanitize_text_field', $params['fields'] ) ) );
+    }
+
+    /** A name in "fields" that is always a meta key: "meta._thumbnail_id". */
+    private const META_PREFIX = 'meta.';
+
+    /**
+     * Sort the names in "fields" (2.47.0).
+     *
+     * - A name in $item_fields is an item field to keep. When there is one,
+     *   every item is cut down to id and the fields named ("keep").
+     * - "meta.<key>" is always the meta key <key> (a meta key may have an item
+     *   field's name; agents also write the path they read it by).
+     * - "meta" alone cannot ask for a list item's whole meta: when items are
+     *   cut down it is left out (and reported); in whole items it stays the
+     *   meta key "meta", as before 2.47.0.
+     * - Any other name is a meta key, or unknown where items have no meta.
+     *
+     * @param string[] $names
+     * @param string[] $item_fields
+     * @return array{keep:?array,meta:array,unknown:array} keep null = whole items.
+     */
+    public static function split_fields( array $names, array $item_fields, bool $meta_ok = true ): array {
+        $keep    = [];
+        $meta    = [];
+        $unknown = [];
+        $bare    = false;
+        foreach ( $names as $name ) {
+            $name = (string) $name;
+            if ( $meta_ok && 0 === strpos( $name, self::META_PREFIX ) && strlen( $name ) > strlen( self::META_PREFIX ) ) {
+                $meta[] = substr( $name, strlen( self::META_PREFIX ) );
+            } elseif ( in_array( $name, $item_fields, true ) ) {
+                $keep[] = $name;
+            } elseif ( $meta_ok ) {
+                $bare   = $bare || 'meta' === $name;
+                $meta[] = $name;
+            } else {
+                $unknown[] = $name;
+            }
+        }
+        if ( $bare && $keep ) {
+            $meta      = array_diff( $meta, [ 'meta' ] );
+            $unknown[] = 'meta';
+        }
+        return [
+            'keep'    => $keep ? array_values( array_unique( $keep ) ) : null,
+            'meta'    => array_values( array_unique( $meta ) ),
+            'unknown' => array_values( array_unique( $unknown ) ),
+        ];
+    }
+
+    /**
+     * A list item cut down to id and $keep ($keep null: whole), with every
+     * Closure value of what is kept worked out.
+     *
+     * @param array<string,mixed> $item
+     * @param string[]|null       $keep
+     * @return array<string,mixed>
+     */
+    public static function finish_item( array $item, ?array $keep, bool $with_meta = false ): array {
+        if ( null !== $keep ) {
+            $allow = array_merge( [ 'id' ], $keep );
+            if ( $with_meta ) {
+                $allow[] = 'meta';
+                $allow[] = 'meta_hidden';
+            }
+            $item = array_intersect_key( $item, array_flip( $allow ) );
+        }
+        foreach ( $item as $key => $value ) {
+            if ( $value instanceof \Closure ) {
+                $item[ $key ] = $value();
+            }
+        }
+        return $item;
+    }
+
+    /**
+     * One sentence about the names in "fields" that gave nothing, or null:
+     * names that are no field of these items, and meta keys that no listed
+     * item has a value for (often a guess, such as "featured_media"). Says
+     * which fields can be named. Only what the caller was shown counts: a key
+     * withheld from them (meta_hidden) is not called empty.
+     *
+     * @param array<int,array<string,mixed>> $items
+     * @param string[]                       $meta_keys
+     * @param string[]                       $unknown
+     * @param string[]                       $item_fields
+     */
+    public static function fields_note( array $items, array $meta_keys, array $unknown, array $item_fields, bool $meta_ok = false ): ?string {
+        $empty = [];
+        if ( $items ) {
+            foreach ( $meta_keys as $key ) {
+                $has = false;
+                foreach ( $items as $item ) {
+                    $value = $item['meta'][ $key ] ?? '';
+                    if ( ( '' !== $value && null !== $value && [] !== $value ) || in_array( $key, (array) ( $item['meta_hidden'] ?? [] ), true ) ) {
+                        $has = true;
+                        break;
+                    }
+                }
+                if ( ! $has ) {
+                    $empty[] = $key;
+                }
+            }
+        }
+        if ( ! $empty && ! $unknown ) {
+            return null;
+        }
+        $quote = static fn( array $names ): string => '"' . implode( '", "', $names ) . '"';
+        $parts = [];
+        if ( $unknown ) {
+            $parts[] = sprintf( 'Not a field of these items, left out: %s.', $quote( $unknown ) );
+        }
+        if ( $empty ) {
+            $parts[] = sprintf( 'No item in this list has a value for the meta key%s %s.', count( $empty ) > 1 ? 's' : '', $quote( $empty ) );
+        }
+        $parts[] = sprintf(
+            'Fields you can name: %s%s.',
+            implode( ', ', $item_fields ),
+            $meta_ok ? '; any other name is a meta key, under "meta"' : ''
+        );
+        if ( in_array( 'featured_image', $item_fields, true ) && preg_grep( '/thumb|image|featured|media/i', array_diff( array_merge( $empty, $unknown ), [ '_thumbnail_id' ] ) ) ) {
+            $parts[] = 'A featured image is "featured_image" (its address) or the meta key "_thumbnail_id" (its ID).';
+        }
+        return implode( ' ', $parts );
     }
 
     /**

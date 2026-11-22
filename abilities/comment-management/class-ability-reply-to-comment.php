@@ -55,6 +55,6 @@ class Reply_To_Comment_Ability extends Ability {
             return $this->error( 'Failed to post reply.' );
         }
 
-        return $this->json_result( [ 'reply_id' => $id ] );
+        return $this->json_result( [ 'id' => (int) $id, 'reply_id' => $id ] );
     }
 }

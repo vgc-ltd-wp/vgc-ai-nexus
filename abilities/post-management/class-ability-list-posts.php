@@ -3,15 +3,22 @@ namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
 use MCP_Abilities\Query_Support;
+use MCP_Abilities\Wpml_Support;
 
 defined( 'ABSPATH' ) || exit;
 
 class List_Posts_Ability extends Ability {
 
+    /**
+     * The fields "fields" may name (2.47.0). The last three are not in whole
+     * items: they are worked out only when named, as get_post has them.
+     */
+    public const ITEM_FIELDS = [ 'id', 'title', 'slug', 'status', 'date', 'modified', 'author_id', 'excerpt', 'permalink', 'comment_count', 'featured_image', 'categories', 'tags' ];
+
     protected function define_meta(): void {
         $this->key          = 'list_posts';
         $this->label        = __( 'List Posts', 'mcp-abilities' );
-        $this->description  = 'List WordPress content of ANY registered post type (default "post" — use list_post_types to discover slugs like "product", "avada_portfolio", "event"). Filter by status, author, built-in category, or ANY taxonomy via taxonomy+terms (e.g. taxonomy "portfolio_category", terms ["automotive"]). Unknown post types or taxonomies return an explicit error listing the valid options. Supports pagination (offset or page + per_page), WPML language scoping, and inline meta fields for bulk reads. Returns items, total and total_pages. Drafts, pending and private items of other authors are listed only for accounts that may edit them; anyone else gets their own (the result says so in "note").';
+        $this->description  = 'List WordPress content of ANY registered post type (default "post" — use list_post_types to discover slugs like "product", "avada_portfolio", "event"). Filter by status, author, built-in category, or ANY taxonomy via taxonomy+terms (e.g. taxonomy "portfolio_category", terms ["automotive"]). Unknown post types or taxonomies return an explicit error listing the valid options. Supports pagination (offset or page + per_page) and WPML language scoping. For long lists name the fields you need, e.g. "fields": ["id", "title", "_thumbnail_id"]: each item then has only those (meta keys under "meta"), a far smaller answer. Returns items, total and total_pages. Drafts, pending and private items of other authors are listed only for accounts that may edit them; anyone else gets their own (the result says so in "note").';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => [ 'object', 'array' ],
@@ -27,7 +34,7 @@ class List_Posts_Ability extends Ability {
                 'taxonomy' => [ 'type' => 'string',  'description' => 'Any taxonomy slug to filter by, e.g. "portfolio_category", "product_cat". Use with "terms".' ],
                 'terms'    => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Term slugs (or numeric IDs as strings) within "taxonomy". Items matching ANY listed term are returned.' ],
                 'language' => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de', 'en') to scope results, or 'all' for every language. Defaults to the current language. Ignored if WPML is inactive." ],
-                'fields'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => "Extra meta keys to include per item, e.g. ['_yoast_wpseo_metadesc','_yoast_wpseo_title']." ],
+                'fields'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Item fields and meta keys to return. Naming an item field (' . implode( ', ', self::ITEM_FIELDS ) . ') cuts each item down to id and the fields named: the smallest answer. Any other name is a meta key, given under "meta" ("meta.<key>" is always one), e.g. ["title", "_thumbnail_id"]. Meta keys alone: whole items plus "meta".' ],
                 'orderby'  => [ 'type' => 'string',  'enum' => [ 'date', 'title', 'ID', 'modified', 'rand' ], 'default' => 'date' ],
                 'order'    => [ 'type' => 'string',  'enum' => [ 'ASC', 'DESC' ], 'default' => 'DESC' ],
             ],
@@ -87,7 +94,8 @@ class List_Posts_Ability extends Ability {
             ] ];
         }
 
-        return $this->json_result( Query_Support::run( $args, $params, function ( \WP_Post $post, array $meta_keys ): array {
+        return $this->json_result( Query_Support::run( $args, $params, function ( \WP_Post $post, array $meta_keys, ?array $keep = null ): array {
+            // Closures: worked out only for the fields kept.
             $item = [
                 'id'            => $post->ID,
                 'title'         => $post->post_title,
@@ -96,15 +104,39 @@ class List_Posts_Ability extends Ability {
                 'date'          => $post->post_date,
                 'modified'      => $post->post_modified,
                 'author_id'     => (int) $post->post_author,
-                'excerpt'       => get_the_excerpt( $post ),
-                'permalink'     => get_permalink( $post->ID ),
+                'excerpt'       => static fn() => get_the_excerpt( $post ),
+                'permalink'     => static fn() => get_permalink( $post->ID ),
                 'comment_count' => (int) $post->comment_count,
             ];
+            if ( null !== $keep ) {
+                $item += self::named_extras( $post, $keep );
+            }
             $item = Query_Support::with_wpml( $item, $post );
             if ( $meta_keys ) {
                 $item = Query_Support::with_meta( $item, $post->ID, $meta_keys );
             }
             return $item;
-        } ) );
+        }, self::item_fields() ) );
+    }
+
+    /** ITEM_FIELDS, with WPML's language and trid when WPML is active. */
+    public static function item_fields(): array {
+        return Wpml_Support::active() ? array_merge( self::ITEM_FIELDS, [ 'language', 'trid' ] ) : self::ITEM_FIELDS;
+    }
+
+    /**
+     * featured_image, categories and tags, the same as get_post gives them,
+     * for the ones named.
+     *
+     * @param string[] $keep
+     * @return array<string,\Closure>
+     */
+    public static function named_extras( \WP_Post $post, array $keep ): array {
+        $extras = [
+            'featured_image' => static fn() => get_the_post_thumbnail_url( $post->ID, 'full' ) ?: null,
+            'categories'     => static fn() => array_map( static fn( $c ) => [ 'id' => $c->term_id, 'name' => $c->name, 'slug' => $c->slug ], (array) wp_get_post_categories( $post->ID, [ 'fields' => 'all' ] ) ),
+            'tags'           => static fn() => array_map( static fn( $t ) => [ 'id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug ], (array) wp_get_post_tags( $post->ID ) ),
+        ];
+        return array_intersect_key( $extras, array_flip( $keep ) );
     }
 }

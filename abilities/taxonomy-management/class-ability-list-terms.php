@@ -2,12 +2,16 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Query_Support;
 use MCP_Abilities\Term_Access;
 use MCP_Abilities\Wpml_Support;
 
 defined( 'ABSPATH' ) || exit;
 
 class List_Terms_Ability extends Ability {
+
+    /** The fields "fields" may name (2.47.0). */
+    public const ITEM_FIELDS = [ 'id', 'name', 'slug', 'description', 'parent_id', 'count' ];
 
     protected function define_meta(): void {
         $this->key          = 'list_terms';
@@ -23,6 +27,7 @@ class List_Terms_Ability extends Ability {
                 'per_page'   => [ 'type' => 'integer', 'default' => 50 ],
                 'hide_empty' => [ 'type' => 'boolean', 'default' => false ],
                 'language'   => [ 'type' => 'string', 'description' => 'WPML only: language code (e.g. "de", "cs") or "all" for every language. Default: the site\'s default language.' ],
+                'fields'     => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Only these fields of each term (id is always kept), e.g. ["id", "name"]: a smaller answer. Fields: ' . implode( ', ', self::ITEM_FIELDS ) . ' (and language with WPML).' ],
             ],
         ];
     }
@@ -82,9 +87,20 @@ class List_Terms_Ability extends Ability {
             return $row;
         }, $terms );
 
+        // "fields" (2.47.0): only the fields named; unknown names are said, not guessed at.
+        $fields = $wpml ? array_merge( self::ITEM_FIELDS, [ 'language' ] ) : self::ITEM_FIELDS;
+        $split  = Query_Support::split_fields( Query_Support::meta_keys( $params ), $fields, false );
+        if ( null !== $split['keep'] ) {
+            $result = array_map( static fn( array $row ): array => Query_Support::finish_item( $row, $split['keep'] ), $result );
+        }
+
         $out = [ 'taxonomy' => $taxonomy, 'terms' => $result ];
         if ( null !== $language ) {
             $out['language'] = $language;
+        }
+        $note = Query_Support::fields_note( $result, [], $split['unknown'], $fields );
+        if ( null !== $note ) {
+            $out['fields_note'] = $note;
         }
         return $this->json_result( $out );
     }

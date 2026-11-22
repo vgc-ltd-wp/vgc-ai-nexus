@@ -213,6 +213,15 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.47.0
+
+- **Smaller list answers.** `list_posts` and `list_pages` read `fields` the way `get_post` does: naming an item field (`"fields": ["id", "title", "_thumbnail_id"]`) gives each item only `id` and the fields named, with the meta keys named under `meta`. Before, every name was taken as a meta key, so such a call got whole items plus empty meta entries. For 100 posts that is about 7,000 characters instead of 38,000. `list_posts` can also name `featured_image`, `categories` and `tags` (as `get_post` has them), `list_pages` `featured_image`; these are worked out only when named. `"meta.<key>"` is always a meta key.
+- **`fields` on `list_terms` and `list_media`** (item fields only): 100 terms with `["id", "name"]` are about 3,300 characters instead of 9,600, 100 images with `["id", "url"]` about 8,800 instead of 25,000.
+- **A note when a name gives nothing.** When a meta key named in `fields` has no value on any listed item (often a guess, such as `featured_media`), or a name is no field of those items, the answer says so in `fields_note` and lists the fields that can be named.
+- Excerpts, permalinks, page templates and attachment details are worked out only for the fields kept.
+- **`create_term`, `add_menu_item` and `reply_to_comment` also return `id`**, the new item's ID (`term_id`, `item_id` and `reply_id` stay).
+- Unchanged: a call without `fields`, or with meta keys only, gets the same answer as before.
+
 ### 2.46.0
 
 - **Extensions can add a short rule to what an assistant reads when it connects.** The few lines AI Nexus sends the moment an AI assistant connects are the only guidance that is surely in its context before it picks a tool (many assistants load the tools' own descriptions only when they look for one). An extension can now add one line there (filter `mcp_abilities_orientation_rules`; at most three lines from all extensions, 400 characters each). VGC AI Nexus Batch uses it to say when to send several calls as one batch and when to call tools one by one. Nothing else changes.

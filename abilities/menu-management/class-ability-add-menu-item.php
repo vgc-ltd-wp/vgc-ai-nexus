@@ -90,6 +90,6 @@ class Add_Menu_Item_Ability extends Ability {
             return $this->error( $item_id->get_error_message() );
         }
 
-        return $this->json_result( [ 'item_id' => $item_id, 'menu_id' => $menu_id ] );
+        return $this->json_result( [ 'id' => (int) $item_id, 'item_id' => $item_id, 'menu_id' => $menu_id ] );
     }
 }
