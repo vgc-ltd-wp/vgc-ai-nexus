@@ -20,9 +20,12 @@ final class Query_Support {
      *
      * With $item_fields given (2.47.0), "fields" works like get_post's: a name
      * that is one of $item_fields cuts every item down to id and the fields
-     * named (see split_fields()); meta keys alone keep whole items, as before.
-     * The formatter may give a Closure for a costly value: it is called only
-     * for a field that is kept.
+     * named (see split_fields()). Since 2.48.0 meta keys alone cut items down
+     * too, to id, title and the meta named (not inside another tool call, such
+     * as a Batch step: there items stay whole); and a big answer of whole items
+     * (no "fields") says in "note" how small the same list is with "fields"
+     * (size_note()). The formatter may give a Closure for a costly value: it
+     * is called only for a field that is kept.
      *
      * @param array<string,mixed> $args        Base WP_Query args (post_type, post_status, …).
      * @param array<string,mixed> $params      Raw ability input (per_page, page, offset, language, fields).
@@ -50,13 +53,18 @@ final class Query_Support {
 
         $keep    = null;
         $dropped = [];
+        $named   = self::meta_keys( $params );
         if ( $item_fields ) {
-            $split     = self::split_fields( self::meta_keys( $params ), $item_fields );
+            // Inside another tool call (a Batch step) meta keys alone keep whole
+            // items, as in 2.47.0: a batch's conditions run on the server and may
+            // read any item field ({"status": {"ne": "publish"}}); a field missing
+            // from cut-down items would read as empty there and match every item.
+            $split     = self::split_fields( $named, $item_fields, true, ! Request_Context::nested() );
             $keep      = $split['keep'];
             $meta_keys = $split['meta'];
             $dropped   = $split['unknown'];
         } else {
-            $meta_keys = self::meta_keys( $params );
+            $meta_keys = $named;
         }
 
         // WPML language scoping (no-op when WPML is inactive or no language given).
@@ -90,6 +98,84 @@ final class Query_Support {
             if ( null !== $fields_note ) {
                 $out['fields_note'] = $fields_note;
             }
+            if ( ! $named ) {
+                $out = self::with_size_note( $out, $items, self::compact_fields( $item_fields ), '_thumbnail_id' );
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * From this many characters (the whole items of one answer, as the client
+     * shows them), size_note() says how to get a smaller answer (2.48.0).
+     * 100 posts are about 33,000; 30 about 10,000.
+     */
+    public const SIZE_NOTE_MIN = 10000;
+
+    /** The smallest useful form of an item: id and its name ("title" or "name"). */
+    public static function compact_fields( array $item_fields ): array {
+        foreach ( [ 'title', 'name' ] as $label ) {
+            if ( in_array( $label, $item_fields, true ) ) {
+                return [ 'id', $label ];
+            }
+        }
+        return [ 'id' ];
+    }
+
+    /** The JSON text a client shows the model for $data: its length in characters. */
+    public static function json_length( $data ): int {
+        $json = wp_json_encode( $data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+        return false === $json ? 0 : ( function_exists( 'mb_strlen' ) ? mb_strlen( $json, 'UTF-8' ) : strlen( $json ) );
+    }
+
+    /**
+     * One line for a big list of whole items (2.48.0), or null: how many
+     * characters the items are, and how many the same list is with "fields"
+     * naming $compact (worked out from these very items). Null when the items
+     * are under SIZE_NOTE_MIN characters or the compact form is not at least
+     * half the size. A client may have a tool description from long ago (a
+     * connector keeps the first one it saw), so the answer itself says it.
+     *
+     * @param array<int,array<string,mixed>> $items        Whole items, as answered.
+     * @param string[]                       $compact      E.g. [ 'id', 'title' ].
+     * @param string                         $meta_example A meta key to show in the example; '' when items have no meta.
+     */
+    public static function size_note( array $items, array $compact, string $meta_example = '' ): ?string {
+        if ( ! $items ) {
+            return null;
+        }
+        $whole = self::json_length( $items );
+        if ( $whole < self::SIZE_NOTE_MIN ) {
+            return null;
+        }
+        $flip  = array_flip( $compact );
+        $small = self::json_length( array_map( static fn( $item ): array => array_intersect_key( (array) $item, $flip ), $items ) );
+        if ( $small * 2 > $whole ) {
+            return null;
+        }
+        $quote = static fn( array $names ): string => '["' . implode( '", "', $names ) . '"]';
+        return sprintf(
+            'Big answer: these %d whole items are %s characters. Name only the fields you need: "fields": %s gives the same list in %s characters%s.',
+            count( $items ),
+            number_format( $whole ),
+            $quote( $compact ),
+            number_format( $small ),
+            '' !== $meta_example ? sprintf( '; add any meta key you need, e.g. %s', $quote( array_merge( $compact, [ $meta_example ] ) ) ) : ''
+        );
+    }
+
+    /**
+     * $out with size_note() added to its "note" (after any note already there).
+     *
+     * @param array<string,mixed>            $out
+     * @param array<int,array<string,mixed>> $items
+     * @param string[]                       $compact
+     * @return array<string,mixed>
+     */
+    public static function with_size_note( array $out, array $items, array $compact, string $meta_example = '' ): array {
+        $note = self::size_note( $items, $compact, $meta_example );
+        if ( null !== $note ) {
+            $out['note'] = isset( $out['note'] ) && '' !== (string) $out['note'] ? $out['note'] . ' ' . $note : $note;
         }
         return $out;
     }
@@ -112,16 +198,22 @@ final class Query_Support {
      *   every item is cut down to id and the fields named ("keep").
      * - "meta.<key>" is always the meta key <key> (a meta key may have an item
      *   field's name; agents also write the path they read it by).
-     * - "meta" alone cannot ask for a list item's whole meta: when items are
-     *   cut down it is left out (and reported); in whole items it stays the
-     *   meta key "meta", as before 2.47.0.
      * - Any other name is a meta key, or unknown where items have no meta.
+     * - Meta keys with no item field (2.48.0; until then whole items plus
+     *   "meta", about 5 times larger): items are cut down to id and "title"
+     *   (or "name"; just id when items have neither) besides the meta named.
+     *   So where items have meta, any name at all gives cut-down items.
+     *   $meta_alone_small false keeps 2.47.0's whole items for them (run()
+     *   passes it inside another tool call, e.g. a Batch step).
+     * - "meta" alone cannot ask for a list item's whole meta: when items are
+     *   cut down it is left out (and reported); a meta key named "meta" is
+     *   "meta.meta". In whole items it stays the meta key "meta", as before.
      *
      * @param string[] $names
      * @param string[] $item_fields
      * @return array{keep:?array,meta:array,unknown:array} keep null = whole items.
      */
-    public static function split_fields( array $names, array $item_fields, bool $meta_ok = true ): array {
+    public static function split_fields( array $names, array $item_fields, bool $meta_ok = true, bool $meta_alone_small = true ): array {
         $keep    = [];
         $meta    = [];
         $unknown = [];
@@ -138,6 +230,9 @@ final class Query_Support {
             } else {
                 $unknown[] = $name;
             }
+        }
+        if ( $meta_ok && $meta_alone_small && ! $keep && $meta ) {
+            $keep = array_values( array_diff( self::compact_fields( $item_fields ), [ 'id' ] ) ) ?: [ 'id' ];
         }
         if ( $bare && $keep ) {
             $meta      = array_diff( $meta, [ 'meta' ] );

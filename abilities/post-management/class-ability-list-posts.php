@@ -34,7 +34,7 @@ class List_Posts_Ability extends Ability {
                 'taxonomy' => [ 'type' => 'string',  'description' => 'Any taxonomy slug to filter by, e.g. "portfolio_category", "product_cat". Use with "terms".' ],
                 'terms'    => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Term slugs (or numeric IDs as strings) within "taxonomy". Items matching ANY listed term are returned.' ],
                 'language' => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de', 'en') to scope results, or 'all' for every language. Defaults to the current language. Ignored if WPML is inactive." ],
-                'fields'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Item fields and meta keys to return. Naming an item field (' . implode( ', ', self::ITEM_FIELDS ) . ') cuts each item down to id and the fields named: the smallest answer. Any other name is a meta key, given under "meta" ("meta.<key>" is always one), e.g. ["title", "_thumbnail_id"]. Meta keys alone: whole items plus "meta".' ],
+                'fields'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Item fields and meta keys to return. Naming an item field (' . implode( ', ', self::ITEM_FIELDS ) . ') cuts each item down to id and the fields named: the smallest answer. Any other name is a meta key, given under "meta" ("meta.<key>" is always one), e.g. ["title", "_thumbnail_id"]. Meta keys alone: id, title and "meta".' ],
                 'orderby'  => [ 'type' => 'string',  'enum' => [ 'date', 'title', 'ID', 'modified', 'rand' ], 'default' => 'date' ],
                 'order'    => [ 'type' => 'string',  'enum' => [ 'ASC', 'DESC' ], 'default' => 'DESC' ],
             ],

@@ -213,6 +213,15 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.48.0
+
+Small list answers without the AI having to know how to ask for them. An AI connected through a claude.ai connector can hold a tool's description from long ago (the connector keeps the first one it saw), so advice in descriptions may never reach it; these changes work from the answer itself.
+
+- **Meta keys alone now give small items. This changes the answer.** `list_posts` and `list_pages` with `fields` naming only meta keys (`"fields": ["_thumbnail_id"]`) give each item as `id`, `title` and `meta` with just those keys: the same answer as `["id", "title", "_thumbnail_id"]`. Until now they gave whole items plus `meta`, about 5 times larger: for 100 posts 6,991 characters instead of 36,967. An AI that also wants other item fields (`status`, `excerpt`, `permalink`, …) names them, as with 2.47.0. `"meta"` alone is left out and said in `fields_note` (a meta key named "meta" is `"meta.meta"`). A call without `fields`, or naming item fields, gets the same answer as in 2.47.0.
+- **Not inside another tool call.** A list call made by a tool that runs other tools (a step of VGC AI Nexus Batch) keeps 2.47.0's whole items for meta keys alone. A batch's conditions run on the server and may read any item field (`{"status": {"ne": "publish"}}`); Batch up to 1.2.2 reads a field the item lacks as empty, so cut-down items would let such a condition pass every item. There the AI does not read the list itself, so whole items cost it little. (`Request_Context::nested()` tells whether a call runs inside another one.)
+- **A big list says how to get a small one.** A list of whole items (no `fields`) of 10,000 characters or more now has one line in `note` with its size and the size of the same list with `"fields": ["id", "title"]` (`["id", "name"]` for terms), worked out from the items themselves. For 100 posts: "these 100 whole items are 33,969 characters … `"fields": ["id", "title"]` gives the same list in 3,993 characters", plus an example with a meta key. `list_posts`, `list_pages`, `list_media` and `list_terms`; the items themselves are unchanged, and smaller lists get no note. Where the answer already has a `note` (a list limited to what the account may see), this line follows it.
+- Extensions can add the same line to their own lists with `Query_Support::with_size_note()`; VGC AI Nexus for WooCommerce 1.12.0 does for products.
+
 ### 2.47.0
 
 - **Smaller list answers.** `list_posts` and `list_pages` read `fields` the way `get_post` does: naming an item field (`"fields": ["id", "title", "_thumbnail_id"]`) gives each item only `id` and the fields named, with the meta keys named under `meta`. Before, every name was taken as a meta key, so such a call got whole items plus empty meta entries. For 100 posts that is about 7,000 characters instead of 38,000. `list_posts` can also name `featured_image`, `categories` and `tags` (as `get_post` has them), `list_pages` `featured_image`; these are worked out only when named. `"meta.<key>"` is always a meta key.
@@ -220,7 +229,7 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 - **A note when a name gives nothing.** When a meta key named in `fields` has no value on any listed item (often a guess, such as `featured_media`), or a name is no field of those items, the answer says so in `fields_note` and lists the fields that can be named.
 - Excerpts, permalinks, page templates and attachment details are worked out only for the fields kept.
 - **`create_term`, `add_menu_item` and `reply_to_comment` also return `id`**, the new item's ID (`term_id`, `item_id` and `reply_id` stay).
-- Unchanged: a call without `fields`, or with meta keys only, gets the same answer as before.
+- Unchanged: a call without `fields`, or with meta keys only, gets the same answer as before (2.48.0 changes the second: see above).
 
 ### 2.46.0
 

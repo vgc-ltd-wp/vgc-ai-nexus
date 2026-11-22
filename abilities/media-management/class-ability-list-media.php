@@ -74,6 +74,10 @@ class List_Media_Ability extends Ability {
         if ( null !== $note ) {
             $out['fields_note'] = $note;
         }
+        if ( ! Query_Support::meta_keys( $params ) ) {
+            // 2.48.0: a big list of whole items says how small it is with "fields".
+            $out = Query_Support::with_size_note( $out, $items, Query_Support::compact_fields( self::ITEM_FIELDS ) );
+        }
         return $this->json_result( $out );
     }
 }

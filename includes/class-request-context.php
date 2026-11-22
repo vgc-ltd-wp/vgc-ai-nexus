@@ -583,6 +583,14 @@ final class Request_Context {
         return null !== self::$call;
     }
 
+    /**
+     * Whether the running tool call was made inside another one: a tool that
+     * runs other tools, such as a step of VGC AI Nexus Batch (2.48.0).
+     */
+    public static function nested(): bool {
+        return null !== self::$call && [] !== self::$suspended;
+    }
+
     /** The running call's id (0 when none). */
     public static function call_id(): int {
         return self::$call ? (int) self::$call['id'] : 0;

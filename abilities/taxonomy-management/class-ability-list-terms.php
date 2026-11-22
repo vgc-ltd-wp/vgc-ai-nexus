@@ -102,6 +102,10 @@ class List_Terms_Ability extends Ability {
         if ( null !== $note ) {
             $out['fields_note'] = $note;
         }
+        if ( ! Query_Support::meta_keys( $params ) ) {
+            // 2.48.0: a big list of whole terms says how small it is with "fields".
+            $out = Query_Support::with_size_note( $out, $result, Query_Support::compact_fields( $fields ) );
+        }
         return $this->json_result( $out );
     }
 }

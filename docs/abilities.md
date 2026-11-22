@@ -19,11 +19,11 @@ List WordPress posts with optional filters.
 | `search` | string | No | Keyword search |
 | `orderby` | string | No | `date`, `title`, `ID`, `modified`, `rand` (default: `date`) |
 | `order` | string | No | `ASC`, `DESC` (default: `DESC`) |
-| `fields` | string[] | No | Item fields and meta keys to return. Naming an item field (`id`, `title`, `slug`, `status`, `date`, `modified`, `author_id`, `excerpt`, `permalink`, `comment_count`, or `featured_image`, `categories`, `tags`, which only come when named) cuts each item down to `id` and the fields named. Any other name is a meta key, under `meta` (`meta.<key>` is always one). Meta keys alone: whole items plus `meta` |
+| `fields` | string[] | No | Item fields and meta keys to return. Naming an item field (`id`, `title`, `slug`, `status`, `date`, `modified`, `author_id`, `excerpt`, `permalink`, `comment_count`, or `featured_image`, `categories`, `tags`, which only come when named) cuts each item down to `id` and the fields named. Any other name is a meta key, under `meta` (`meta.<key>` is always one). Meta keys alone: `id`, `title` and `meta` (2.48.0; whole items plus `meta` before, and still inside another tool call such as a Batch step) |
 
-**Returns:** `{ items: [...], total, total_pages, page, per_page, offset }`, plus `fields_note` when a name in `fields` gave nothing (a meta key no listed item has a value for, or `meta` alone in cut-down items).
+**Returns:** `{ items: [...], total, total_pages, page, per_page, offset }`, plus `fields_note` when a name in `fields` gave nothing (a meta key no listed item has a value for, or `meta` alone), and `note` when the list is limited to what the account may see.
 
-For long lists name only what you need: 100 posts with `"fields": ["id", "title", "_thumbnail_id"]` are about 7,000 characters, against 36,000 for whole items with that meta key (2.47.0).
+For long lists name only what you need: 100 posts with `"fields": ["id", "title", "_thumbnail_id"]` (or, since 2.48.0, `["_thumbnail_id"]` alone) are about 7,000 characters, against 37,000 for whole items with that meta key and 34,000 without `fields`. Since 2.48.0 a list of whole items of 10,000 characters or more says so in one line of `note`, with its size and the size of the same list with `"fields": ["id", "title"]` (`list_posts`, `list_pages`, `list_media`, `list_terms`).
 
 ---
 
