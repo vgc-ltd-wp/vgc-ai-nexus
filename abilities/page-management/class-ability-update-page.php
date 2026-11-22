@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Custom_Code;
 use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
@@ -19,7 +20,7 @@ class Update_Page_Ability extends Ability {
                 'id'         => [ 'type' => 'integer' ],
                 'title'      => [ 'type' => 'string' ],
                 'slug'       => [ 'type' => 'string', 'description' => 'New page slug (post_name).' ],
-                'content'    => [ 'type' => 'string' ],
+                'content'    => [ 'type' => 'string', 'description' => 'New page content (HTML or blocks). ' . self::CONTENT_FILTER_DESCRIPTION ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the page; it needs a future date. "publish", "future" and "private" need the permission to publish this page; without it the page is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
                 'parent_id'  => [ 'type' => 'integer' ],
@@ -71,7 +72,12 @@ class Update_Page_Ability extends Ability {
 
         if ( isset( $params['title'] ) )      $update['post_title']   = sanitize_text_field( $params['title'] );
         if ( ! empty( $params['slug'] ) )     $update['post_name']    = sanitize_title( $params['slug'] );
-        if ( isset( $params['content'] ) )    $update['post_content']  = wp_kses_post( $params['content'] );
+        // As sent for an account that may post unfiltered HTML, unless raw code is
+        // locked; otherwise filtered as WordPress filters posts, with a note (2.49.0).
+        $content_note = null;
+        if ( isset( $params['content'] ) ) {
+            [ $update['post_content'], $content_note ] = Custom_Code::filter_with_note( (string) $params['content'] );
+        }
         if ( null !== $status['status'] )     $update['post_status']   = $status['status'];
         if ( isset( $params['parent_id'] ) )  $update['post_parent']   = absint( $params['parent_id'] );
         if ( isset( $params['menu_order'] ) ) $update['menu_order']    = (int) $params['menu_order'];
@@ -79,7 +85,8 @@ class Update_Page_Ability extends Ability {
         // whose stored template has gone, so this is also how such a page gets a new one.
         if ( isset( $params['template'] ) )   $update['page_template'] = Post_Access::page_template_value( $params['template'] );
 
-        $result = wp_update_post( $update, true );
+        // wp_update_post() takes slashed data: unslashed, every backslash was lost.
+        $result = wp_update_post( wp_slash( $update ), true );
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
         }
@@ -90,6 +97,9 @@ class Update_Page_Ability extends Ability {
         );
         if ( null !== $status['note'] ) {
             $extra['status_note'] = $status['note'];
+        }
+        if ( null !== $content_note ) {
+            $extra['note'] = $content_note;
         }
         return $this->success( "Page {$page_id} updated.", $extra );
     }

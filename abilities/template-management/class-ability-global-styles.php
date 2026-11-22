@@ -113,15 +113,17 @@ class Update_Global_Styles_Ability extends Ability {
 
         $json = wp_json_encode( $current_content );
 
+        // wp_insert_post() and wp_update_post() take slashed data: unslashed, a
+        // quote inside a value ("\"Inter\", sans-serif") broke the JSON (2.49.0).
         if ( $post_id ) {
-            $result = wp_update_post( [ 'ID' => $post_id, 'post_content' => $json ], true );
+            $result = wp_update_post( wp_slash( [ 'ID' => $post_id, 'post_content' => $json ] ), true );
         } else {
-            $result = wp_insert_post( [
+            $result = wp_insert_post( wp_slash( [
                 'post_title'   => 'Global Styles and Settings',
                 'post_status'  => 'publish',
                 'post_type'    => 'wp_global_styles',
                 'post_content' => $json,
-            ], true );
+            ] ), true );
             if ( ! is_wp_error( $result ) ) {
                 wp_set_object_terms( $result, get_stylesheet(), 'wp_theme' );
             }

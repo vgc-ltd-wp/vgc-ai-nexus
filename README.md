@@ -196,7 +196,7 @@ Key protections:
 - **SSRF protection** on upload tools — public addresses only (A and AAAA, every redirect), the connection pinned to the checked address, the size limit enforced during the download
 - **Only what concerns them** — `tools/list` shows a user the tools they could call; versions, the theme and the security setup are for administrators only
 - **Credentials inside options** — `get_option` hides password, token, secret and key fields inside a setting's value; `update_option` cannot change or remove them, and refuses mail, payment, security and backup plugins' settings outright
-- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`; templates, template parts and navigation keep script only for an account with `unfiltered_html`, and global styles keep custom CSS only with `edit_css`, and neither while raw code is locked
+- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`; posts, pages, templates, template parts and navigation keep script only for an account with `unfiltered_html` (as WordPress's own editor does), and global styles keep custom CSS only with `edit_css`, and neither while raw code is locked; the answer says when something was removed
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
@@ -212,6 +212,13 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.49.0
+
+- **An administrator's page keeps its own CSS, script and form fields.** `create_page`, `update_page`, `create_post` and `update_post` ran every account's content through `wp_kses_post()`, so a Custom HTML block with a `<style>`, a `<script>` (a calculator, say) or `<input>` fields lost all three, and the answer said nothing. Content is now stored as sent when the account has `unfiltered_html` (as WordPress's own editor stores it) and raw code is not locked, the rule templates, template parts and navigation follow since 2.41.0. An account without `unfiltered_html`, and everyone while raw code is locked (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter), gets the content filtered as before, and now the answer has a `note` when a tag, attribute or comment was taken out. Read-only mode still refuses these tools.
+- **Backslashes are kept.** Post and page content, templates, template parts, navigation and global styles were handed to WordPress unslashed, and WordPress unslashes what it saves: every backslash was lost, for every account. A script's `/\d+/` became `/d+/`, a block attribute's `\u003c` (an escaped `<`) became the text `u003c`, `C:\Temp` became `C:Temp`, and a global-styles value with a quote in it (a font family such as `"Inter", sans-serif`) left the stored styles unreadable. A backslash in a post or page title is kept too.
+- **No note for rewrites that lose nothing.** Where content is filtered, `&` written as `&amp;` or `<br/>` as `<br />` no longer brings the "removed" note (templates, template parts and navigation too); a removed script, attribute or form field still does.
+- The `content` descriptions of the four tools say how content is stored.
 
 ### 2.48.1
 

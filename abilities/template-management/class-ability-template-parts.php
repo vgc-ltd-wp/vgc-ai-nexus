@@ -134,7 +134,7 @@ class Update_Template_Part_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        $note = \MCP_Abilities\Custom_Code::filter_markup( $content ) !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
+        $note = \MCP_Abilities\Custom_Code::filtered_away( $content, \MCP_Abilities\Custom_Code::filter_markup( $content ) ) ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
         return $this->success( "Template part \"{$id}\" updated (post ID: {$result}).", $note );
     }
 }
@@ -190,13 +190,13 @@ class Create_Template_Part_Ability extends Ability {
 
         // No script for the whole site while raw code is locked (2.41.0).
         $stored  = \MCP_Abilities\Custom_Code::filter_markup( $content );
-        $post_id = wp_insert_post( [
+        $post_id = wp_insert_post( wp_slash( [
             'post_name'    => $slug,
             'post_title'   => $title,
             'post_content' => $stored,
             'post_type'    => 'wp_template_part',
             'post_status'  => 'publish',
-        ], true );
+        ] ), true ); // takes slashed data (2.49.0)
 
         if ( is_wp_error( $post_id ) ) {
             return $this->error( $post_id->get_error_message() );
@@ -210,7 +210,7 @@ class Create_Template_Part_Ability extends Ability {
             'wp_id' => $post_id,
             'slug'  => $slug,
             'area'  => $area,
-        ], $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
+        ], \MCP_Abilities\Custom_Code::filtered_away( $content, $stored ) ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
     }
 }
 

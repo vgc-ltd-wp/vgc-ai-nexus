@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Custom_Code;
 use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
@@ -18,7 +19,7 @@ class Update_Post_Ability extends Ability {
             'properties' => [
                 'id'         => [ 'type' => 'integer', 'description' => 'ID of the post to update.' ],
                 'title'      => [ 'type' => 'string' ],
-                'content'    => [ 'type' => 'string' ],
+                'content'    => [ 'type' => 'string', 'description' => 'New content (HTML or blocks). ' . self::CONTENT_FILTER_DESCRIPTION ],
                 'excerpt'    => [ 'type' => 'string' ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the post; it needs a future date. "publish", "future" and "private" need the permission to publish this post; without it the post is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
@@ -69,13 +70,19 @@ class Update_Post_Ability extends Ability {
             : [ [], [] ];
 
         if ( isset( $params['title'] ) )   $update['post_title']   = sanitize_text_field( $params['title'] );
-        if ( isset( $params['content'] ) ) $update['post_content']  = wp_kses_post( $params['content'] );
+        // As sent for an account that may post unfiltered HTML, unless raw code is
+        // locked; otherwise filtered as WordPress filters posts, with a note (2.49.0).
+        $content_note = null;
+        if ( isset( $params['content'] ) ) {
+            [ $update['post_content'], $content_note ] = Custom_Code::filter_with_note( (string) $params['content'] );
+        }
         if ( isset( $params['excerpt'] ) ) $update['post_excerpt']  = sanitize_textarea_field( $params['excerpt'] );
         if ( null !== $status['status'] )  $update['post_status']   = $status['status'];
         if ( isset( $params['categories'] ) ) $update['post_category'] = array_map( 'absint', (array) $params['categories'] );
         if ( isset( $params['tags'] ) )    $update['tags_input']    = array_map( 'absint', (array) $params['tags'] );
 
-        $result = wp_update_post( $update, true );
+        // wp_update_post() takes slashed data: unslashed, every backslash was lost.
+        $result = wp_update_post( wp_slash( $update ), true );
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
         }
@@ -90,6 +97,9 @@ class Update_Post_Ability extends Ability {
         ], self::post_date_readback( $post_id, $old_status, $old_date ) );
         if ( null !== $status['note'] ) {
             $extra['status_note'] = $status['note'];
+        }
+        if ( null !== $content_note ) {
+            $extra['note'] = $content_note;
         }
         if ( $meta_skipped ) {
             $extra['meta_skipped'] = $meta_skipped;

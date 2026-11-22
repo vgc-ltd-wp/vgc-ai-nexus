@@ -47,12 +47,12 @@ class Update_Navigation_Ability extends Ability {
             $update_data['post_title'] = sanitize_text_field( $params['title'] );
         }
 
-        $result = wp_update_post( $update_data, true );
+        $result = wp_update_post( wp_slash( $update_data ), true ); // takes slashed data (2.49.0)
 
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "Navigation {$id} updated.", $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] );
+        return $this->success( "Navigation {$id} updated.", \MCP_Abilities\Custom_Code::filtered_away( $content, $stored ) ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] );
     }
 }

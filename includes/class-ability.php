@@ -71,6 +71,9 @@ abstract class Ability {
         return is_array( $data ) ? $data : [ 'result' => $data ];
     }
 
+    /** How post and page content is stored (2.49.0); appended to the "content" descriptions. */
+    protected const CONTENT_FILTER_DESCRIPTION = 'Stored as sent (style, script and form fields included) for an account that may post unfiltered HTML, such as an administrator; otherwise, or while raw code is locked on the site, script and other markup WordPress does not allow in posts is removed, and the result has a "note" saying so.';
+
     // ── Publish date of existing posts ───────────────────────────────────────
 
     /**

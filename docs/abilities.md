@@ -76,6 +76,8 @@ Update an existing post.
 
 > Note: `update_post` calls `wp_update_post()` which automatically saves a revision. Use `list_revisions` / `get_revision` to view revision history.
 
+> **Content (since 2.49.0).** `content` is stored as sent, `<style>`, `<script>` and form fields included, when the account has `unfiltered_html` (an administrator or editor on a single site, only a super admin on multisite, nobody with `DISALLOW_UNFILTERED_HTML`) and raw code is not locked (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter). Otherwise it goes through `wp_kses_post()`, as WordPress filters a post by such an account, and when that took a tag, attribute or comment out the answer has a `note` saying so. Rewrites that lose nothing (`&` written as `&amp;`, `<br/>` as `<br />`) get no note. The same holds for `create_page` and `update_page`. Backslashes are kept; before 2.49.0 every one was lost (`/\d+/` became `/d+/`, a block attribute's `<` became `u003c`).
+
 ---
 
 ### `delete_post`
@@ -134,7 +136,7 @@ Retrieve the full content of a specific revision.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `title` | string | **Yes** | Page title |
-| `content` | string | No | Page body |
+| `content` | string | No | Page body; stored as for `create_post` (raw only with `unfiltered_html`, see the note under `update_post`) |
 | `status` | string | No | `publish`, `draft`, `pending`, `private` (default: `draft`) |
 | `parent_id` | integer | No | Parent page ID |
 | `template` | string | No | A page template of this site, or `default`. An unknown one is refused, and the error lists what there is |

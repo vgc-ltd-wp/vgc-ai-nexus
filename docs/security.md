@@ -168,8 +168,9 @@ This gates writes only. Code already stored keeps running, `get_custom_code` sti
 **Locked raw code (since 2.41.0, review C3).** An administrator can lock raw code away from AI tools with the `MCP_ABILITIES_DISABLE_CUSTOM_CODE` constant or by returning false from the `mcp_abilities_custom_code_enabled` filter. That switches the Custom CSS & JS group off, and it now also covers every other tool that stores markup or CSS for the whole site (`Custom_Code::locked()`, `raw_allowed()`, `css_allowed()`):
 
 - `create_template`, `update_template`, `create_template_part`, `update_template_part` and `update_navigation` save the markup through `wp_kses_post()` (as WordPress does for a post by someone without `unfiltered_html`) unless the account has `unfiltered_html` and raw code is not locked. Block comments and ordinary markup are kept; `<script>` and event handlers are not.
+- Since 2.49.0 the same rule holds for post and page content (`create_post`, `update_post`, `create_page`, `update_page`). Until then they ran `wp_kses_post()` for every account, administrators included, so an administrator's page lost its `<style>`, `<script>` and form fields without a word; WordPress's own editor keeps them for an account with `unfiltered_html`. This lets an AI with such an account store script in a post, which it could already do in a template or with `inject_js`; locking raw code takes it away from every AI tool at once. Read-only mode refuses all of these tools before they run.
 - `update_global_styles` leaves out every `css` key (the custom CSS at the top and per block) unless the account has `edit_css` and raw code is not locked.
-- The answer carries a `note` saying what was removed and why.
+- The answer carries a `note` saying what was removed and why. Since 2.49.0 the note comes only when a tag, attribute or comment was taken out (`Custom_Code::filtered_away()`), not for rewrites that lose nothing, such as `&` written as `&amp;`.
 
 ---
 

@@ -67,7 +67,7 @@ function mcp_upsert_template(
     if ( ! empty( $template->wp_id ) ) {
         // Already has a DB record — update in place.
         $post_data['ID'] = $template->wp_id;
-        $result          = wp_update_post( $post_data, true );
+        $result          = wp_update_post( wp_slash( $post_data ), true ); // takes slashed data (2.49.0)
 
         // BUG FIX: always (re)set the area taxonomy on template parts.
         if ( ! is_wp_error( $result ) && 'wp_template_part' === $post_type ) {
@@ -86,7 +86,7 @@ function mcp_upsert_template(
         $post_data['post_title'] = $template->title;
     }
 
-    $post_id = wp_insert_post( $post_data, true );
+    $post_id = wp_insert_post( wp_slash( $post_data ), true ); // takes slashed data (2.49.0)
     if ( is_wp_error( $post_id ) ) {
         return $post_id;
     }
@@ -227,7 +227,7 @@ class Update_Template_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        $note = \MCP_Abilities\Custom_Code::filter_markup( $content ) !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
+        $note = \MCP_Abilities\Custom_Code::filtered_away( $content, \MCP_Abilities\Custom_Code::filter_markup( $content ) ) ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [];
         return $this->success( "Template \"{$id}\" updated (post ID: {$result}).", $note );
     }
 }
@@ -274,14 +274,14 @@ class Create_Template_Ability extends Ability {
 
         // No script for the whole site while raw code is locked (2.41.0).
         $stored  = \MCP_Abilities\Custom_Code::filter_markup( $content );
-        $post_id = wp_insert_post( [
+        $post_id = wp_insert_post( wp_slash( [
             'post_name'    => $slug,
             'post_title'   => $title,
             'post_content' => $stored,
             'post_excerpt' => $description,
             'post_type'    => 'wp_template',
             'post_status'  => 'publish',
-        ], true );
+        ] ), true ); // takes slashed data (2.49.0)
 
         if ( is_wp_error( $post_id ) ) {
             return $this->error( $post_id->get_error_message() );
@@ -293,7 +293,7 @@ class Create_Template_Ability extends Ability {
             'id'      => get_stylesheet() . '//' . $slug,
             'wp_id'   => $post_id,
             'slug'    => $slug,
-        ], $stored !== $content ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
+        ], \MCP_Abilities\Custom_Code::filtered_away( $content, $stored ) ? [ 'note' => \MCP_Abilities\Custom_Code::filtered_note() ] : [] ) );
     }
 }
 

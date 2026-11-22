@@ -2,6 +2,7 @@
 namespace MCP_Abilities\Abilities;
 
 use MCP_Abilities\Ability;
+use MCP_Abilities\Custom_Code;
 use MCP_Abilities\Post_Access;
 
 defined( 'ABSPATH' ) || exit;
@@ -17,7 +18,7 @@ class Create_Post_Ability extends Ability {
             'type'       => 'object',
             'properties' => [
                 'title'      => [ 'type' => 'string', 'description' => 'Post title.' ],
-                'content'    => [ 'type' => 'string', 'description' => 'Post content (HTML or blocks).' ],
+                'content'    => [ 'type' => 'string', 'description' => 'Post content (HTML or blocks). ' . self::CONTENT_FILTER_DESCRIPTION ],
                 'excerpt'    => [ 'type' => 'string', 'description' => 'Post excerpt.' ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft', 'description' => '"publish" and "private" need the permission to publish this post type; without it the post is created as "pending" (see status_note).' ],
                 'post_type'  => [ 'type' => 'string', 'description' => 'Post type slug. Defaults to "post". Use list_post_types to see all available types.' ],
@@ -72,9 +73,13 @@ class Create_Post_Ability extends Ability {
             $status      = 'pending';
         }
 
+        // As sent for an account that may post unfiltered HTML, unless raw code is
+        // locked; otherwise filtered as WordPress filters posts, with a note (2.49.0).
+        [ $content, $content_note ] = Custom_Code::filter_with_note( (string) ( $params['content'] ?? '' ) );
+
         $post_data = [
             'post_title'   => sanitize_text_field( $params['title'] ),
-            'post_content' => wp_kses_post( $params['content'] ?? '' ),
+            'post_content' => $content,
             'post_excerpt' => sanitize_textarea_field( $params['excerpt'] ?? '' ),
             'post_status'  => $status,
             'post_type'    => $post_type,
@@ -104,7 +109,8 @@ class Create_Post_Ability extends Ability {
             }
         }
 
-        $post_id = wp_insert_post( $post_data, true );
+        // wp_insert_post() takes slashed data: unslashed, every backslash was lost.
+        $post_id = wp_insert_post( wp_slash( $post_data ), true );
 
         if ( is_wp_error( $post_id ) ) {
             return $this->error( $post_id->get_error_message() );
@@ -127,6 +133,9 @@ class Create_Post_Ability extends Ability {
         ];
         if ( null !== $status_note ) {
             $result['status_note'] = $status_note;
+        }
+        if ( null !== $content_note ) {
+            $result['note'] = $content_note;
         }
         if ( $meta_skipped ) {
             $result['meta_skipped'] = $meta_skipped;
