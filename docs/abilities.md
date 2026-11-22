@@ -78,6 +78,8 @@ Update an existing post.
 
 > **Content (since 2.49.0).** `content` is stored as sent, `<style>`, `<script>` and form fields included, when the account has `unfiltered_html` (an administrator or editor on a single site, only a super admin on multisite, nobody with `DISALLOW_UNFILTERED_HTML`) and raw code is not locked (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter). Otherwise it goes through `wp_kses_post()`, as WordPress filters a post by such an account, and when that took a tag, attribute or comment out the answer has a `note` saying so. Rewrites that lose nothing (`&` written as `&amp;`, `<br/>` as `<br />`) get no note. The same holds for `create_page` and `update_page`. Backslashes are kept; before 2.49.0 every one was lost (`/\d+/` became `/d+/`, a block attribute's `<` became `u003c`).
 
+> **Meta (since 2.50.0).** `meta` values of `create_post` and `update_post` keep their backslashes, in text, lists and objects at any depth. Before 2.50.0 every one was lost, so JSON kept in meta (page-builder data) lost the `\` of each `\"` and `<`.
+
 ---
 
 ### `delete_post`
@@ -191,9 +193,11 @@ Retrieve the full content of a specific revision.
 |---|---|---|---|
 | `id` | integer | **Yes** | Attachment ID |
 | `title` | string | No | New title |
-| `alt_text` | string | No | New alt text |
+| `alt` | string | No | New alt text |
 | `caption` | string | No | New caption |
 | `description` | string | No | New description |
+
+Backslashes are kept in all four since 2.50.0 (and in the title, caption, description and alt text of `upload_image` and the title of `upload_file`); before, every one was lost.
 
 ---
 

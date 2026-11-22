@@ -121,7 +121,8 @@ class Create_Post_Ability extends Ability {
         if ( ! empty( $params['meta'] ) && is_array( $params['meta'] ) ) {
             [ $meta, $meta_skipped ] = Post_Access::writable_meta( $post_id, $params['meta'] );
             foreach ( $meta as $key => $value ) {
-                update_post_meta( $post_id, $key, $value );
+                // Slashed: update_post_meta() unslashes, so backslashes were lost (2.50.0).
+                update_post_meta( $post_id, $key, Post_Access::slash_meta( $value ) );
             }
         }
 

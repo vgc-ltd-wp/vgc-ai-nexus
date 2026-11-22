@@ -287,6 +287,22 @@ final class Post_Access {
     }
 
     /**
+     * A meta value as update_post_meta() and the other metadata writers expect it:
+     * slashed, because they unslash what they get (every string at any depth, in
+     * arrays and objects alike). Unslashed, every backslash in a meta value was lost
+     * (2.50.0): JSON meta such as a page builder's data broke, "\u003c" came back as
+     * "u003c", "C:\Temp" as "C:Temp".
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    public static function slash_meta( $value ) {
+        return map_deep( $value, static function ( $v ) {
+            return is_string( $v ) ? addslashes( $v ) : $v;
+        } );
+    }
+
+    /**
      * Why this page template cannot be set, or null when it can.
      *
      * The list is the one wp_insert_post() and WordPress's REST API check:

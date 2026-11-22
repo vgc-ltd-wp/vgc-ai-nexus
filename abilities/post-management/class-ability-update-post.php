@@ -88,7 +88,8 @@ class Update_Post_Ability extends Ability {
         }
 
         foreach ( $meta as $key => $value ) {
-            update_post_meta( $post_id, $key, $value );
+            // Slashed: update_post_meta() unslashes, so backslashes were lost (2.50.0).
+            update_post_meta( $post_id, $key, Post_Access::slash_meta( $value ) );
         }
 
         $extra = array_merge( [

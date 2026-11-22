@@ -9,6 +9,9 @@ defined( 'ABSPATH' ) || exit;
 
 final class Widget_Types {
 
+    /** How settings are stored (2.50.0); appended to the "settings" descriptions. */
+    public const SETTINGS_DESCRIPTION = 'HTML is kept only in a custom_html widget\'s "content", a text widget\'s "text" and a block widget\'s "content": as sent (script included) for an account that may post unfiltered HTML, such as an administrator; otherwise, or while raw code is locked on the site, filtered as WordPress filters posts. Every other text setting is plain text. The result has a "note" when something sent was removed.';
+
     /** Why this is not a widget type on this site, or null when it is. */
     public static function error( string $type ): ?string {
         global $wp_registered_widget_updates, $wp_widget_factory;
@@ -25,6 +28,87 @@ final class Widget_Types {
         }
         sort( $registered );
         return sprintf( 'Widget type "%s" is not registered on this site. Registered types: %s.', $type, implode( ', ', $registered ) );
+    }
+
+    /**
+     * The settings that hold HTML, per widget type (2.50.0): the ones WordPress's
+     * own widgets keep as HTML in their update(). Custom HTML "content", Text
+     * "text" and Block "content". The 'mcp_abilities_widget_html_fields' filter
+     * can name a third-party widget's HTML settings (type => [ setting, … ]).
+     *
+     * @return array<string,string[]>
+     */
+    public static function html_fields(): array {
+        $fields = apply_filters( 'mcp_abilities_widget_html_fields', [
+            'custom_html' => [ 'content' ],
+            'text'        => [ 'text' ],
+            'block'       => [ 'content' ],
+        ] );
+        return is_array( $fields ) ? $fields : [];
+    }
+
+    /**
+     * Widget settings as they may be stored, and a note when something sent was
+     * taken out (2.50.0).
+     *
+     * An HTML setting (html_fields()) is kept as sent for an account that may post
+     * unfiltered HTML, unless raw code is locked; otherwise it is filtered as
+     * WordPress filters a post, as WordPress's own widgets do. Every other text
+     * setting stays plain text (sanitize_textarea_field(), as before 2.50.0); numbers
+     * and true/false are kept; nested lists are cleaned the same way, as plain text.
+     * Before 2.50.0 every text setting was plain text, so a Custom HTML or Text
+     * widget lost all its markup, and the answer said nothing.
+     *
+     * @return array{0:array,1:?string} [ settings, note or null ]
+     */
+    public static function clean_settings( string $type, array $settings ): array {
+        $html     = array_map( 'strval', (array) ( self::html_fields()[ $type ] ?? [] ) );
+        $filtered = false;
+        $plain    = [];
+        $clean    = self::clean_level( $settings, $html, '', $filtered, $plain );
+
+        $notes = [];
+        if ( $filtered ) {
+            $notes[] = \MCP_Abilities\Custom_Code::filtered_note();
+        }
+        if ( $plain ) {
+            $notes[] = sprintf(
+                'Plain text only, so the HTML tags were removed from: "%s". %s',
+                implode( '", "', $plain ),
+                $html
+                    ? sprintf( 'In a "%s" widget only "%s" keeps HTML.', $type, implode( '", "', $html ) )
+                    : 'HTML is kept only in a custom_html widget\'s "content", a text widget\'s "text" and a block widget\'s "content".'
+            );
+        }
+        return [ $clean, $notes ? implode( ' ', $notes ) : null ];
+    }
+
+    /**
+     * @param string[] $html     HTML setting names (top level only).
+     * @param string[] $plain    Plain-text settings that lost tags (dotted paths), filled in.
+     */
+    private static function clean_level( array $settings, array $html, string $path, bool &$filtered, array &$plain ): array {
+        $clean = [];
+        foreach ( $settings as $key => $value ) {
+            $key  = sanitize_key( (string) $key );
+            $name = '' === $path ? $key : $path . '.' . $key;
+            if ( is_string( $value ) ) {
+                if ( '' === $path && in_array( $key, $html, true ) ) {
+                    [ $clean[ $key ], $note ] = \MCP_Abilities\Custom_Code::filter_with_note( $value );
+                    $filtered = $filtered || null !== $note;
+                } else {
+                    $clean[ $key ] = sanitize_textarea_field( $value );
+                    if ( \MCP_Abilities\Custom_Code::filtered_away( $value, $clean[ $key ] ) ) {
+                        $plain[] = $name;
+                    }
+                }
+            } elseif ( is_int( $value ) || is_float( $value ) || is_bool( $value ) ) {
+                $clean[ $key ] = $value;
+            } elseif ( is_array( $value ) ) {
+                $clean[ $key ] = self::clean_level( $value, $html, $name, $filtered, $plain );
+            }
+        }
+        return $clean;
     }
 }
 
@@ -151,7 +235,7 @@ class Add_Widget_Ability extends Ability {
             'properties' => [
                 'area_id'     => [ 'type' => 'string', 'description' => 'Widget area ID to add the widget to.' ],
                 'widget_type' => [ 'type' => 'string', 'description' => 'Widget base ID (e.g. "text", "search", "recent-posts", "nav_menu").' ],
-                'settings'    => [ 'type' => 'object', 'description' => 'Widget-specific settings object (e.g. {"title": "My Text", "text": "Hello world"} for a text widget).' ],
+                'settings'    => [ 'type' => 'object', 'description' => 'Widget-specific settings object (e.g. {"title": "My Text", "text": "Hello world"} for a text widget). ' . Widget_Types::SETTINGS_DESCRIPTION ],
                 'position'    => [ 'type' => 'integer', 'description' => 'Position index within the area (0-based). Appends to end if omitted.' ],
             ],
             'required' => [ 'area_id', 'widget_type' ],
@@ -185,9 +269,9 @@ class Add_Widget_Ability extends Ability {
         $existing_nums = array_filter( array_keys( $instances ), 'is_int' );
         $next_num      = $existing_nums ? ( max( $existing_nums ) + 1 ) : 2;
 
-        // Sanitise settings: only allow scalar and array values.
-        $raw_settings = is_array( $params['settings'] ?? null ) ? $params['settings'] : [];
-        $settings     = $this->sanitise_widget_settings( $raw_settings );
+        // Text, numbers, true/false and lists only; HTML only where the widget type keeps it.
+        $raw_settings        = is_array( $params['settings'] ?? null ) ? $params['settings'] : [];
+        [ $settings, $note ] = Widget_Types::clean_settings( $widget_type, $raw_settings );
 
         // Store the new instance.
         $instances[ $next_num ]     = $settings;
@@ -210,26 +294,15 @@ class Add_Widget_Ability extends Ability {
 
         update_option( 'sidebars_widgets', $sidebars_widgets );
 
-        return $this->json_result( [
+        $result = [
             'widget_id'    => $widget_id,
             'area_id'      => $area_id,
             'instance_num' => $next_num,
-        ] );
-    }
-
-    private function sanitise_widget_settings( array $settings ): array {
-        $clean = [];
-        foreach ( $settings as $key => $value ) {
-            $key = sanitize_key( $key );
-            if ( is_string( $value ) ) {
-                $clean[ $key ] = sanitize_textarea_field( $value );
-            } elseif ( is_int( $value ) || is_float( $value ) || is_bool( $value ) ) {
-                $clean[ $key ] = $value;
-            } elseif ( is_array( $value ) ) {
-                $clean[ $key ] = $this->sanitise_widget_settings( $value );
-            }
+        ];
+        if ( null !== $note ) {
+            $result['note'] = $note;
         }
-        return $clean;
+        return $this->json_result( $result );
     }
 }
 
@@ -246,7 +319,7 @@ class Update_Widget_Ability extends Ability {
             'type'       => 'object',
             'properties' => [
                 'widget_id' => [ 'type' => 'string', 'description' => 'Widget instance ID (e.g. "text-2") from list_widgets.' ],
-                'settings'  => [ 'type' => 'object', 'description' => 'Complete new settings object for the widget. Replaces the existing settings.' ],
+                'settings'  => [ 'type' => 'object', 'description' => 'Complete new settings object for the widget. Replaces the existing settings. ' . Widget_Types::SETTINGS_DESCRIPTION ],
             ],
             'required' => [ 'widget_id', 'settings' ],
         ];
@@ -276,28 +349,13 @@ class Update_Widget_Ability extends Ability {
             return $this->error( "Widget \"{$widget_id}\" not found." );
         }
 
-        $raw_settings = is_array( $params['settings'] ) ? $params['settings'] : [];
-        $settings     = $this->sanitise_widget_settings( $raw_settings );
+        $raw_settings        = is_array( $params['settings'] ) ? $params['settings'] : [];
+        [ $settings, $note ] = Widget_Types::clean_settings( $widget_type, $raw_settings );
 
         $instances[ $instance_num ] = $settings;
         update_option( $option_key, $instances );
 
-        return $this->success( "Widget \"{$widget_id}\" updated." );
-    }
-
-    private function sanitise_widget_settings( array $settings ): array {
-        $clean = [];
-        foreach ( $settings as $key => $value ) {
-            $key = sanitize_key( $key );
-            if ( is_string( $value ) ) {
-                $clean[ $key ] = sanitize_textarea_field( $value );
-            } elseif ( is_int( $value ) || is_float( $value ) || is_bool( $value ) ) {
-                $clean[ $key ] = $value;
-            } elseif ( is_array( $value ) ) {
-                $clean[ $key ] = $this->sanitise_widget_settings( $value );
-            }
-        }
-        return $clean;
+        return $this->success( "Widget \"{$widget_id}\" updated.", null !== $note ? [ 'note' => $note ] : [] );
     }
 }
 

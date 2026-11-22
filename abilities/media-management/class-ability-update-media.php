@@ -42,12 +42,14 @@ class Update_Media_Ability extends Ability {
         if ( isset( $params['caption'] ) )     $update['post_excerpt']  = sanitize_textarea_field( $params['caption'] );
         if ( isset( $params['description'] ) ) $update['post_content']  = sanitize_textarea_field( $params['description'] );
 
+        // wp_update_post() and update_post_meta() take slashed data: unslashed, every
+        // backslash in the title, caption, description and alt text was lost (2.50.0).
         if ( count( $update ) > 1 ) {
-            wp_update_post( $update );
+            wp_update_post( wp_slash( $update ) );
         }
 
         if ( isset( $params['alt'] ) ) {
-            update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( $params['alt'] ) );
+            update_post_meta( $id, '_wp_attachment_image_alt', wp_slash( sanitize_text_field( $params['alt'] ) ) );
         }
 
         return $this->success( "Attachment {$id} updated." );

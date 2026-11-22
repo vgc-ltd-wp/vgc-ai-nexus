@@ -127,7 +127,8 @@ class Upload_File_Ability extends Ability {
             $post_data['post_title'] = sanitize_text_field( $params['title'] );
         }
 
-        $attachment_id = media_handle_sideload( $file_array, 0, null, $post_data );
+        // Slashed: wp_insert_post() unslashes, so a backslash in the title was lost (2.50.0).
+        $attachment_id = media_handle_sideload( $file_array, 0, null, wp_slash( $post_data ) );
 
         if ( is_wp_error( $attachment_id ) ) {
             @unlink( $tmp );

@@ -213,6 +213,13 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.50.0
+
+- **A Custom HTML widget keeps its markup.** `add_widget` and `update_widget` ran every text setting through `sanitize_textarea_field()`, which strips all HTML, so a Custom HTML, Text or Block widget lost its script, links and even its paragraphs, and the answer said nothing. They now follow WordPress's own widgets, setting by setting: a `custom_html` widget's `content`, a `text` widget's `text` and a `block` widget's `content` are stored as sent when the account has `unfiltered_html` and raw code is not locked (as Appearance → Widgets stores them), and otherwise go through `wp_kses_post()`, with a `note` when a tag, attribute or comment was taken out. Every other setting is stored as before: titles and other text plain (tags removed), numbers and true/false as sent; the answer now has a `note` when tags were removed from a plain-text setting. Read-only mode still refuses both tools, and the lock (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter) filters everyone. Another plugin's widget can name its HTML settings with the `mcp_abilities_widget_html_fields` filter.
+- **Backslashes in post meta are kept.** The `meta` of `create_post` and `update_post` was handed to WordPress unslashed, and WordPress unslashes the meta it saves: every backslash was lost. JSON kept in meta (page-builder data, for one) lost the `\` of every `\"` and `\u003c`, and `C:\Temp` became `C:Temp`. Text, lists and objects at any depth keep them now.
+- **Backslashes in media fields are kept.** The title, caption, description and alt text of `update_media`, of `upload_image` (and upload links), and the title of `upload_file`.
+- The `settings` descriptions of `add_widget` and `update_widget` say which settings keep HTML.
+
 ### 2.49.0
 
 - **An administrator's page keeps its own CSS, script and form fields.** `create_page`, `update_page`, `create_post` and `update_post` ran every account's content through `wp_kses_post()`, so a Custom HTML block with a `<style>`, a `<script>` (a calculator, say) or `<input>` fields lost all three, and the answer said nothing. Content is now stored as sent when the account has `unfiltered_html` (as WordPress's own editor stores it) and raw code is not locked, the rule templates, template parts and navigation follow since 2.41.0. An account without `unfiltered_html`, and everyone while raw code is locked (`MCP_ABILITIES_DISABLE_CUSTOM_CODE` or the `mcp_abilities_custom_code_enabled` filter), gets the content filtered as before, and now the answer has a `note` when a tag, attribute or comment was taken out. Read-only mode still refuses these tools.

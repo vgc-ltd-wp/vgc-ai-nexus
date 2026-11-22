@@ -89,13 +89,15 @@ final class Media_Import {
             'name'     => sanitize_file_name( self::with_extension( $filename, $mime ) ),
             'tmp_name' => $tmp,
         ];
-        $id = media_handle_sideload( $file_array, $post_id, null, $post_data );
+        // Slashed: the attachment is saved by wp_insert_post(), which unslashes, so
+        // backslashes in the title, caption and description were lost (2.50.0).
+        $id = media_handle_sideload( $file_array, $post_id, null, wp_slash( $post_data ) );
         if ( is_wp_error( $id ) ) {
             return $fail( 'import_failed', 'Could not add the image to the Media Library: ' . $id->get_error_message() );
         }
 
         if ( ! empty( $meta['alt_text'] ) ) {
-            update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( $meta['alt_text'] ) );
+            update_post_meta( $id, '_wp_attachment_image_alt', wp_slash( sanitize_text_field( $meta['alt_text'] ) ) );
         }
 
         $featured = false;
