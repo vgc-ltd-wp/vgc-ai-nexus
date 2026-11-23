@@ -215,13 +215,17 @@ abstract class Ability {
      * as not sent; a number is accepted for a string; "5" and "true" are
      * accepted for integers and booleans and passed on as 5 and true.
      *
-     * Enums are enforced for AI Nexus's own abilities. An extension's enum can
-     * be a static sample of values its code takes from the site (WooCommerce
-     * order statuses include a shop's custom ones), so for abilities defined
-     * outside this plugin only types are checked, unless the filter
-     * `mcp_abilities_validate_enums` (bool, Ability) says otherwise. Filter
-     * `mcp_abilities_validate_input` (bool, Ability) turns the whole check off
-     * for one ability.
+     * Enums are enforced for every ability, extensions' included (2.52.0;
+     * before, only AI Nexus's own). A value outside the list is refused with
+     * the valid ones, instead of reaching code that quietly replaced it (a
+     * product list asked for status "trash" listed the published products).
+     * A list that only names common values of a set the site defines (a
+     * shop's own order statuses) is not an enum: write it as "examples" and
+     * check the value in the tool. The few such lists extensions published as
+     * "enum" are in OPEN_ENUMS. Filters: `mcp_abilities_validate_enums` (bool,
+     * Ability) turns enums off for one ability, `mcp_abilities_open_enum`
+     * (bool, parameter name, Ability) for one parameter, and
+     * `mcp_abilities_validate_input` (bool, Ability) the whole check.
      *
      * @param array<string,mixed> $params
      * @return array<string,mixed>|string Normalised params, or an error message.
@@ -230,7 +234,7 @@ abstract class Ability {
         if ( ! apply_filters( 'mcp_abilities_validate_input', true, $this ) ) {
             return $params;
         }
-        $enums = (bool) apply_filters( 'mcp_abilities_validate_enums', $this->is_core_ability(), $this );
+        $enums = (bool) apply_filters( 'mcp_abilities_validate_enums', true, $this );
 
         $props = (array) ( $this->input_schema['properties'] ?? [] );
         foreach ( $params as $name => $value ) {
@@ -238,7 +242,7 @@ abstract class Ability {
             if ( ! is_array( $def ) ) {
                 continue;
             }
-            $schema = self::validation_schema( $def, $enums );
+            $schema = self::validation_schema( $def, $enums && ! $this->is_open_enum( (string) $name ) );
             if ( null === $schema ) {
                 continue;
             }
@@ -267,15 +271,24 @@ abstract class Ability {
         return $params;
     }
 
-    /** Whether this ability's class is defined by AI Nexus itself (not an extension). */
-    private function is_core_ability(): bool {
-        static $core = [];
-        $class = static::class;
-        if ( ! isset( $core[ $class ] ) ) {
-            $file           = ( new \ReflectionClass( $this ) )->getFileName();
-            $core[ $class ] = is_string( $file ) && str_starts_with( wp_normalize_path( $file ), wp_normalize_path( MCP_ABILITIES_DIR ) );
-        }
-        return $core[ $class ];
+    /**
+     * Parameters an extension published with an "enum" that is really a sample
+     * of a set the site defines: WooCommerce order statuses (a shop adds its
+     * own; the tools check against wc_get_order_statuses()), stock statuses
+     * (filterable) and product types (subscriptions, bundles…). Their tools
+     * check the value themselves. Ability key => parameter names. (2.52.0, from
+     * the audit of 2026-11-23 of every extension's enums; all others are closed.)
+     */
+    private const OPEN_ENUMS = [
+        'wc_list_orders'         => [ 'status' ],
+        'wc_update_order_status' => [ 'status' ],
+        'wc_list_products'       => [ 'stock', 'product_type' ],
+    ];
+
+    /** Whether a parameter's enum is only a sample (OPEN_ENUMS, filter mcp_abilities_open_enum). */
+    private function is_open_enum( string $param ): bool {
+        $open = in_array( $param, self::OPEN_ENUMS[ $this->key ] ?? [], true );
+        return (bool) apply_filters( 'mcp_abilities_open_enum', $open, $param, $this );
     }
 
     /**

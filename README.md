@@ -213,6 +213,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 
 ## Changelog
 
+### 2.52.0
+
+- **Every tool's allowed values are checked, extensions' tools included.** A value outside a parameter's list (an `enum`) is refused with the valid values, before the tool runs. Until now this held only for AI Nexus's own tools; for an extension's tool only the types were checked, and an audit of every extension (2026-11-23) found tools that quietly replaced an unknown value with a default and answered as if asked for it. Examples: WooCommerce's product list asked for status "trash" listed the published products (fixed in that extension 1.10.0); Tracker's client-request list asked for state "closed" listed the open ones; a new product with stock status "sold_out" was created in stock. Four WooCommerce lists only name common values of a set the shop defines (order statuses, stock statuses, product types) and stay open; those tools check the value against the shop. For extension authors: `enum` must be the complete list your code handles; write a sample list as `examples`. Filters `mcp_abilities_open_enum` (one parameter) and `mcp_abilities_validate_enums` (one ability) open an enum.
+
 ### 2.51.1
 
 - **`update_menu_item` changes only the fields sent.** It promised to, but WordPress fills every field it is not given with a default instead of reading the item, so renaming a menu item broke it: a custom link lost its URL, its target, its CSS classes, its description and title attribute and its place under its parent, and moved to the end of the menu; a page, post or category item became a custom link with no URL (the link to the page was gone); an item not yet published was published. The tool now starts from the item as it is stored and changes only what was sent, as WordPress's own menu screen does. A page or category item that shows its page's or term's title keeps following it. Every field sent keeps the cleaning it had, and read-only mode still refuses the tool.
