@@ -90,12 +90,14 @@ class Update_Term_Seo_Ability extends Ability {
             return $this->error( $denied );
         }
 
-        $values = [];
+        $values  = [];
+        $cleaned = [];
         foreach ( self::FIELD_MAP as $field => $meta_key ) {
             if ( ! array_key_exists( $field, $params ) ) {
                 continue;
             }
-            $raw = (string) $params[ $field ];
+            $raw  = (string) $params[ $field ];
+            $orig = $raw;
             if ( 'canonical' === $field ) {
                 $raw = '' === $raw ? '' : esc_url_raw( $raw );
             } elseif ( 'noindex' === $field ) {
@@ -104,6 +106,11 @@ class Update_Term_Seo_Ability extends Ability {
                 $raw = sanitize_text_field( $raw );
             }
             $values[ $meta_key ] = $raw;
+            // "verified" compares the database with the cleaned value; what the
+            // cleaning itself changed is named too (2.52.0).
+            if ( $raw !== trim( $orig ) ) {
+                $cleaned[] = $field;
+            }
         }
         if ( ! $values ) {
             return $this->error( 'Nothing to update: pass at least one of meta_description, seo_title, focus_keyword, canonical, noindex.' );
@@ -163,6 +170,10 @@ class Update_Term_Seo_Ability extends Ability {
             'stored'   => $stored,
             'verified' => $verified,
         ];
+        if ( $cleaned ) {
+            $extra['cleaned'] = $cleaned;
+            $extra['note']    = sprintf( 'Cleaned before saving, so "stored" differs from what was sent: %s (tags, line breaks and percent-encoded characters are removed from text; an address is made safe or left empty).', implode( ', ', $cleaned ) );
+        }
         if ( ! $all_verified ) {
             $extra['warning']    = 'One or more fields were stored DIFFERENTLY than sent (see stored vs your input). If characters are missing or replaced, the database connection is likely not utf8mb4 — that conversion happens below WordPress and cannot be fixed by this tool.';
             $extra['db_charset'] = (string) $wpdb->charset;

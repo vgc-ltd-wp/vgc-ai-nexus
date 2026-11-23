@@ -98,7 +98,8 @@ class Inject_Css_Ability extends Ability {
                 return $this->error( 'Failed to save CSS: ' . $result->get_error_message() );
             }
 
-            return $this->success( 'Custom CSS updated via find_replace. Changes are live immediately.' );
+            // A "css" sent with this mode has no effect: said (2.52.0).
+            return $this->success( 'Custom CSS updated via find_replace. Changes are live immediately.', isset( $params['css'] ) && '' !== $params['css'] ? [ 'note' => '"css" is not used in find_replace mode (only "find" and "replace_with"); it was ignored.' ] : [] );
         }
 
         // ── append / replace ───────────────────────────────────────────────────
@@ -115,7 +116,8 @@ class Inject_Css_Ability extends Ability {
             return $this->error( 'Failed to save CSS: ' . $result->get_error_message() );
         }
 
-        $action = ( 'replace' === $mode ) ? 'replaced' : 'appended';
-        return $this->success( "Custom CSS {$action} successfully. Changes are live immediately." );
+        $action  = ( 'replace' === $mode ) ? 'replaced' : 'appended';
+        $ignored = array_values( array_filter( [ 'find', 'replace_with' ], static fn( $k ) => isset( $params[ $k ] ) && '' !== $params[ $k ] ) );
+        return $this->success( "Custom CSS {$action} successfully. Changes are live immediately.", $ignored ? [ 'note' => sprintf( '"%s" %s used only in find_replace mode; ignored in "%s" mode.', implode( '" and "', $ignored ), count( $ignored ) > 1 ? 'are' : 'is', $mode ) ] : [] );
     }
 }

@@ -10,7 +10,7 @@ class Delete_Page_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'delete_page';
         $this->label        = __( 'Delete Page', 'mcp-abilities' );
-        $this->description  = 'Trash or permanently delete a page.';
+        $this->description  = 'Trash or permanently delete (force: true) a page. A page already in the trash, or a site with the trash switched off, needs force: true; the result says in "outcome" whether it was "trashed" or "deleted".';
         $this->required_cap = 'delete_pages';
         $this->input_schema = [
             'type'       => 'object',
@@ -37,9 +37,16 @@ class Delete_Page_Ability extends Ability {
             return $this->error( 'You do not have permission to delete this page.' );
         }
 
-        if ( ! wp_delete_post( $page_id, $force ) ) {
-            return $this->error( 'Failed to delete the page.' );
+        // A page already in the trash, or a site without a trash, is no longer
+        // deleted permanently while the answer says "moved to trash" (2.52.0).
+        $done = \MCP_Abilities\Post_Access::trash_or_delete( $page, $force );
+        if ( null !== $done['error'] ) {
+            return $this->error( str_replace( 'Item ', 'Page ', $done['error'] ) );
         }
-        return $this->success( "Page {$page_id} " . ( $force ? 'deleted permanently' : 'moved to trash' ) . '.' );
+        $extra = [ 'id' => $page_id, 'outcome' => $done['outcome'] ];
+        if ( null !== $done['note'] ) {
+            $extra['note'] = $done['note'];
+        }
+        return $this->success( "Page {$page_id} " . ( 'deleted' === $done['outcome'] ? 'deleted permanently' : 'moved to trash' ) . '.', $extra );
     }
 }

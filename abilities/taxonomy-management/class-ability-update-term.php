@@ -42,7 +42,12 @@ class Update_Term_Ability extends Ability {
         $args = [];
         if ( isset( $params['name'] ) )        $args['name']        = wp_slash( sanitize_text_field( $params['name'] ) );
         if ( isset( $params['slug'] ) )         $args['slug']        = sanitize_title( $params['slug'] );
-        if ( isset( $params['description'] ) )  $args['description'] = wp_slash( sanitize_textarea_field( $params['description'] ) );
+        $desc_note = null;
+        if ( isset( $params['description'] ) ) {
+            // Plain text as before; a note when markup was taken out (2.52.0).
+            [ $desc, $desc_note ] = self::plain_text_with_note( $params['description'], 'description' );
+            $args['description']  = wp_slash( $desc );
+        }
         if ( isset( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
         if ( ! $args ) {
@@ -78,11 +83,22 @@ class Update_Term_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "Term {$term_id} updated.", array_filter( [
+        $extra = array_filter( [
             'id'       => $term_id,
             'taxonomy' => $taxonomy,
             'language' => $language,
             'updated'  => array_keys( $args ),
-        ] ) );
+        ] );
+        // The stored slug, with a note when it is not the one sent (2.52.0).
+        if ( isset( $args['slug'] ) ) {
+            $term = get_term( $term_id, $taxonomy );
+            if ( $term instanceof \WP_Term ) {
+                $extra['slug'] = $term->slug;
+                if ( $term->slug !== $args['slug'] ) {
+                    $extra['slug_note'] = sprintf( 'The slug "%s" is already used by another term, so WordPress stored "%s".', urldecode( $args['slug'] ), urldecode( $term->slug ) );
+                }
+            }
+        }
+        return $this->success( "Term {$term_id} updated.", self::with_note( $extra, $desc_note ) );
     }
 }

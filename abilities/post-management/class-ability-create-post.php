@@ -12,7 +12,7 @@ class Create_Post_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'create_post';
         $this->label        = __( 'Create Post', 'mcp-abilities' );
-        $this->description  = 'Create a new WordPress post of any registered post type. Defaults to post_type=post. Use list_post_types to discover available types (e.g. page, product, event). Categories and tags only apply to the built-in post type.';
+        $this->description  = 'Create a new WordPress post of any registered post type. Defaults to post_type=post. Use list_post_types to discover available types (e.g. page, product, event). Categories and tags apply to types that have them (the built-in post type does); an unknown ID is refused. The result echoes the stored slug, date, status and terms.';
         $this->required_cap = 'publish_posts';
         $this->input_schema = [
             'type'       => 'object',
@@ -23,9 +23,9 @@ class Create_Post_Ability extends Ability {
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft', 'description' => '"publish" and "private" need the permission to publish this post type; without it the post is created as "pending" (see status_note).' ],
                 'post_type'  => [ 'type' => 'string', 'description' => 'Post type slug. Defaults to "post". Use list_post_types to see all available types.' ],
                 'author_id'  => [ 'type' => 'integer','description' => 'Author user ID. Defaults to current user.' ],
-                'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of category IDs (post type "post" only).' ],
-                'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of tag IDs (post type "post" only).' ],
-                'date'       => [ 'type' => 'string', 'description' => 'Publish (created) date in site local time, "Y-m-d H:i:s". create_post: the date of the new post. update_post / update_page: changes the date of an EXISTING post (also "Y-m-d\TH:i:s" or "Y-m-d"); a future date on a published post is refused unless status "future" is sent too; a past date on a scheduled post publishes it. The modified date cannot be set (WordPress updates it itself).' ],
+                'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of category IDs (types with categories, such as "post"). An unknown ID is refused.' ],
+                'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Array of tag IDs (types with tags, such as "post"). An unknown ID is refused.' ],
+                'date'       => [ 'type' => 'string', 'description' => 'Publish (created) date in site local time, "Y-m-d H:i:s" (also "Y-m-d\TH:i:s" or "Y-m-d"). create_post: the date of the new post; with a future date WordPress schedules it instead of publishing (the result says so). update_post / update_page: changes the date of an EXISTING post; a future date on a published post is refused unless status "future" is sent too; a past date on a scheduled post publishes it. The modified date cannot be set (WordPress updates it itself).' ],
                 'meta'       => [ 'type' => 'object', 'description' => 'Key/value post meta to set. Protected keys (e.g. starting with "_") need permission to edit them; refused keys are listed in meta_skipped.' ],
                 'slug'       => [ 'type' => 'string', 'description' => 'Post slug (post_name). Auto-generated from title if omitted.' ],
                 'parent_id'  => [ 'type' => 'integer', 'description' => 'Parent post ID for hierarchical post types (e.g. pages).' ],
@@ -76,11 +76,13 @@ class Create_Post_Ability extends Ability {
         // As sent for an account that may post unfiltered HTML, unless raw code is
         // locked; otherwise filtered as WordPress filters posts, with a note (2.49.0).
         [ $content, $content_note ] = Custom_Code::filter_with_note( (string) ( $params['content'] ?? '' ) );
+        // The excerpt stays plain text; a note when markup was taken out (2.52.0).
+        [ $excerpt, $excerpt_note ] = self::plain_text_with_note( $params['excerpt'] ?? '', 'excerpt' );
 
         $post_data = [
             'post_title'   => sanitize_text_field( $params['title'] ),
             'post_content' => $content,
-            'post_excerpt' => sanitize_textarea_field( $params['excerpt'] ?? '' ),
+            'post_excerpt' => $excerpt,
             'post_status'  => $status,
             'post_type'    => $post_type,
             'post_author'  => $author_id,
@@ -94,19 +96,23 @@ class Create_Post_Ability extends Ability {
             $post_data['post_parent'] = absint( $params['parent_id'] );
         }
 
-        if ( ! empty( $params['date'] ) ) {
-            $post_data['post_date'] = sanitize_text_field( $params['date'] );
+        // The date with its GMT twin (2.52.0): without it a draft's date was
+        // "floating", and the next update reset it to the time of that update.
+        if ( isset( $params['date'] ) && '' !== $params['date'] ) {
+            $local = self::parse_post_date( $params['date'] );
+            if ( null === $local ) {
+                return $this->error( 'Invalid date "' . sanitize_text_field( (string) $params['date'] ) . '". Send a real calendar date in site local time as "Y-m-d H:i:s" (e.g. 2024-03-15 09:30:00), "Y-m-d\TH:i:s" or "Y-m-d". Nothing was created.' );
+            }
+            $post_data['post_date']     = $local;
+            $post_data['post_date_gmt'] = get_gmt_from_date( $local );
+            $post_data['edit_date']     = true;
         }
 
-        // Categories and tags only apply to the built-in 'post' type.
-        if ( 'post' === $post_type ) {
-            if ( ! empty( $params['categories'] ) ) {
-                $post_data['post_category'] = array_map( 'absint', (array) $params['categories'] );
-            }
-
-            if ( ! empty( $params['tags'] ) ) {
-                $post_data['tags_input'] = array_map( 'absint', (array) $params['tags'] );
-            }
+        // Categories and tags: for every type that has them, checked before
+        // anything is written (2.52.0; until then only "post", unknown IDs skipped).
+        $terms = Post_Access::term_params( $params, $post_type );
+        if ( null !== $terms['error'] ) {
+            return $this->error( $terms['error'] );
         }
 
         // wp_insert_post() takes slashed data: unslashed, every backslash was lost.
@@ -115,6 +121,7 @@ class Create_Post_Ability extends Ability {
         if ( is_wp_error( $post_id ) ) {
             return $this->error( $post_id->get_error_message() );
         }
+        $terms_done = Post_Access::apply_terms( (int) $post_id, $terms['set'] );
 
         // Set custom meta: protected keys only with permission to edit them.
         $meta_skipped = [];
@@ -126,18 +133,25 @@ class Create_Post_Ability extends Ability {
             }
         }
 
+        clean_post_cache( $post_id );
         $result = [
             'id'        => $post_id,
             'permalink' => get_permalink( $post_id ),
             'edit_url'  => get_edit_post_link( $post_id, 'raw' ),
             'status'    => get_post_status( $post_id ),
+            'date'      => get_post_field( 'post_date', $post_id ),
         ];
+        $result = array_merge( $result, self::slug_readback( (int) $post_id, $params['slug'] ?? null ), $terms_done['fields'] );
         if ( null !== $status_note ) {
             $result['status_note'] = $status_note;
         }
-        if ( null !== $content_note ) {
-            $result['note'] = $content_note;
+        $result = self::with_note( $result, $content_note );
+        // A future date makes WordPress schedule the post instead of publishing it.
+        if ( 'future' === $result['status'] && 'future' !== $status ) {
+            $result = self::with_note( $result, sprintf( 'The date is in the future, so WordPress scheduled the post instead of publishing it: it is off the site until %s (site time), when WordPress publishes it.', $result['date'] ) );
         }
+        $result = self::with_note( $result, $terms_done['note'] );
+        $result = self::with_note( $result, $excerpt_note );
         if ( $meta_skipped ) {
             $result['meta_skipped'] = $meta_skipped;
         }

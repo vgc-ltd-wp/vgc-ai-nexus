@@ -71,6 +71,80 @@ abstract class Ability {
         return is_array( $data ) ? $data : [ 'result' => $data ];
     }
 
+    /**
+     * $out with $note added to its "note" (after any note already there), or
+     * unchanged when $note is null or empty (2.52.0).
+     *
+     * @param array<string,mixed> $out
+     * @return array<string,mixed>
+     */
+    public static function with_note( array $out, ?string $note, string $field = 'note' ): array {
+        if ( null === $note || '' === $note ) {
+            return $out;
+        }
+        $out[ $field ] = isset( $out[ $field ] ) && '' !== (string) $out[ $field ] ? $out[ $field ] . ' ' . $note : $note;
+        return $out;
+    }
+
+    /**
+     * The slug a post or page has after a create or update, as stored
+     * ("slug"), and a "slug_note" when it is not the one sent (2.52.0): a slug
+     * in use gets "-2" from WordPress, and a draft keeps a taken slug until it
+     * is published, when it changes.
+     *
+     * @param mixed $sent The slug the caller sent; null when none.
+     * @return array<string,string>
+     */
+    protected static function slug_readback( int $post_id, $sent ): array {
+        clean_post_cache( $post_id );
+        $post = get_post( $post_id );
+        if ( ! $post ) {
+            return [];
+        }
+        $out  = [ 'slug' => (string) $post->post_name ];
+        $sent = is_string( $sent ) ? trim( $sent ) : '';
+        if ( '' === $sent ) {
+            return $out;
+        }
+        $clean  = sanitize_title( $sent );
+        $stored = (string) $post->post_name;
+        if ( '' !== $stored && $clean !== $stored ) {
+            $out['slug_note'] = sprintf( 'The slug "%s" is already used by another item (or reserved), so WordPress stored "%s".', urldecode( $clean ), urldecode( $stored ) );
+        } elseif ( in_array( $post->post_status, [ 'draft', 'pending', 'auto-draft' ], true ) ) {
+            $when_published = wp_unique_post_slug( $clean, $post_id, 'publish', $post->post_type, (int) $post->post_parent );
+            if ( $when_published !== $clean ) {
+                $out['slug_note'] = sprintf( 'The slug "%s" is already used by another item. A draft keeps it for now, but when this is published WordPress will change it to "%s"; choose another slug to avoid that.', urldecode( $clean ), urldecode( $when_published ) );
+            }
+        }
+        if ( ! isset( $out['slug_note'] ) && urldecode( $stored ) !== $sent && '' !== $stored ) {
+            $out['slug_note'] = sprintf( 'WordPress stores slugs in lowercase, without spaces or most punctuation: "%s".', urldecode( $stored ) );
+        }
+        return $out;
+    }
+
+    /**
+     * A text field stored as plain text (sanitize_textarea_field(), as before),
+     * and a note naming it when that took something out (2.52.0): HTML tags,
+     * or percent-encoded characters such as %20. Until then a term
+     * description, an excerpt, a caption, a reply or a bio lost its markup
+     * without a word.
+     *
+     * @param mixed $value
+     * @return array{0:string,1:?string} [ text to store, note or null ]
+     */
+    public static function plain_text_with_note( $value, string $field ): array {
+        $sent  = is_scalar( $value ) ? (string) $value : '';
+        $clean = sanitize_textarea_field( $sent );
+        $lost  = [];
+        if ( Custom_Code::filtered_away( $sent, $clean ) ) {
+            $lost[] = 'its HTML tags were removed (the text between them is kept)';
+        }
+        if ( preg_match( '/%[0-9a-f]{2}/i', $sent ) && ! preg_match( '/%[0-9a-f]{2}/i', $clean ) ) {
+            $lost[] = 'percent-encoded characters such as %20 were removed (send the characters themselves)';
+        }
+        return [ $clean, $lost ? sprintf( 'The %s is stored as plain text, so %s.', $field, implode( ', and ', $lost ) ) : null ];
+    }
+
     /** How post and page content is stored (2.49.0); appended to the "content" descriptions. */
     protected const CONTENT_FILTER_DESCRIPTION = 'Stored as sent (style, script and form fields included) for an account that may post unfiltered HTML, such as an administrator; otherwise, or while raw code is locked on the site, script and other markup WordPress does not allow in posts is removed, and the result has a "note" saying so.';
 

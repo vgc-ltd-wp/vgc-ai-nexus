@@ -91,16 +91,17 @@ class Update_Page_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
+        // The slug as stored, with a note when WordPress changed it (2.52.0): a
+        // slug in use became "-2" and the answer did not say so.
         $extra = array_merge(
             [ 'page_id' => $page_id ],
-            self::post_date_readback( $page_id, $old_status, $old_date )
+            self::post_date_readback( $page_id, $old_status, $old_date ),
+            self::slug_readback( $page_id, ! empty( $params['slug'] ) ? $params['slug'] : null )
         );
         if ( null !== $status['note'] ) {
             $extra['status_note'] = $status['note'];
         }
-        if ( null !== $content_note ) {
-            $extra['note'] = $content_note;
-        }
+        $extra = self::with_note( $extra, $content_note );
         return $this->success( "Page {$page_id} updated.", $extra );
     }
 }

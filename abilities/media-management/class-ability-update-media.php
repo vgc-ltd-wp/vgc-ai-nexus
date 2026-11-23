@@ -39,19 +39,30 @@ class Update_Media_Ability extends Ability {
 
         $update = [ 'ID' => $id ];
         if ( isset( $params['title'] ) )       $update['post_title']   = sanitize_text_field( $params['title'] );
-        if ( isset( $params['caption'] ) )     $update['post_excerpt']  = sanitize_textarea_field( $params['caption'] );
-        if ( isset( $params['description'] ) ) $update['post_content']  = sanitize_textarea_field( $params['description'] );
+        // Plain text as before; a note when markup was taken out (2.52.0).
+        $notes = [];
+        if ( isset( $params['caption'] ) ) {
+            [ $update['post_excerpt'], $notes[] ] = self::plain_text_with_note( $params['caption'], 'caption' );
+        }
+        if ( isset( $params['description'] ) ) {
+            [ $update['post_content'], $notes[] ] = self::plain_text_with_note( $params['description'], 'description' );
+        }
 
         // wp_update_post() and update_post_meta() take slashed data: unslashed, every
         // backslash in the title, caption, description and alt text was lost (2.50.0).
+        // Its answer is checked (2.52.0): a failed save was reported as "updated".
         if ( count( $update ) > 1 ) {
-            wp_update_post( wp_slash( $update ) );
+            $saved = wp_update_post( wp_slash( $update ), true );
+            if ( is_wp_error( $saved ) ) {
+                return $this->error( "Attachment {$id} was not updated: " . $saved->get_error_message() );
+            }
         }
 
         if ( isset( $params['alt'] ) ) {
             update_post_meta( $id, '_wp_attachment_image_alt', wp_slash( sanitize_text_field( $params['alt'] ) ) );
         }
 
-        return $this->success( "Attachment {$id} updated." );
+        $notes = array_filter( $notes );
+        return $this->success( "Attachment {$id} updated.", $notes ? [ 'note' => implode( ' ', $notes ) ] : [] );
     }
 }

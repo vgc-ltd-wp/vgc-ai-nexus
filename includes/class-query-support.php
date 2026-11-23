@@ -34,6 +34,26 @@ final class Query_Support {
      * @return array{items:array,total:int,total_pages:int,page:int,per_page:int,offset:int,note?:string,fields_note?:string}|array{success:false,error:string}
      */
     public static function run( array $args, array $params, callable $formatter, array $item_fields = [] ): array {
+        // A negative page, offset or per_page was turned positive by absint() (-5
+        // became 5) (2.52.0).
+        foreach ( [ 'page', 'offset', 'per_page' ] as $num ) {
+            if ( isset( $params[ $num ] ) && is_numeric( $params[ $num ] ) && (int) $params[ $num ] < 0 ) {
+                return [ 'success' => false, 'error' => sprintf( '"%s" cannot be negative.', $num ) ];
+            }
+        }
+        // The language is checked (2.52.0): an unknown code gave an empty or wrong
+        // list, and with WPML off the filter did nothing without saying so.
+        $language      = isset( $params['language'] ) ? strtolower( trim( sanitize_text_field( (string) $params['language'] ) ) ) : '';
+        $language_note = null;
+        if ( '' !== $language ) {
+            if ( ! Wpml_Support::active() ) {
+                $language_note = 'all' === $language ? null : sprintf( 'WPML is not active on this site, so "language" ("%s") was ignored: the list is not limited to a language.', $language );
+                $language      = '';
+            } elseif ( 'all' !== $language && ! Wpml_Support::is_valid_language( $language ) ) {
+                return [ 'success' => false, 'error' => sprintf( 'Unknown WPML language code "%s". Use an active language code of this site or "all".', $language ) ];
+            }
+        }
+
         $scope = Post_Access::scope_list_query( $args );
         if ( null !== $scope['error'] ) {
             return [ 'success' => false, 'error' => $scope['error'] ];
@@ -67,8 +87,7 @@ final class Query_Support {
             $meta_keys = $named;
         }
 
-        // WPML language scoping (no-op when WPML is inactive or no language given).
-        $language = isset( $params['language'] ) ? sanitize_text_field( (string) $params['language'] ) : '';
+        // WPML language scoping (checked above; no language: the current one).
         $previous = '' !== $language ? Wpml_Support::switch_to( $language ) : null;
 
         $query = new \WP_Query( $args );
@@ -93,6 +112,7 @@ final class Query_Support {
         if ( null !== $scope['note'] ) {
             $out['note'] = $scope['note'];
         }
+        $out = Ability::with_note( $out, $language_note );
         if ( $item_fields ) {
             $fields_note = self::fields_note( $items, $meta_keys, $dropped, $item_fields, true );
             if ( null !== $fields_note ) {
@@ -102,6 +122,84 @@ final class Query_Support {
                 $out = self::with_size_note( $out, $items, self::compact_fields( $item_fields ), '_thumbnail_id' );
             }
         }
+        return $out;
+    }
+
+    /**
+     * The tax_query for a "taxonomy" + "terms" filter (list_posts,
+     * list_content_seo), with every term resolved first (2.52.0, audit of
+     * 2026-11-23). Until then a list mixing IDs and slugs was taken as slugs
+     * (the IDs matched nothing), and unknown slugs or a taxonomy the post type
+     * does not use gave fewer or no items without a word.
+     *
+     * - The taxonomy must exist, and be used by the post type (unless "any").
+     * - Each term is an ID or a slug of that taxonomy (also its name, as a
+     *   last resort). None known: refused, naming them. Some unknown: the
+     *   filter uses the known ones and "note" names the others.
+     *
+     * @param string|string[] $post_type
+     * @param array<int,mixed> $terms
+     * @return array{error:?string,tax_query:?array,note:?string}
+     */
+    public static function tax_filter( string $taxonomy, array $terms, $post_type ): array {
+        $out = [ 'error' => null, 'tax_query' => null, 'note' => null ];
+        if ( ! taxonomy_exists( $taxonomy ) ) {
+            $for_type = is_string( $post_type ) && 'any' !== $post_type ? get_object_taxonomies( $post_type ) : [];
+            $out['error'] = sprintf(
+                'Taxonomy "%s" is not registered. Taxonomies available for post type "%s": %s.',
+                $taxonomy,
+                is_array( $post_type ) ? implode( ', ', $post_type ) : $post_type,
+                $for_type ? implode( ', ', $for_type ) : '(none - or pass a specific post_type to see its taxonomies)'
+            );
+            return $out;
+        }
+        $types = 'any' === $post_type ? [] : (array) $post_type;
+        foreach ( $types as $type ) {
+            if ( ! is_object_in_taxonomy( (string) $type, $taxonomy ) ) {
+                $for_type = get_object_taxonomies( (string) $type );
+                $out['error'] = sprintf(
+                    'Post type "%s" does not use the taxonomy "%s", so no item could match. Its taxonomies: %s.',
+                    $type,
+                    $taxonomy,
+                    $for_type ? implode( ', ', $for_type ) : '(none)'
+                );
+                return $out;
+            }
+        }
+        $ids     = [];
+        $unknown = [];
+        foreach ( $terms as $term ) {
+            $term  = trim( (string) $term );
+            $found = null;
+            if ( ctype_digit( $term ) ) {
+                $found = get_term( (int) $term, $taxonomy );
+            }
+            if ( ! $found instanceof \WP_Term ) {
+                $found = get_term_by( 'slug', sanitize_title( $term ), $taxonomy ) ?: get_term_by( 'name', $term, $taxonomy );
+            }
+            if ( $found instanceof \WP_Term ) {
+                $ids[] = (int) $found->term_id;
+            } else {
+                $unknown[] = $term;
+            }
+        }
+        if ( ! $ids ) {
+            $out['error'] = sprintf(
+                'No term %s in the taxonomy "%s". Send term slugs or IDs of that taxonomy; list_terms with taxonomy "%s" lists them.',
+                '"' . implode( '", "', $unknown ) . '" exists',
+                $taxonomy,
+                $taxonomy
+            );
+            return $out;
+        }
+        if ( $unknown ) {
+            $out['note'] = sprintf( 'Not terms of "%s", so left out of the filter: "%s". Items are matched on the other terms only.', $taxonomy, implode( '", "', $unknown ) );
+        }
+        $out['tax_query'] = [ [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+            'taxonomy' => $taxonomy,
+            'field'    => 'term_id',
+            'terms'    => array_values( array_unique( $ids ) ),
+        ] ];
         return $out;
     }
 

@@ -37,7 +37,12 @@ class List_Revisions_Ability extends Ability {
         $revisions = wp_get_post_revisions( $post_id, [ 'order' => 'DESC' ] );
 
         if ( empty( $revisions ) ) {
-            return $this->json_result( [ 'post_id' => $post_id, 'total' => 0, 'revisions' => [] ] );
+            $out = [ 'post_id' => $post_id, 'total' => 0, 'revisions' => [] ];
+            // Say why, when it is not "no edits yet" (2.52.0).
+            if ( ! wp_revisions_enabled( $post ) ) {
+                $out['note'] = sprintf( 'Revisions are switched off for "%s" items on this site (the post type does not support them, or WP_POST_REVISIONS is off), so none are kept.', $post->post_type );
+            }
+            return $this->json_result( $out );
         }
 
         $result = array_values( array_map( function ( $rev ) {

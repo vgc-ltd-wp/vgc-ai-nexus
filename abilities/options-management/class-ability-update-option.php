@@ -140,21 +140,51 @@ class Update_Option_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'update_option';
         $this->label        = __( 'Update Option', 'mcp-abilities' );
-        $this->description  = 'Update a WordPress site option. Certain critical options are write-protected, including the settings of mail, payment, security and backup plugins. Credential fields inside a value cannot be changed: send them back as shown by get_option ("*** hidden by AI Nexus ***") or leave them out, and they keep their stored value.';
+        $this->description  = 'Update a WordPress site option. Certain critical options are write-protected, including the settings of mail, payment, security and backup plugins. Credential fields inside a value cannot be changed: send them back as shown by get_option ("*** hidden by AI Nexus ***") or leave them out, and they keep their stored value. The value is read back after saving: one WordPress does not accept for that option is refused, and one it changes on saving is given as "stored_value".';
         $this->required_cap = 'manage_options';
         $this->input_schema = [
             'type'       => 'object',
             'properties' => [
                 'name'     => [ 'type' => 'string', 'description' => 'Option key name (e.g. blogname).' ],
                 'value'    => [ 'description' => 'New value for the option.' ],
-                'autoload' => [ 'type' => 'string', 'description' => 'yes or no.', 'default' => 'yes' ],
+                'autoload' => [ 'type' => 'string', 'description' => 'yes or no. Not sent: the option keeps its setting (a new option gets WordPress\'s default).' ],
             ],
             'required' => [ 'name', 'value' ],
         ];
     }
 
     public function execute( array $params ): array {
-        $key = sanitize_key( $params['name'] );
+        if ( ! class_exists( Get_Option_Ability::class ) ) {
+            require_once __DIR__ . '/class-ability-get-option.php';
+        }
+        // The name as sent, or as the site stores it in other letter case (2.52.0;
+        // sanitize_key() rewrote it). Every rule below is checked in lowercase.
+        $resolved = Get_Option_Ability::resolve_name( $params['name'] ?? '' );
+        if ( null !== $resolved['error'] ) {
+            return $this->error( $resolved['error'] );
+        }
+        $name = $resolved['name'];
+        $key  = strtolower( $name );
+
+        if ( in_array( $key, Get_Option_Ability::ENVLOCK_OPTIONS, true ) ) {
+            return $this->error( Get_Option_Ability::refusal( $name ) );
+        }
+
+        // yes / no as before; also WordPress's own on / off and true / false. Not
+        // sent: the option keeps its autoload setting (a new one gets WordPress's
+        // default). Until 2.51.x a missing value forced "yes" on every update, and
+        // anything but "yes" (even "on") meant "no" (2.52.0).
+        $autoload = null;
+        if ( isset( $params['autoload'] ) && '' !== $params['autoload'] ) {
+            $flag = is_bool( $params['autoload'] ) ? ( $params['autoload'] ? 'yes' : 'no' ) : strtolower( trim( (string) $params['autoload'] ) );
+            if ( in_array( $flag, [ 'yes', 'on', 'true', '1' ], true ) ) {
+                $autoload = 'yes';
+            } elseif ( in_array( $flag, [ 'no', 'off', 'false', '0' ], true ) ) {
+                $autoload = 'no';
+            } else {
+                return $this->error( sprintf( 'autoload takes "yes" or "no", not "%s". Option \'%s\' was not changed.', sanitize_text_field( (string) $params['autoload'] ), $name ) );
+            }
+        }
 
         if ( in_array( $key, self::DENYLIST, true ) || in_array( $key, self::deny_runtime(), true ) ) {
             return $this->error( "Option '{$key}' is protected and cannot be modified." );
@@ -182,19 +212,76 @@ class Update_Option_Ability extends Ability {
         // Credentials inside the value cannot be changed or removed; the mask a read
         // showed keeps the stored value (2.41.0).
         $value  = $params['value'];
-        $stored = get_option( $key, null );
+        $stored = get_option( $name, null );
         if ( null !== $stored ) {
             $guard = \MCP_Abilities\Option_Secrets::guard_write( $value, $stored );
             if ( null !== $guard['error'] ) {
-                return $this->error( "Option '{$key}' was not changed. " . $guard['error'] );
+                return $this->error( "Option '{$name}' was not changed. " . $guard['error'] );
             }
             $value = $guard['value'];
         }
 
-        $autoload = ( $params['autoload'] ?? 'yes' ) === 'yes' ? 'yes' : 'no';
-        update_option( $key, $value, $autoload );
+        $before = self::raw_option( $name );
+        update_option( $name, $value, $autoload );
 
-        return $this->success( "Option '{$key}' updated." );
+        // Read back (2.52.0): WordPress's sanitize_option() puts an invalid value
+        // back (a time zone or language it does not know) or turns it into another
+        // one ("ten" posts per page became 1), and the answer said "updated". The
+        // row itself is read, so a plugin's read filter (a translation) is not
+        // taken for a change.
+        $after = self::raw_option( $name );
+        $extra = self::with_note( [ 'option' => $name ], $resolved['note'] );
+        if ( null === $after ) {
+            return $this->error( "Option '{$name}' was not saved: WordPress did not store the value sent (it does not accept it for this option, or it is the option's default)." );
+        }
+        if ( ! self::same_value( $after, $value ) ) {
+            $masked = [];
+            $shown  = \MCP_Abilities\Option_Secrets::mask( $after, $masked );
+            if ( null !== $before && self::same_value( $after, $before ) ) {
+                return $this->error( sprintf(
+                    'Option \'%s\' was not changed: WordPress does not accept the value sent for it and kept the stored one, %s.',
+                    $name,
+                    self::short( $shown )
+                ) );
+            }
+            $extra['stored_value'] = $shown;
+            $extra = self::with_note( $extra, sprintf( 'WordPress changed the value on saving (its own check of this option): it stored %s, not the value sent.', self::short( $shown ) ) );
+            return $this->success( "Option '{$name}' updated, with another value than the one sent.", $extra );
+        }
+
+        return $this->success( "Option '{$name}' updated.", count( $extra ) > 1 ? $extra : [] );
+    }
+
+    /** The option's stored value, read from its row (no filters, no cache); null when there is none. */
+    private static function raw_option( string $name ) {
+        global $wpdb;
+        $row = $wpdb->get_row( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $name ) );
+        return $row ? maybe_unserialize( $row->option_value ) : null;
+    }
+
+    /** Whether two option values are the same once stored (5 and "5", true and "1"). */
+    private static function same_value( $a, $b ): bool {
+        $norm = static function ( $v ) {
+            $v = is_object( $v ) ? (array) $v : $v;
+            return map_deep( $v, static function ( $s ) {
+                if ( is_bool( $s ) ) {
+                    return $s ? '1' : '';
+                }
+                return null === $s ? '' : ( is_scalar( $s ) ? (string) $s : $s );
+            } );
+        };
+        $a = $norm( $a );
+        $b = $norm( $b );
+        if ( is_array( $a ) || is_array( $b ) ) {
+            return is_array( $a ) && is_array( $b ) && maybe_serialize( $a ) === maybe_serialize( $b );
+        }
+        return $a === $b;
+    }
+
+    /** A value for a message: JSON, cut at 200 characters. */
+    private static function short( $value ): string {
+        $json = (string) wp_json_encode( $value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+        return strlen( $json ) > 200 ? substr( $json, 0, 200 ) . '…' : $json;
     }
 
     /**

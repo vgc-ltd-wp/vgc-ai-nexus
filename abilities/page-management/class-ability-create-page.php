@@ -63,14 +63,12 @@ class Create_Page_Ability extends Ability {
             update_post_meta( $page_id, '_wp_page_template', Post_Access::page_template_value( $params['template'] ) );
         }
 
-        $result = [
+        $result = array_merge( [
             'id'        => $page_id,
             'permalink' => get_permalink( $page_id ),
             'edit_url'  => get_edit_post_link( $page_id, 'raw' ),
-        ];
-        if ( null !== $content_note ) {
-            $result['note'] = $content_note;
-        }
+        ], self::slug_readback( (int) $page_id, $params['slug'] ?? null ) );
+        $result = self::with_note( $result, $content_note );
         return $this->json_result( $result );
     }
 }

@@ -72,15 +72,29 @@ class Update_User_Ability extends Ability {
             }
         }
 
+        // An address WordPress would not accept is refused (2.52.0): sanitize_email()
+        // gives "" for it and wp_update_user() saved that, blanking the user's e-mail.
+        if ( isset( $params['email'] ) ) {
+            $email_error = User_Access::email_error( $params['email'] );
+            if ( null !== $email_error ) {
+                return $this->error( $email_error . ' The user was not changed.' );
+            }
+        }
+
         // Names, bio and password slashed (2.51.0), as in create_user: wp_update_user()
         // unslashes them, and the login form checks the password slashed.
         $data = [ 'ID' => $user_id ];
-        if ( isset( $params['email'] ) )        $data['user_email']   = sanitize_email( $params['email'] );
+        if ( isset( $params['email'] ) )        $data['user_email']   = trim( (string) $params['email'] );
         if ( isset( $params['role'] ) )          $data['role']          = $new_role;
         if ( isset( $params['first_name'] ) )    $data['first_name']    = wp_slash( sanitize_text_field( $params['first_name'] ) );
         if ( isset( $params['last_name'] ) )     $data['last_name']     = wp_slash( sanitize_text_field( $params['last_name'] ) );
         if ( isset( $params['display_name'] ) )  $data['display_name']  = wp_slash( sanitize_text_field( $params['display_name'] ) );
-        if ( isset( $params['bio'] ) )           $data['description']   = wp_slash( sanitize_textarea_field( $params['bio'] ) );
+        $bio_note = null;
+        if ( isset( $params['bio'] ) ) {
+            // Plain text as before; a note when markup was taken out (2.52.0).
+            [ $bio, $bio_note ]  = self::plain_text_with_note( $params['bio'], 'bio' );
+            $data['description'] = wp_slash( $bio );
+        }
         if ( isset( $params['password'] ) )      $data['user_pass']     = wp_slash( (string) $params['password'] );
 
         $result = wp_update_user( $data );
@@ -88,6 +102,6 @@ class Update_User_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "User {$user_id} updated." );
+        return $this->success( "User {$user_id} updated.", null !== $bio_note ? [ 'note' => $bio_note ] : [] );
     }
 }

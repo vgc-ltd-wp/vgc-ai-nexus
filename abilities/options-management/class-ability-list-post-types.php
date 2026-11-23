@@ -21,7 +21,7 @@ class List_Post_Types_Ability extends Ability {
     }
 
     public function execute( array $params ): array {
-        $public_only = $params['public_only'] ?? true;
+        $public_only = (bool) ( $params['public_only'] ?? true );
 
         $args  = $public_only ? [ 'public' => true ] : [];
         $types = get_post_types( $args, 'objects' );
@@ -46,10 +46,20 @@ class List_Post_Types_Ability extends Ability {
             ];
         }
 
-        return $this->json_result( [
+        $out = [
             'total'      => count( $result ),
             'post_types' => $result,
             'note'       => 'rest_base / rest_exposed are informational ONLY. These abilities run server-side (WP_Query, wp_insert_post) and work with EVERY post type listed here that has an admin screen (has_admin_screen=true), including ones with rest_exposed=false such as avada_portfolio, fusion_template or tribe_events. A post type not being exposed via the REST API never prevents listing, reading, creating or updating it here. A type with has_admin_screen=false is internal to WordPress or a plugin: the general post tools refuse it.',
-        ] );
+        ];
+        // The public-only default hides types with an admin screen that are not
+        // public (reusable blocks, Elementor templates, shop orders): named (2.52.0).
+        if ( $public_only ) {
+            $hidden = array_values( array_diff( array_keys( get_post_types( [ 'show_ui' => true ] ) ), array_column( $result, 'name' ) ) );
+            if ( $hidden ) {
+                $out['not_listed'] = $hidden;
+                $out['note']      .= sprintf( ' Only public types are listed (public_only is true by default). %d more have an admin screen and work with the post tools: %s. Send public_only: false to list them all.', count( $hidden ), implode( ', ', $hidden ) );
+            }
+        }
+        return $this->json_result( $out );
     }
 }

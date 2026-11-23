@@ -17,7 +17,11 @@ class List_Menus_Ability extends Ability {
 
     public function execute( array $params ): array {
         $menus = wp_get_nav_menus();
-        if ( is_wp_error( $menus ) || ! is_array( $menus ) ) {
+        // An error is an error (2.52.0): it read as "this site has no menus".
+        if ( is_wp_error( $menus ) ) {
+            return $this->error( 'The menus could not be read: ' . $menus->get_error_message() );
+        }
+        if ( ! is_array( $menus ) ) {
             return $this->json_result( [ 'menus' => [] ] );
         }
         $locations = get_nav_menu_locations();

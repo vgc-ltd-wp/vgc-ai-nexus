@@ -16,7 +16,7 @@ class Update_Menu_Item_Ability extends Ability {
             'type'       => 'object',
             'properties' => [
                 'item_id'   => [ 'type' => 'integer', 'description' => 'Menu item post ID (from get_menu_items).' ],
-                'menu_id'   => [ 'type' => 'integer', 'description' => 'Menu term ID the item belongs to.' ],
+                'menu_id'   => [ 'type' => 'integer', 'description' => 'Menu term ID the item belongs to (another menu is refused: items are not moved between menus).' ],
                 'title'     => [ 'type' => 'string',  'description' => 'New label.' ],
                 'url'       => [ 'type' => 'string',  'description' => 'New URL (custom links only; a page, post or term item keeps linking to it).' ],
                 'parent_id' => [ 'type' => 'integer', 'description' => 'New parent item ID (0 to move to top level).' ],
@@ -38,6 +38,15 @@ class Update_Menu_Item_Ability extends Ability {
         }
         if ( ! wp_get_nav_menu_object( $menu_id ) ) {
             return $this->error( "Menu {$menu_id} not found." );
+        }
+        // menu_id names the item's own menu (2.52.0): another one moved the item
+        // there without a word.
+        $own = array_map( 'intval', (array) wp_get_object_terms( $item_id, 'nav_menu', [ 'fields' => 'ids' ] ) );
+        if ( $own && ! in_array( $menu_id, $own, true ) ) {
+            return $this->error( sprintf( 'Menu item %d is in menu %d, not in menu %d, so nothing was changed. Send menu_id %d. (To put a link in another menu, add it there with add_menu_item.)', $item_id, $own[0], $menu_id, $own[0] ) );
+        }
+        if ( isset( $params['url'] ) && '' !== trim( (string) $params['url'] ) && '' === esc_url_raw( $params['url'] ) ) {
+            return $this->error( sprintf( '"%s" is not an address WordPress allows in a menu, so nothing was changed. Send an http(s) address, a path such as "/contact", or "#".', sanitize_text_field( (string) $params['url'] ) ) );
         }
 
         // The fields sent.

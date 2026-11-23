@@ -47,7 +47,7 @@ class Update_Global_Styles_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'update_global_styles';
         $this->label        = __( 'Update Global Styles', 'mcp-abilities' );
-        $this->description  = 'Write to the active theme\'s global styles (theme.json user customisations). Provide a partial "settings" object, a partial "styles" object, or both — they are deep-merged with the existing user customisations. Call get_global_styles first to understand the current structure. Example: to change the body font, provide styles: {"typography": {"fontFamily": "var(--wp--preset--font-family--inter)"}}.';
+        $this->description  = 'Write to the active theme\'s global styles (theme.json user customisations). Provide a partial "settings" object, a partial "styles" object, or both — they are deep-merged with the existing user customisations. Call get_global_styles first to understand the current structure. Example: to change the body font, provide styles: {"typography": {"fontFamily": "var(--wp--preset--font-family--inter)"}}. Keys theme.json does not know have no effect; the result lists them in "ignored_paths".';
         $this->required_cap = 'edit_theme_options';
         $this->input_schema = [
             'type'       => 'object',
@@ -85,13 +85,24 @@ class Update_Global_Styles_Ability extends Ability {
             ] ],
         ] );
 
+        $was_ignored = false;
         if ( $posts ) {
             $post_id         = $posts[0]->ID;
             $current_content = json_decode( $posts[0]->post_content, true ) ?: [];
+            // A styles post this tool made before 2.52.0 lacks the flag, so
+            // WordPress has been ignoring everything in it.
+            $was_ignored = empty( $current_content['isGlobalStylesUserThemeJSON'] );
         } else {
             // No user customisations yet — create the post.
             $post_id         = null;
-            $current_content = [ 'version' => 2 ];
+            $current_content = [ 'version' => class_exists( 'WP_Theme_JSON' ) && defined( 'WP_Theme_JSON::LATEST_SCHEMA' ) ? \WP_Theme_JSON::LATEST_SCHEMA : 2 ];
+        }
+        // WordPress reads a user styles post only with this flag set (as the Site
+        // Editor writes it); without it the styles were saved, reported as "live"
+        // and ignored (2.52.0, audit of 2026-11-23).
+        $current_content['isGlobalStylesUserThemeJSON'] = true;
+        if ( empty( $current_content['version'] ) ) {
+            $current_content['version'] = 2;
         }
 
         // Deep merge incoming changes into existing user data.
@@ -138,12 +149,75 @@ class Update_Global_Styles_Ability extends Ability {
             \WP_Theme_JSON_Resolver::clean_cached_data();
         }
 
-        return $this->success(
-            'Global styles updated. Changes are live immediately.',
-            $css_stripped ? [ 'note' => \MCP_Abilities\Custom_Code::locked()
+        $extra = [];
+        if ( $css_stripped ) {
+            $extra['note'] = \MCP_Abilities\Custom_Code::locked()
                 ? 'Raw code is locked on this site, so the custom CSS ("css") in the styles was left out.'
-                : 'This account does not have the "edit_css" capability, so the custom CSS ("css") in the styles was left out.' ] : []
-        );
+                : 'This account does not have the "edit_css" capability, so the custom CSS ("css") in the styles was left out.';
+        }
+        // Keys theme.json does not know are stored but never used: say which (2.52.0).
+        $ignored = $this->ignored_paths( $params );
+        if ( $ignored ) {
+            $extra['ignored_paths'] = $ignored;
+            $extra = self::with_note( $extra, 'WordPress does not use these keys (theme.json does not know them, or not in that place), so they have no effect: ' . implode( ', ', $ignored ) . '. Check the names with get_global_styles or the theme.json reference.' );
+        }
+        if ( $was_ignored ) {
+            $extra = self::with_note( $extra, 'The saved styles had been ignored by WordPress until now (an earlier save had left out the flag it needs); they are now in effect too.' );
+        }
+
+        return $this->success( 'Global styles updated. Changes are live immediately.', $extra );
+    }
+
+    /**
+     * The paths of what was sent that WordPress's theme.json sanitizing drops
+     * (unknown keys, or known ones in the wrong place), e.g. "styles.typography.fontFamilly".
+     * Lists are not looked into.
+     *
+     * @param array<string,mixed> $params
+     * @return string[]
+     */
+    private function ignored_paths( array $params ): array {
+        if ( ! class_exists( 'WP_Theme_JSON' ) ) {
+            return [];
+        }
+        $sent = [ 'version' => class_exists( 'WP_Theme_JSON' ) && defined( 'WP_Theme_JSON::LATEST_SCHEMA' ) ? \WP_Theme_JSON::LATEST_SCHEMA : 2 ];
+        foreach ( [ 'settings', 'styles' ] as $part ) {
+            if ( ! empty( $params[ $part ] ) && is_array( $params[ $part ] ) ) {
+                $sent[ $part ] = $params[ $part ];
+            }
+        }
+        try {
+            $kept = ( new \WP_Theme_JSON( $sent, 'custom' ) )->get_raw_data();
+        } catch ( \Throwable $e ) {
+            return [];
+        }
+        $out = [];
+        foreach ( [ 'settings', 'styles' ] as $part ) {
+            if ( isset( $sent[ $part ] ) ) {
+                $this->collect_dropped( $sent[ $part ], $kept[ $part ] ?? null, $part, $out );
+            }
+        }
+        return $out;
+    }
+
+    /** Walks $sent and records the paths missing from $kept (presets are kept under their origin, "custom"). */
+    private function collect_dropped( $sent, $kept, string $path, array &$out ): void {
+        if ( ! is_array( $sent ) || wp_is_numeric_array( $sent ) ) {
+            return;
+        }
+        foreach ( $sent as $key => $value ) {
+            $here = $path . '.' . $key;
+            if ( ! is_array( $kept ) || ! array_key_exists( $key, $kept ) ) {
+                $out[] = $here;
+                continue;
+            }
+            $next = $kept[ $key ];
+            // A preset list ("palette": [...]) comes back as {"custom": [...]}.
+            if ( is_array( $value ) && wp_is_numeric_array( $value ) ) {
+                continue;
+            }
+            $this->collect_dropped( $value, $next, $here, $out );
+        }
     }
 
     /**
@@ -221,9 +295,17 @@ class List_Block_Patterns_Ability extends Ability {
             $result[] = $entry;
         }
 
-        return $this->json_result( [
+        $out = [
             'total'    => count( $result ),
             'patterns' => $result,
-        ] );
+        ];
+        // A category no pattern is registered under gave an empty list (2.52.0).
+        if ( $category_filter && ! $result && class_exists( 'WP_Block_Pattern_Categories_Registry' ) ) {
+            $cats = array_column( (array) \WP_Block_Pattern_Categories_Registry::get_instance()->get_all_registered(), 'name' );
+            if ( ! in_array( $category_filter, $cats, true ) ) {
+                $out['note'] = sprintf( 'There is no pattern category "%s". Categories: %s.', $category_filter, implode( ', ', $cats ) );
+            }
+        }
+        return $this->json_result( $out );
     }
 }

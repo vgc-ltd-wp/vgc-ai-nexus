@@ -11,13 +11,13 @@ class Delete_Post_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'delete_post';
         $this->label        = __( 'Delete Post', 'mcp-abilities' );
-        $this->description  = 'Move a post to the trash, or permanently delete it.';
+        $this->description  = 'Move a post, page or custom post type item to the trash, or permanently delete it (force: true). An item already in the trash, or a site with the trash switched off, needs force: true; the result says in "outcome" whether the item was "trashed" or "deleted".';
         $this->required_cap = 'delete_posts';
         $this->input_schema = [
             'type'       => 'object',
             'properties' => [
                 'id'        => [ 'type' => 'integer', 'description' => 'ID of the post to delete.' ],
-                'force'     => [ 'type' => 'boolean', 'description' => 'If true, permanently delete (bypass trash). Default: false.', 'default' => false ],
+                'force'     => [ 'type' => 'boolean', 'description' => 'If true, permanently delete (bypass trash). Default: false: moved to the trash, whatever its type.', 'default' => false ],
             ],
             'required' => [ 'id' ],
         ];
@@ -39,12 +39,18 @@ class Delete_Post_Ability extends Ability {
             return $this->error( 'You do not have permission to delete this post.' );
         }
 
-        $result = wp_delete_post( $post_id, $force );
-        if ( ! $result ) {
-            return $this->error( 'Failed to delete the post.' );
+        // Every type goes to the trash, not only posts and pages; where WordPress
+        // has no trash for it, nothing is changed and the error says so (2.52.0).
+        $done = Post_Access::trash_or_delete( $post, $force );
+        if ( null !== $done['error'] ) {
+            return $this->error( $done['error'] );
         }
 
-        $action = $force ? 'permanently deleted' : 'moved to trash';
-        return $this->success( "Post {$post_id} has been {$action}." );
+        $action = 'deleted' === $done['outcome'] ? 'permanently deleted' : 'moved to trash';
+        $extra  = [ 'id' => $post_id, 'outcome' => $done['outcome'] ];
+        if ( null !== $done['note'] ) {
+            $extra['note'] = $done['note'];
+        }
+        return $this->success( "Post {$post_id} has been {$action}.", $extra );
     }
 }

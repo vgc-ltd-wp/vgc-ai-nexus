@@ -36,8 +36,13 @@ class Create_Term_Ability extends Ability {
         // Name and description slashed: wp_insert_term() unslashes them, so every
         // backslash was lost ("C:\Temp" became "C:Temp"; 2.51.0).
         $args = [];
+        $desc_note = null;
         if ( ! empty( $params['slug'] ) )        $args['slug']        = sanitize_title( $params['slug'] );
-        if ( ! empty( $params['description'] ) )  $args['description'] = wp_slash( sanitize_textarea_field( $params['description'] ) );
+        if ( ! empty( $params['description'] ) ) {
+            // Plain text as before; a note when markup was taken out (2.52.0).
+            [ $desc, $desc_note ] = self::plain_text_with_note( $params['description'], 'description' );
+            $args['description']  = wp_slash( $desc );
+        }
         if ( ! empty( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
         $result = wp_insert_term( wp_slash( sanitize_text_field( $params['name'] ) ), $taxonomy, $args );
@@ -46,10 +51,22 @@ class Create_Term_Ability extends Ability {
         }
 
         // "id" as well (2.47.0): a later step referred to "id" and lost a request.
-        return $this->json_result( [
+        // The stored slug too (2.52.0): a slug in use becomes "-2" without a word.
+        $out  = [
             'id'               => (int) $result['term_id'],
             'term_id'          => $result['term_id'],
             'term_taxonomy_id' => $result['term_taxonomy_id'],
-        ] );
+        ];
+        $term = get_term( (int) $result['term_id'], $taxonomy );
+        if ( $term instanceof \WP_Term ) {
+            $out['slug'] = $term->slug;
+            $asked       = ! empty( $params['slug'] ) ? trim( (string) $params['slug'] ) : '';
+            if ( '' !== $asked && urldecode( $term->slug ) !== $asked ) {
+                $out['slug_note'] = sanitize_title( $asked ) !== $term->slug
+                    ? sprintf( 'The slug "%s" is already used by another term, so WordPress stored "%s".', urldecode( sanitize_title( $asked ) ), urldecode( $term->slug ) )
+                    : sprintf( 'WordPress stores slugs in lowercase, without spaces or most punctuation: "%s".', urldecode( $term->slug ) );
+            }
+        }
+        return $this->json_result( self::with_note( $out, $desc_note ) );
     }
 }

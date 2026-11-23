@@ -135,12 +135,20 @@ class Upload_File_Ability extends Ability {
             return $this->error( 'Failed to import file: ' . $attachment_id->get_error_message() );
         }
 
-        return $this->json_result( [
+        // The name the file is stored under (2.52.0): WordPress adds "-1" when the
+        // name is taken and cleans it; the requested name was echoed instead.
+        $stored_name = basename( (string) get_attached_file( $attachment_id ) );
+        $out         = [
             'id'        => $attachment_id,
             'url'       => wp_get_attachment_url( $attachment_id ),
-            'filename'  => $filename,
+            'filename'  => '' !== $stored_name ? $stored_name : $filename,
             'mime_type' => $mime,
-        ] );
+        ];
+        if ( '' !== $stored_name && $stored_name !== $filename ) {
+            $out['requested_filename'] = $filename;
+            $out['note']               = sprintf( 'Stored as "%s", not "%s" (WordPress cleans file names and adds a number when the name is taken).', $stored_name, $filename );
+        }
+        return $this->json_result( $out );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

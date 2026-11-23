@@ -23,8 +23,8 @@ class Update_Post_Ability extends Ability {
                 'excerpt'    => [ 'type' => 'string' ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the post; it needs a future date. "publish", "future" and "private" need the permission to publish this post; without it the post is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
-                'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ] ],
-                'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ] ],
+                'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Category IDs: replaces the item\'s categories ([] leaves a post only the default category). An unknown ID, or categories for a type without them, is refused. The result echoes the stored categories.' ],
+                'tags'       => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Tag IDs: replaces the item\'s tags ([] removes them all). An unknown ID, or tags for a type without them, is refused. The result echoes the stored tags.' ],
                 'meta'       => [ 'type' => 'object', 'description' => 'Meta key/value pairs to update. Protected keys (e.g. starting with "_") need permission to edit them; refused keys are listed in meta_skipped.' ],
             ],
             'required' => [ 'id' ],
@@ -65,6 +65,13 @@ class Update_Post_Ability extends Ability {
             return $this->error( $status['error'] );
         }
 
+        // Categories and tags checked before anything is written (2.52.0): unknown
+        // IDs were skipped, so a list of only wrong ones took every category off.
+        $terms = Post_Access::term_params( $params, $post->post_type );
+        if ( null !== $terms['error'] ) {
+            return $this->error( $terms['error'] );
+        }
+
         [ $meta, $meta_skipped ] = ! empty( $params['meta'] ) && is_array( $params['meta'] )
             ? Post_Access::writable_meta( $post_id, $params['meta'] )
             : [ [], [] ];
@@ -76,16 +83,19 @@ class Update_Post_Ability extends Ability {
         if ( isset( $params['content'] ) ) {
             [ $update['post_content'], $content_note ] = Custom_Code::filter_with_note( (string) $params['content'] );
         }
-        if ( isset( $params['excerpt'] ) ) $update['post_excerpt']  = sanitize_textarea_field( $params['excerpt'] );
+        // The excerpt stays plain text; a note when markup was taken out (2.52.0).
+        $excerpt_note = null;
+        if ( isset( $params['excerpt'] ) ) {
+            [ $update['post_excerpt'], $excerpt_note ] = self::plain_text_with_note( $params['excerpt'], 'excerpt' );
+        }
         if ( null !== $status['status'] )  $update['post_status']   = $status['status'];
-        if ( isset( $params['categories'] ) ) $update['post_category'] = array_map( 'absint', (array) $params['categories'] );
-        if ( isset( $params['tags'] ) )    $update['tags_input']    = array_map( 'absint', (array) $params['tags'] );
 
         // wp_update_post() takes slashed data: unslashed, every backslash was lost.
         $result = wp_update_post( wp_slash( $update ), true );
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
         }
+        $terms_done = Post_Access::apply_terms( $post_id, $terms['set'] );
 
         foreach ( $meta as $key => $value ) {
             // Slashed: update_post_meta() unslashes, so backslashes were lost (2.50.0).
@@ -95,13 +105,13 @@ class Update_Post_Ability extends Ability {
         $extra = array_merge( [
             'post_id'   => $post_id,
             'permalink' => get_permalink( $post_id ),
-        ], self::post_date_readback( $post_id, $old_status, $old_date ) );
+        ], self::post_date_readback( $post_id, $old_status, $old_date ), $terms_done['fields'] );
         if ( null !== $status['note'] ) {
             $extra['status_note'] = $status['note'];
         }
-        if ( null !== $content_note ) {
-            $extra['note'] = $content_note;
-        }
+        $extra = self::with_note( $extra, $content_note );
+        $extra = self::with_note( $extra, $terms_done['note'] );
+        $extra = self::with_note( $extra, $excerpt_note );
         if ( $meta_skipped ) {
             $extra['meta_skipped'] = $meta_skipped;
         }

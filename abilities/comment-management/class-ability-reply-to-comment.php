@@ -34,7 +34,8 @@ class Reply_To_Comment_Ability extends Ability {
             return $this->error( $refused );
         }
 
-        $content = sanitize_textarea_field( $params['content'] );
+        // Plain text as before; a note when markup was taken out (2.52.0).
+        [ $content, $content_note ] = self::plain_text_with_note( $params['content'] ?? '', 'reply' );
         if ( '' === trim( $content ) ) {
             return $this->error( 'Reply content cannot be empty.' );
         }
@@ -57,6 +58,6 @@ class Reply_To_Comment_Ability extends Ability {
             return $this->error( 'Failed to post reply.' );
         }
 
-        return $this->json_result( [ 'id' => (int) $id, 'reply_id' => $id ] );
+        return $this->json_result( self::with_note( [ 'id' => (int) $id, 'reply_id' => $id ], $content_note ) );
     }
 }

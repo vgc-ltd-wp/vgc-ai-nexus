@@ -90,6 +90,8 @@ Trash or permanently delete a post.
 | `id` | integer | **Yes** | Post ID |
 | `force` | boolean | No | `true` to permanently delete, `false` to trash (default: `false`) |
 
+> **Trash (since 2.52.0).** Without `force` every post type goes to the trash (WordPress itself trashes only posts and pages and deleted every other type for good). An item already in the trash, a media file on a site without `MEDIA_TRASH`, and any item on a site with `EMPTY_TRASH_DAYS` 0 are refused and left alone; send `force: true` to delete them. The result has `outcome`: `trashed` or `deleted`. `delete_page` works the same way.
+
 ---
 
 ### `list_revisions`

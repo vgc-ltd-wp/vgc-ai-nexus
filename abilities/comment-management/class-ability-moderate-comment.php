@@ -50,15 +50,44 @@ class Moderate_Comment_Ability extends Ability {
             return $this->error( $refused );
         }
 
+        if ( ! in_array( $action, self::MODERATIONS, true ) ) {
+            return $this->error( 'Send "moderation": one of ' . implode( ', ', self::MODERATIONS ) . '.' );
+        }
+        // Where WordPress has no trash for it, a trash would be a permanent delete
+        // (wp_trash_comment() deletes when EMPTY_TRASH_DAYS is 0), and the answer
+        // said "trash applied" (2.52.0).
+        if ( 'trash' === $action ) {
+            if ( ! EMPTY_TRASH_DAYS ) {
+                return $this->error( "This site has the trash switched off (EMPTY_TRASH_DAYS is 0), so comment {$id} cannot be moved to the trash and was not changed. To delete it permanently, send \"delete\"." );
+            }
+            if ( 'trash' === $comment->comment_approved ) {
+                return $this->error( "Comment {$id} is already in the trash, so it was not changed. To delete it permanently, send \"delete\"." );
+            }
+        }
+
+        $before = wp_get_comment_status( $comment );
         switch ( $action ) {
             case 'approve': wp_set_comment_status( $id, 'approve' ); break;
             case 'hold':    wp_set_comment_status( $id, 'hold' );    break;
             case 'spam':    wp_spam_comment( $id );                   break;
             case 'trash':   wp_trash_comment( $id );                  break;
             case 'delete':  wp_delete_comment( $id, true );           break;
-            default:        return $this->error( 'Send "moderation": one of ' . implode( ', ', self::MODERATIONS ) . '.' );
         }
 
-        return $this->success( "Comment {$id}: {$action} applied." );
+        // The outcome is read back (2.52.0): the WordPress functions' answers were
+        // ignored, so a moderation that did not happen was reported as applied.
+        clean_comment_cache( $id );
+        $after = get_comment( $id ) ? wp_get_comment_status( $id ) : 'deleted';
+        $want  = [ 'approve' => 'approved', 'hold' => 'unapproved', 'spam' => 'spam', 'trash' => 'trash', 'delete' => 'deleted' ][ $action ];
+        if ( $after !== $want ) {
+            return $this->error( sprintf(
+                'WordPress or a plugin did not %s comment %d: it is %s.',
+                [ 'approve' => 'approve', 'hold' => 'hold', 'spam' => 'mark as spam', 'trash' => 'move to the trash', 'delete' => 'delete' ][ $action ],
+                $id,
+                'deleted' === $after ? 'deleted' : '"' . $after . '"' . ( $after === $before ? ' as before' : '' )
+            ) );
+        }
+
+        return $this->success( "Comment {$id}: {$action} applied.", [ 'id' => $id, 'status' => $after ] );
     }
 }

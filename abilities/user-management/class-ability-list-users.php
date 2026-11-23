@@ -36,7 +36,15 @@ class List_Users_Ability extends Ability {
             'fields'  => 'all',
         ];
 
-        if ( ! empty( $params['role'] ) )   $args['role']   = sanitize_text_field( $params['role'] );
+        // A role that does not exist ("admin") gave an empty list and total 0, as
+        // if nobody had it (2.52.0): refused, with the site's roles.
+        if ( ! empty( $params['role'] ) ) {
+            $role = sanitize_text_field( (string) $params['role'] );
+            if ( ! wp_roles()->is_role( $role ) ) {
+                return $this->error( sprintf( 'Unknown role "%s". Roles on this site: %s.', $role, implode( ', ', array_keys( wp_roles()->get_names() ) ) ) );
+            }
+            $args['role'] = $role;
+        }
         if ( ! empty( $params['search'] ) ) $args['search'] = '*' . sanitize_text_field( $params['search'] ) . '*';
 
         $users  = get_users( $args );

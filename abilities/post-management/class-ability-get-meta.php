@@ -15,7 +15,7 @@ class Get_Meta_Ability extends Ability {
     protected function define_meta(): void {
         $this->key          = 'get_meta';
         $this->label        = __( 'Get Meta (bulk)', 'mcp-abilities' );
-        $this->description  = 'Read meta for many posts/pages at once. Provide an array of IDs and (optionally) the meta keys to return. Collapses hundreds of per-item reads into a few calls. Items this account may not read come back as forbidden; protected keys (e.g. starting with "_") it may not edit are left out and listed in meta_hidden.';
+        $this->description  = 'Read meta for many posts/pages at once. Provide an array of IDs and (optionally) the meta keys to return. Collapses hundreds of per-item reads into a few calls. Items this account may not read come back as forbidden; protected keys (e.g. starting with "_") it may not edit are left out and listed in meta_hidden; keys asked for that an item does not have are shown as "" and listed in meta_missing.';
         $this->required_cap = 'edit_posts';
         $this->input_schema = [
             'type'       => 'object',
@@ -54,7 +54,8 @@ class Get_Meta_Ability extends Ability {
                 $items[] = [ 'id' => $id, 'forbidden' => true, 'error' => $read_error ];
                 continue;
             }
-            $hidden = [];
+            $hidden  = [];
+            $missing = [];
             if ( $keys ) {
                 $meta = [];
                 foreach ( $keys as $key ) {
@@ -63,6 +64,10 @@ class Get_Meta_Ability extends Ability {
                         continue;
                     }
                     $meta[ $key ] = get_post_meta( $id, $key, true );
+                    // A key the item does not have read as "", like an empty value (2.52.0).
+                    if ( ! metadata_exists( 'post', $id, $key ) ) {
+                        $missing[] = $key;
+                    }
                 }
             } else {
                 $meta = Post_Access::readable_meta( $id, (array) get_post_meta( $id ), $hidden );
@@ -70,6 +75,9 @@ class Get_Meta_Ability extends Ability {
             $item = [ 'id' => $id, 'meta' => $meta ];
             if ( $hidden ) {
                 $item['meta_hidden'] = $hidden;
+            }
+            if ( $missing ) {
+                $item['meta_missing'] = $missing;
             }
             $items[] = $item;
         }

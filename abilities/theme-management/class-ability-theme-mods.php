@@ -84,19 +84,42 @@ class Update_Theme_Mod_Ability extends Ability {
 
         $value = $params['value'] ?? null;
 
-        // Sanitise string values; pass numeric/boolean through unchanged.
+        // Sanitise string values; pass numeric/boolean through unchanged. What the
+        // cleaning changed is said in the answer (2.52.0): a URL with %20 or a
+        // percent-encoded Cyrillic path lost those characters, line breaks went,
+        // and removed markup was not mentioned.
+        $note = null;
         if ( is_string( $value ) ) {
-            // Allow hex colours (#rrggbb / #rgb), simple slugs, short text.
-            // Use wp_kses_post only if the string looks like HTML, otherwise strip.
+            $sent = $value;
             if ( str_contains( $value, '<' ) ) {
                 $value = wp_kses_post( $value );
+                if ( \MCP_Abilities\Custom_Code::filtered_away( $sent, $value ) ) {
+                    $note = 'Markup WordPress does not allow in posts (script, iframe, style and the like) was removed.';
+                }
+            } elseif ( preg_match( '#^(https?:)?//\S+$#i', trim( $value ) ) ) {
+                // An address: cleaned as one, which keeps %20 and %D0%B0.
+                $value = esc_url_raw( trim( $value ) );
+                if ( '' === $value ) {
+                    return $this->error( "The theme mod \"{$key}\" was not changed: \"" . sanitize_text_field( $sent ) . '" is not an address WordPress accepts.' );
+                }
             } else {
-                $value = sanitize_text_field( $value );
+                // Plain text: line breaks kept (sanitize_text_field() joined the lines).
+                $value = sanitize_textarea_field( $value );
+                if ( $value !== trim( $sent ) ) {
+                    $note = preg_match( '/%[0-9a-f]{2}/i', $sent ) && ! preg_match( '/%[0-9a-f]{2}/i', $value )
+                        ? 'WordPress removes percent-encoded characters (such as %20) from plain text, so they were taken out; send the characters themselves (a space, the letters) instead.'
+                        : 'WordPress cleaned the text (tags and stray characters removed).';
+                }
             }
         }
 
         set_theme_mod( $key, $value );
 
-        return $this->success( "Theme mod \"{$key}\" updated successfully." );
+        $extra = [];
+        if ( null !== $note ) {
+            $extra['stored_value'] = get_theme_mod( $key );
+            $extra['note']         = $note . ' "stored_value" is what was saved.';
+        }
+        return $this->success( "Theme mod \"{$key}\" updated successfully.", $extra );
     }
 }

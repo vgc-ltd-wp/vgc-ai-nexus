@@ -266,17 +266,37 @@ final class Post_Access {
      * @return array{0:array<string,mixed>,1:array<string,string>} [ writable, skipped key => reason ]
      */
     public static function writable_meta( int $post_id, array $meta ): array {
+        global $wpdb;
         $ok      = [];
         $skipped = [];
         foreach ( $meta as $raw_key => $value ) {
-            $key = sanitize_key( (string) $raw_key );
-            if ( '' === $key ) {
+            // The key as sent (2.52.0): sanitize_key() lowercased it and dropped
+            // other characters, so "_EventStartDate" was written as
+            // "_eventstartdate" (reads keep the case) and a key it emptied vanished.
+            $key   = (string) $raw_key;
+            $error = self::meta_key_error( $key );
+            if ( null !== $error ) {
+                $skipped[ '' === $key ? '(empty)' : $key ] = $error;
                 continue;
             }
-            if ( in_array( $key, self::NEVER_WRITE_META, true ) ) {
+            $lower = strtolower( $key );
+            // Keys of this post the database takes for the same one (it compares
+            // keys without regard to case or accents): an update would change
+            // that row, under its own name, and a read of the key as sent would
+            // find nothing.
+            $twins = array_values( array_diff( array_map( 'strval', (array) $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT meta_key FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s",
+                $post_id,
+                $key
+            ) ) ), [ $key ] ) );
+            if ( in_array( $lower, self::NEVER_WRITE_META, true ) || in_array( remove_accents( $lower ), self::NEVER_WRITE_META, true ) ) {
                 $skipped[ $key ] = 'WordPress manages this attachment key itself; it is never set from a tool.';
-            } elseif ( ! self::can_use_meta_key( $post_id, $key ) ) {
+            } elseif ( $twins ) {
+                $skipped[ $key ] = sprintf( 'This item already has the meta key "%s", which the database treats as the same key; send it exactly as "%s" to change it.', $twins[0], $twins[0] );
+            } elseif ( ! self::can_use_meta_key( $post_id, $key ) || ( $lower !== $key && ! self::can_use_meta_key( $post_id, $lower ) ) ) {
                 $skipped[ $key ] = 'Protected meta key: needs permission to edit this key (or other authors\' content of this type).';
+            } elseif ( '_wp_page_template' === $lower && '_wp_page_template' !== $key ) {
+                $skipped[ $key ] = 'The page template key is "_wp_page_template", in lowercase.';
             } elseif ( '_wp_page_template' === $key && null !== ( $template_error = self::page_template_error( $value, get_post( $post_id ) ) ) ) {
                 $skipped[ $key ] = $template_error;
             } else {
@@ -284,6 +304,28 @@ final class Post_Access {
             }
         }
         return [ $ok, $skipped ];
+    }
+
+    /**
+     * Why a meta key sent by a caller cannot be stored as sent, or null.
+     * WordPress takes any string; refused here: an empty key, spaces around it
+     * (the database would match it to the key without them), control
+     * characters, and more than 255 characters (the column's size).
+     */
+    public static function meta_key_error( string $key ): ?string {
+        if ( '' === trim( $key ) ) {
+            return 'Empty meta key: send the key\'s name.';
+        }
+        if ( trim( $key ) !== $key ) {
+            return 'Meta key with spaces at the start or end: send it without them.';
+        }
+        if ( preg_match( '/[\x00-\x1F\x7F]/', $key ) ) {
+            return 'Meta key with control characters (line breaks, tabs): send the plain name.';
+        }
+        if ( strlen( $key ) > 255 ) {
+            return 'Meta key longer than 255 characters, which WordPress cannot store.';
+        }
+        return null;
     }
 
     /**
@@ -334,6 +376,169 @@ final class Post_Access {
     public static function page_template_value( string $template ): string {
         $template = trim( $template );
         return '' === $template ? 'default' : $template;
+    }
+
+    /** The term lists create_post / update_post take, as IDs: parameter => taxonomy. */
+    public const TERM_PARAMS = [ 'categories' => 'category', 'tags' => 'post_tag' ];
+
+    /**
+     * Check the "categories" and "tags" a caller sent for an item of this type
+     * (2.52.0, audit of 2026-11-23). Until then IDs that do not exist were
+     * skipped, so a list of only wrong IDs took every category off a post;
+     * an empty list changed nothing; and both were ignored on types without
+     * that taxonomy (create_post: on every type but "post"). Now an unknown
+     * ID, or a list for a type without the taxonomy, is refused before
+     * anything is written.
+     *
+     * @param array<string,mixed> $params
+     * @return array{error:?string,set:array<string,int[]>} taxonomy => term IDs to set.
+     */
+    public static function term_params( array $params, string $post_type ): array {
+        $set = [];
+        foreach ( self::TERM_PARAMS as $param => $tax ) {
+            if ( ! isset( $params[ $param ] ) ) {
+                continue;
+            }
+            $raw = is_array( $params[ $param ] ) ? array_values( $params[ $param ] ) : [ $params[ $param ] ];
+            if ( ! is_object_in_taxonomy( $post_type, $tax ) ) {
+                if ( ! $raw ) {
+                    continue;
+                }
+                $taxes = get_object_taxonomies( $post_type );
+                return [
+                    'error' => sprintf(
+                        'Items of type "%s" have no %s (the taxonomy "%s" is not registered for this type), so nothing was changed.%s',
+                        $post_type,
+                        $param,
+                        $tax,
+                        $taxes ? ' Its taxonomies: ' . implode( ', ', $taxes ) . '.' : ' It has no taxonomies.'
+                    ),
+                    'set'   => [],
+                ];
+            }
+            $ids     = [];
+            $unknown = [];
+            foreach ( $raw as $v ) {
+                $id   = is_int( $v ) || ( is_string( $v ) && ctype_digit( $v ) ) ? (int) $v : 0;
+                $term = $id > 0 ? get_term( $id, $tax ) : null;
+                if ( $term instanceof \WP_Term ) {
+                    $ids[] = $id;
+                } else {
+                    $unknown[] = is_scalar( $v ) ? (string) $v : (string) wp_json_encode( $v );
+                }
+            }
+            if ( $unknown ) {
+                return [
+                    'error' => sprintf(
+                        'Unknown %s ID%s: %s. Nothing was changed. "%s" takes the IDs of existing terms of the taxonomy "%s"; list_terms with taxonomy "%s" lists them.',
+                        'categories' === $param ? 'category' : 'tag',
+                        count( $unknown ) > 1 ? 's' : '',
+                        implode( ', ', $unknown ),
+                        $param,
+                        $tax,
+                        $tax
+                    ),
+                    'set'   => [],
+                ];
+            }
+            $set[ $tax ] = array_values( array_unique( $ids ) );
+        }
+        return [ 'error' => null, 'set' => $set ];
+    }
+
+    /**
+     * Give the item the terms term_params() checked, and read them back: the
+     * result echoes "categories" / "tags" as stored ({id, name, slug}), and a
+     * note when that is not what was sent (a post always keeps a category, so
+     * an empty list gives it the default one).
+     *
+     * @param array<string,int[]> $set taxonomy => term IDs.
+     * @return array{fields:array<string,array>,note:?string}
+     */
+    public static function apply_terms( int $post_id, array $set ): array {
+        $fields = [];
+        $notes  = [];
+        foreach ( $set as $tax => $ids ) {
+            if ( 'category' === $tax ) {
+                wp_set_post_categories( $post_id, $ids );
+            } else {
+                wp_set_post_terms( $post_id, $ids, $tax );
+            }
+            $param = (string) array_search( $tax, self::TERM_PARAMS, true );
+            $terms = wp_get_object_terms( $post_id, $tax );
+            $terms = is_wp_error( $terms ) ? [] : $terms;
+            $fields[ $param ] = array_map( static fn( $t ) => [ 'id' => (int) $t->term_id, 'name' => $t->name, 'slug' => $t->slug ], $terms );
+            $got  = array_map( static fn( $t ) => (int) $t->term_id, $terms );
+            $want = $ids;
+            sort( $got );
+            sort( $want );
+            if ( $got !== $want ) {
+                $notes[] = ! $ids && 'category' === $tax && 1 === count( $terms )
+                    ? sprintf( 'No category was sent, and a post always keeps one, so WordPress gave it the default category "%s".', $terms[0]->name )
+                    : sprintf( 'The %s stored are not the ones sent: see "%s".', $param, $param );
+            }
+        }
+        return [ 'fields' => $fields, 'note' => $notes ? implode( ' ', $notes ) : null ];
+    }
+
+    /**
+     * Move an item to the trash, or delete it permanently ($force), and say
+     * what really happened (2.52.0, audit of 2026-11-23).
+     *
+     * wp_delete_post( $id, false ) trashes only posts and pages: any other type
+     * (a product, a portfolio item, a reusable block, a media file), an item
+     * already in the trash, and every item on a site with EMPTY_TRASH_DAYS 0
+     * were deleted permanently, while the tools answered "moved to trash".
+     * Now a trash is wp_trash_post() for every type, as wp-admin's Trash link
+     * does; where WordPress has no trash for the item (EMPTY_TRASH_DAYS 0,
+     * already trashed, media without MEDIA_TRASH) nothing is changed and the
+     * error says to send force: true. The outcome is read back.
+     *
+     * @return array{error:?string,outcome:?string,note:?string} outcome "trashed" or "deleted".
+     */
+    public static function trash_or_delete( \WP_Post $post, bool $force ): array {
+        $id    = (int) $post->ID;
+        $label = 'attachment' === $post->post_type ? 'media file' : 'item';
+        $out   = [ 'error' => null, 'outcome' => null, 'note' => null ];
+
+        if ( ! $force ) {
+            if ( 'trash' === $post->post_status ) {
+                $out['error'] = "Item {$id} is already in the trash, so it was not changed. To delete it permanently, send force: true.";
+                return $out;
+            }
+            if ( ! EMPTY_TRASH_DAYS ) {
+                $out['error'] = "This site has the trash switched off (EMPTY_TRASH_DAYS is 0), so {$label} {$id} cannot be moved to the trash and was not changed. To delete it permanently, send force: true.";
+                return $out;
+            }
+            if ( 'attachment' === $post->post_type && ! MEDIA_TRASH ) {
+                $out['error'] = "Item {$id} is a media file, and this site has no trash for media (MEDIA_TRASH is off), so it was not changed. To delete the file permanently, send force: true or use delete_media.";
+                return $out;
+            }
+            $status = $post->post_status;
+            wp_trash_post( $id );
+            clean_post_cache( $id );
+            $after = get_post( $id );
+            if ( ! $after ) {
+                $out['outcome'] = 'deleted';
+                $out['note']    = "A plugin on this site deleted {$label} {$id} permanently instead of moving it to the trash.";
+                return $out;
+            }
+            if ( 'trash' !== $after->post_status ) {
+                $out['error'] = "WordPress or a plugin did not move {$label} {$id} to the trash; it was not changed (status \"{$status}\").";
+                return $out;
+            }
+            $out['outcome'] = 'trashed';
+            return $out;
+        }
+
+        wp_delete_post( $id, true );
+        clean_post_cache( $id );
+        if ( get_post( $id ) ) {
+            $out['error'] = "WordPress or a plugin did not delete {$label} {$id}; it is still there.";
+            return $out;
+        }
+        $out['outcome'] = 'deleted';
+        return $out;
     }
 
     /**

@@ -92,11 +92,14 @@ class Search_Content_Ability extends Ability {
         $user_id     = get_current_user_id();
         $scope_sql   = [];
         $scope_args  = [];
+        $skipped     = [ 'internal' => [], 'denied' => [] ];
         foreach ( $types as $type ) {
             if ( ! Post_Access::can_see_type( $type ) ) {
                 if ( 'any' !== $post_type ) {
                     return $this->error( Post_Access::internal_type_error( $type ) ?? sprintf( 'You do not have permission to search "%s" items.', $type ) );
                 }
+                // Named in the answer (2.52.0): "any" left these out silently.
+                $skipped[ Post_Access::is_internal_type( $type ) ? 'internal' : 'denied' ][] = $type;
                 continue;
             }
             if ( Post_Access::can_list_unpublished( [ $type ] ) ) {
@@ -161,9 +164,12 @@ class Search_Content_Ability extends Ability {
                 continue;
             }
             $content = (string) $row->post_content;
-            $count   = $match_case
+            // Without match_case, counted the way the database matched: letter case
+            // and accents aside, in any alphabet (2.52.0; strtolower() knew only
+            // A-Z, so a Cyrillic or accented match counted 0).
+            $count = $match_case
                 ? substr_count( $content, $query )
-                : substr_count( strtolower( $content ), strtolower( $query ) );
+                : substr_count( self::fold( $content ), self::fold( $query ) );
 
             $item = [
                 'id'          => (int) $row->ID,
@@ -175,7 +181,15 @@ class Search_Content_Ability extends Ability {
                 'edit_link'   => get_edit_post_link( (int) $row->ID, 'raw' ),
             ];
 
-            if ( $context_chars > 0 ) {
+            if ( $context_chars > 0 && ! $match_case && function_exists( 'mb_stripos' ) && false === stripos( $content, $query ) ) {
+                // A match in other letter case outside A-Z: the snippet in characters.
+                $mpos = mb_stripos( $content, $query, 0, 'UTF-8' );
+                if ( false !== $mpos ) {
+                    $start   = max( 0, $mpos - $context_chars );
+                    $len     = mb_strlen( $query, 'UTF-8' ) + ( 2 * $context_chars );
+                    $item['snippet'] = ( $start > 0 ? '…' : '' ) . mb_substr( $content, $start, $len, 'UTF-8' ) . ( $start + $len < mb_strlen( $content, 'UTF-8' ) ? '…' : '' );
+                }
+            } elseif ( $context_chars > 0 ) {
                 $pos = $match_case ? strpos( $content, $query ) : stripos( $content, $query );
                 if ( false !== $pos ) {
                     $start   = max( 0, $pos - $context_chars );
@@ -201,6 +215,26 @@ class Search_Content_Ability extends Ability {
             $result['not_shown'] = $not_shown;
             $result['note']      = sprintf( '%d matching item(s) on this page are not shown: this account may not read them. "total" counts them.', $not_shown );
         }
+        if ( $skipped['internal'] || $skipped['denied'] ) {
+            $result['types_not_searched'] = array_merge( $skipped['internal'], $skipped['denied'] );
+            $parts = [];
+            if ( $skipped['internal'] ) {
+                $parts[] = sprintf( 'Not searched: %s (no admin screen; templates, template parts and the like have their own tools, e.g. list_templates).', implode( ', ', $skipped['internal'] ) );
+            }
+            if ( $skipped['denied'] ) {
+                $parts[] = sprintf( 'Not searched, this account may not list them: %s.', implode( ', ', $skipped['denied'] ) );
+            }
+            $result = self::with_note( $result, implode( ' ', $parts ) );
+        }
+        if ( isset( $params['context_chars'] ) && (int) $params['context_chars'] > 2000 ) {
+            $result = self::with_note( $result, 'context_chars is at most 2000; 2000 was used.' );
+        }
         return $this->json_result( $result );
+    }
+
+    /** Text for a case- and accent-blind count, as the database compares (any alphabet). */
+    private static function fold( string $text ): string {
+        $text = function_exists( 'mb_strtolower' ) ? mb_strtolower( $text, 'UTF-8' ) : strtolower( $text );
+        return remove_accents( $text );
     }
 }

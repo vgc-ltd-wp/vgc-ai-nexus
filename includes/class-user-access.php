@@ -18,6 +18,30 @@ defined( 'ABSPATH' ) || exit;
 final class User_Access {
 
     /**
+     * Why WordPress would not keep this e-mail address, or null (2.52.0).
+     * sanitize_email() turns an address it does not accept into "", which
+     * wp_insert_user() / wp_update_user() then saved: a new account had no
+     * e-mail, an update blanked the user's address. is_email() is WordPress's
+     * own check; it takes ASCII addresses only.
+     *
+     * @param mixed $email
+     */
+    public static function email_error( $email ): ?string {
+        $email = is_string( $email ) ? trim( $email ) : '';
+        if ( '' === $email ) {
+            return 'An e-mail address is required: WordPress keeps one for every account.';
+        }
+        if ( is_email( $email ) && sanitize_email( $email ) === $email ) {
+            return null;
+        }
+        $shown = sanitize_text_field( $email );
+        if ( preg_match( '/[^\x00-\x7F]/', $email ) ) {
+            return sprintf( '"%s" is not an e-mail address WordPress accepts: it takes letters a-z, digits and the usual symbols only. An address with an international domain must be sent in its ASCII form (xn--…).', $shown );
+        }
+        return sprintf( '"%s" is not a valid e-mail address.', $shown );
+    }
+
+    /**
      * Whether an account holds more than the current user: it can manage_options
      * (whatever its role is called) and the current user cannot.
      */

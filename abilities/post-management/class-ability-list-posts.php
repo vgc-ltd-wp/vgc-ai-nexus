@@ -32,8 +32,8 @@ class List_Posts_Ability extends Ability {
                 'author'   => [ 'type' => 'integer', 'description' => 'Filter by author user ID.' ],
                 'category' => [ 'type' => 'integer', 'description' => 'Filter by built-in category ID (blog posts). For custom taxonomies use taxonomy + terms.' ],
                 'taxonomy' => [ 'type' => 'string',  'description' => 'Any taxonomy slug to filter by, e.g. "portfolio_category", "product_cat". Use with "terms".' ],
-                'terms'    => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Term slugs (or numeric IDs as strings) within "taxonomy". Items matching ANY listed term are returned.' ],
-                'language' => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de', 'en') to scope results, or 'all' for every language. Defaults to the current language. Ignored if WPML is inactive." ],
+                'terms'    => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Term slugs or IDs (as strings; both may be mixed) within "taxonomy". Items matching ANY listed term are returned. Terms that do not exist are named in "note"; if none exists the call is refused.' ],
+                'language' => [ 'type' => 'string',  'description' => "WPML language code (e.g. 'de', 'en') to scope results, or 'all' for every language. Defaults to the current language. An unknown code is refused; with WPML inactive it is ignored and \"note\" says so." ],
                 'fields'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Item fields and meta keys to return. Naming an item field (' . implode( ', ', self::ITEM_FIELDS ) . ') cuts each item down to id and the fields named: the smallest answer. Any other name is a meta key, given under "meta" ("meta.<key>" is always one), e.g. ["title", "_thumbnail_id"]. Meta keys alone: id, title and "meta".' ],
                 'orderby'  => [ 'type' => 'string',  'enum' => [ 'date', 'title', 'ID', 'modified', 'rand' ], 'default' => 'date' ],
                 'order'    => [ 'type' => 'string',  'enum' => [ 'ASC', 'DESC' ], 'default' => 'DESC' ],
@@ -63,6 +63,13 @@ class List_Posts_Ability extends Ability {
         if ( ! empty( $params['search'] ) ) {
             $args['s'] = sanitize_text_field( $params['search'] );
         }
+        // A negative ID means "leave out" to WordPress, but absint() made it "only
+        // that one" (author -5 listed only author 5's posts): refused (2.52.0).
+        foreach ( [ 'author' => 'user', 'category' => 'category' ] as $num => $what ) {
+            if ( isset( $params[ $num ] ) && is_numeric( $params[ $num ] ) && (int) $params[ $num ] < 0 ) {
+                return $this->error( sprintf( '"%s" takes a %s ID; leaving one out (a negative ID) is not supported here.', $num, $what ) );
+            }
+        }
         if ( ! empty( $params['author'] ) ) {
             $args['author'] = absint( $params['author'] );
         }
@@ -71,30 +78,23 @@ class List_Posts_Ability extends Ability {
         }
 
         // Generic taxonomy filter (works for any CPT taxonomy, e.g. portfolio_category).
+        // Terms are resolved first; unknown ones are refused or named (2.52.0).
         $taxonomy = isset( $params['taxonomy'] ) ? sanitize_key( $params['taxonomy'] ) : '';
-        $terms    = isset( $params['terms'] ) && is_array( $params['terms'] ) ? array_filter( array_map( 'strval', $params['terms'] ) ) : [];
+        $terms    = isset( $params['terms'] ) && is_array( $params['terms'] ) ? array_values( array_filter( array_map( 'strval', $params['terms'] ), 'strlen' ) ) : [];
+        $tax_note = null;
         if ( '' !== $taxonomy || [] !== $terms ) {
             if ( '' === $taxonomy || [] === $terms ) {
                 return $this->error( 'Provide BOTH "taxonomy" and "terms" to filter by a taxonomy.' );
             }
-            if ( ! taxonomy_exists( $taxonomy ) ) {
-                $for_type = get_object_taxonomies( $post_type );
-                return $this->error( sprintf(
-                    'Taxonomy "%s" is not registered. Taxonomies available for post type "%s": %s.',
-                    $taxonomy,
-                    $post_type,
-                    $for_type ? implode( ', ', $for_type ) : '(none)'
-                ) );
+            $tax = Query_Support::tax_filter( $taxonomy, $terms, $post_type );
+            if ( null !== $tax['error'] ) {
+                return $this->error( $tax['error'] );
             }
-            $numeric = array_filter( $terms, 'is_numeric' );
-            $args['tax_query'] = [ [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-                'taxonomy' => $taxonomy,
-                'field'    => count( $numeric ) === count( $terms ) ? 'term_id' : 'slug',
-                'terms'    => count( $numeric ) === count( $terms ) ? array_map( 'intval', $terms ) : $terms,
-            ] ];
+            $args['tax_query'] = $tax['tax_query']; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+            $tax_note          = $tax['note'];
         }
 
-        return $this->json_result( Query_Support::run( $args, $params, function ( \WP_Post $post, array $meta_keys, ?array $keep = null ): array {
+        $result = Query_Support::run( $args, $params, function ( \WP_Post $post, array $meta_keys, ?array $keep = null ): array {
             // Closures: worked out only for the fields kept.
             $item = [
                 'id'            => $post->ID,
@@ -116,7 +116,8 @@ class List_Posts_Ability extends Ability {
                 $item = Query_Support::with_meta( $item, $post->ID, $meta_keys );
             }
             return $item;
-        }, self::item_fields() ) );
+        }, self::item_fields() );
+        return $this->json_result( isset( $result['success'] ) ? $result : self::with_note( $result, $tax_note ) );
     }
 
     /** ITEM_FIELDS, with WPML's language and trid when WPML is active. */

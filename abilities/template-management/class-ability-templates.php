@@ -125,15 +125,24 @@ class List_Templates_Ability extends Ability {
             return $this->error( 'get_block_templates() is not available. Full Site Editing requires WordPress 5.9+.' );
         }
 
-        $query = [];
-        if ( ! empty( $params['search'] ) ) {
-            $query['slug__in'] = [ sanitize_title( $params['search'] ) ];
-        }
-
-        $templates = get_block_templates( $query, 'wp_template' );
+        $templates = get_block_templates( [], 'wp_template' );
 
         if ( is_wp_error( $templates ) ) {
             return $this->error( $templates->get_error_message() );
+        }
+
+        // "search" matches a part of the title or slug, as described (2.52.0); it
+        // was an exact slug match, so "Single Post" or "sing" found nothing.
+        if ( isset( $params['search'] ) && '' !== trim( (string) $params['search'] ) ) {
+            $needle    = trim( (string) $params['search'] );
+            $templates = array_values( array_filter( $templates, static function ( $t ) use ( $needle ): bool {
+                foreach ( [ (string) $t->slug, (string) $t->title ] as $hay ) {
+                    if ( '' !== $hay && false !== ( function_exists( 'mb_stripos' ) ? mb_stripos( $hay, $needle, 0, 'UTF-8' ) : stripos( $hay, $needle ) ) ) {
+                        return true;
+                    }
+                }
+                return false;
+            } ) );
         }
 
         $result = array_map(
@@ -333,6 +342,10 @@ class Delete_Template_Ability extends Ability {
             return $this->error( "Failed to delete template override for \"{$id}\"." );
         }
 
+        // A template of its own (no theme file) is simply gone (2.52.0).
+        if ( empty( $template->has_theme_file ) ) {
+            return $this->success( "Template \"{$id}\" deleted. It was a custom template with no theme file behind it, so there is no theme default to fall back to: it is gone." );
+        }
         return $this->success( "Template override for \"{$id}\" deleted. The theme default is now restored." );
     }
 }

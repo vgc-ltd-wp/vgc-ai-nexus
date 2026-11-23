@@ -250,6 +250,10 @@ class Delete_Template_Part_Ability extends Ability {
             return $this->error( "Failed to delete template part override for \"{$id}\"." );
         }
 
+        // A part of its own (no theme file) is simply gone (2.52.0).
+        if ( empty( $template->has_theme_file ) ) {
+            return $this->success( "Template part \"{$id}\" deleted. It was a custom part with no theme file behind it, so there is no theme default to fall back to: it is gone." );
+        }
         return $this->success( "Template part override for \"{$id}\" deleted. The theme default is now restored." );
     }
 }

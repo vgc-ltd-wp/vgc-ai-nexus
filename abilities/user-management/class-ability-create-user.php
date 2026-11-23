@@ -39,6 +39,13 @@ class Create_User_Ability extends Ability {
             return $this->error( $role_error );
         }
 
+        // An address WordPress would not accept is refused (2.52.0): sanitize_email()
+        // gives "" for it, and wp_insert_user() made the account with no e-mail.
+        $email_error = User_Access::email_error( $params['email'] ?? '' );
+        if ( null !== $email_error ) {
+            return $this->error( $email_error . ' No user was created.' );
+        }
+
         // Names and password slashed (2.51.0): wp_insert_user() unslashes the display
         // name and the names it saves as user meta, so every backslash was lost; and
         // WordPress's login form checks the password slashed, so a password with a
@@ -46,7 +53,7 @@ class Create_User_Ability extends Ability {
         // stay as they were: WordPress checks those unslashed for duplicates.
         $user_id = wp_insert_user( [
             'user_login'   => sanitize_user( $params['username'] ),
-            'user_email'   => sanitize_email( $params['email'] ),
+            'user_email'   => trim( (string) $params['email'] ),
             'user_pass'    => wp_slash( ! empty( $params['password'] ) ? (string) $params['password'] : wp_generate_password( 16 ) ),
             'role'         => $role,
             'first_name'   => wp_slash( sanitize_text_field( $params['first_name'] ?? '' ) ),

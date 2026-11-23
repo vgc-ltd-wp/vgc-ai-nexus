@@ -65,7 +65,8 @@ final class Widget_Types {
         $html     = array_map( 'strval', (array) ( self::html_fields()[ $type ] ?? [] ) );
         $filtered = false;
         $plain    = [];
-        $clean    = self::clean_level( $settings, $html, '', $filtered, $plain );
+        $pct      = [];
+        $clean    = self::clean_level( $settings, $html, '', $filtered, $plain, $pct );
 
         $notes = [];
         if ( $filtered ) {
@@ -80,14 +81,18 @@ final class Widget_Types {
                     : 'HTML is kept only in a custom_html widget\'s "content", a text widget\'s "text" and a block widget\'s "content".'
             );
         }
+        if ( $pct ) {
+            $notes[] = sprintf( 'WordPress removes percent-encoded characters (such as %%20) from plain-text settings, so they were taken out of: "%s". Send the characters themselves (a space, the letters) instead.', implode( '", "', $pct ) );
+        }
         return [ $clean, $notes ? implode( ' ', $notes ) : null ];
     }
 
     /**
      * @param string[] $html     HTML setting names (top level only).
      * @param string[] $plain    Plain-text settings that lost tags (dotted paths), filled in.
+     * @param string[] $pct      Plain-text settings that lost percent-encoded characters (2.52.0), filled in.
      */
-    private static function clean_level( array $settings, array $html, string $path, bool &$filtered, array &$plain ): array {
+    private static function clean_level( array $settings, array $html, string $path, bool &$filtered, array &$plain, array &$pct = [] ): array {
         $clean = [];
         foreach ( $settings as $key => $value ) {
             $key  = sanitize_key( (string) $key );
@@ -100,12 +105,15 @@ final class Widget_Types {
                     $clean[ $key ] = sanitize_textarea_field( $value );
                     if ( \MCP_Abilities\Custom_Code::filtered_away( $value, $clean[ $key ] ) ) {
                         $plain[] = $name;
+                    } elseif ( preg_match( '/%[0-9a-f]{2}/i', $value ) && $clean[ $key ] !== trim( $value ) ) {
+                        // 2.52.0: percent-encoded characters lost (a %20 in a URL).
+                        $pct[] = $name;
                     }
                 }
             } elseif ( is_int( $value ) || is_float( $value ) || is_bool( $value ) ) {
                 $clean[ $key ] = $value;
             } elseif ( is_array( $value ) ) {
-                $clean[ $key ] = self::clean_level( $value, $html, $name, $filtered, $plain );
+                $clean[ $key ] = self::clean_level( $value, $html, $name, $filtered, $plain, $pct );
             }
         }
         return $clean;
@@ -181,9 +189,16 @@ class List_Widgets_Ability extends Ability {
                 continue;
             }
 
-            // Parse "text-2" → type = "text", instance = 2.
+            // Parse "text-2" → type = "text", instance = 2. A widget registered
+            // the old way (an ID without a number) is listed by name only (2.52.0;
+            // it was left out without a word).
             $parsed = $this->parse_widget_id( $widget_id );
             if ( null === $parsed ) {
+                $widgets[] = [
+                    'widget_id' => $widget_id,
+                    'name'      => $wp_registered_widgets[ $widget_id ]['name'] ?? $widget_id,
+                    'note'      => 'A single-instance widget (registered without a number): its settings are kept by its plugin, so they are not shown and the widget tools cannot change them.',
+                ];
                 continue;
             }
 

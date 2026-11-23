@@ -20,7 +20,7 @@ class List_Media_Ability extends Ability {
             'type'       => [ 'object', 'array' ],
             'properties' => [
                 'mime_type' => [ 'type' => 'string', 'description' => 'Filter by mime type prefix, e.g. image, video, audio, application/pdf.' ],
-                'per_page'  => [ 'type' => 'integer', 'default' => 20 ],
+                'per_page'  => [ 'type' => 'integer', 'default' => 20, 'description' => 'Items per page (1-100). The result has total and has_more.' ],
                 'page'      => [ 'type' => 'integer', 'default' => 1 ],
                 'search'    => [ 'type' => 'string' ],
                 'fields'    => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Only these fields of each item (id is always kept), e.g. ["id", "url", "alt"]: a smaller answer. Fields: ' . implode( ', ', self::ITEM_FIELDS ) . '.' ],
@@ -29,11 +29,14 @@ class List_Media_Ability extends Ability {
     }
 
     public function execute( array $params ): array {
+        // per_page and page are echoed (2.52.0): the cap at 100 was not.
+        $per_page = isset( $params['per_page'] ) && (int) $params['per_page'] > 0 ? min( (int) $params['per_page'], 100 ) : 20;
+        $page     = max( 1, (int) ( $params['page'] ?? 1 ) );
         $args = [
             'post_type'      => 'attachment',
             'post_status'    => 'inherit',
-            'posts_per_page' => min( absint( $params['per_page'] ?? 20 ), 100 ),
-            'paged'          => max( 1, absint( $params['page'] ?? 1 ) ),
+            'posts_per_page' => $per_page,
+            'paged'          => $page,
             'orderby'        => 'date',
             'order'          => 'DESC',
         ];
@@ -69,7 +72,24 @@ class List_Media_Ability extends Ability {
             ], $split['keep'] );
         }
 
-        $out  = [ 'items' => $items, 'total' => $query->found_posts ];
+        $out = [
+            'items'    => $items,
+            'total'    => $query->found_posts,
+            'per_page' => $per_page,
+            'page'     => $page,
+            'has_more' => $page * $per_page < (int) $query->found_posts,
+        ];
+        // A MIME value no file has ("jpg", "image/jpg", "pdf") gave an empty list:
+        // the answer names the types the library has (2.52.0).
+        if ( ! empty( $params['mime_type'] ) && ! $items && 1 === $page ) {
+            $have = array_keys( array_filter( (array) wp_count_attachments() ) );
+            $have = array_values( array_filter( $have, static fn( $t ) => is_string( $t ) && str_contains( $t, '/' ) ) );
+            $out['note'] = sprintf(
+                'No media file has the type "%s". Send a type prefix such as "image" or a full type%s.',
+                $args['post_mime_type'],
+                $have ? ' this library has: ' . implode( ', ', $have ) : ''
+            );
+        }
         $note = Query_Support::fields_note( $items, [], $split['unknown'], self::ITEM_FIELDS );
         if ( null !== $note ) {
             $out['fields_note'] = $note;

@@ -67,13 +67,37 @@ class Get_Post_Ability extends Ability {
         }
 
         // Payload control: allowlist then denylist (id is always kept).
+        $fields_note = null;
         if ( ! empty( $params['fields'] ) && is_array( $params['fields'] ) ) {
             $allow         = array_map( 'sanitize_text_field', $params['fields'] );
+            // Names that are no field of the item (2.52.0): dropped without a word,
+            // meta keys among them (list_posts takes those in "fields"). A meta key
+            // the item has is given under "meta"; the rest are named in fields_note.
+            $all_names = array_values( array_diff( array_keys( $data ), [ 'meta_hidden' ] ) );
+            $unknown   = array_values( array_diff( $allow, $all_names, [ 'meta_hidden' ] ) );
+            $meta_keys = array_values( array_filter( $unknown, static fn( $k ) => array_key_exists( 0 === strpos( $k, 'meta.' ) ? substr( $k, 5 ) : $k, $meta ) ) );
+            $unknown   = array_values( array_diff( $unknown, $meta_keys ) );
             $allow[]       = 'id';
             if ( in_array( 'meta', $allow, true ) ) {
                 $allow[] = 'meta_hidden';
             }
             $data          = array_intersect_key( $data, array_flip( $allow ) );
+            if ( $meta_keys && ! isset( $data['meta'] ) ) {
+                $data['meta'] = [];
+                foreach ( $meta_keys as $k ) {
+                    $mk                  = 0 === strpos( $k, 'meta.' ) ? substr( $k, 5 ) : $k;
+                    $data['meta'][ $mk ] = $meta[ $mk ];
+                }
+            }
+            if ( $unknown ) {
+                $hidden_asked = array_values( array_intersect( $unknown, $meta_hidden ) );
+                $fields_note  = sprintf(
+                    'Not a field of this item, left out: "%s". Fields: %s; a meta key the item has is given under "meta".%s',
+                    implode( '", "', $unknown ),
+                    implode( ', ', $all_names ),
+                    $hidden_asked ? ' This account may not read: "' . implode( '", "', $hidden_asked ) . '".' : ''
+                );
+            }
         }
         if ( ! empty( $params['exclude'] ) && is_array( $params['exclude'] ) ) {
             foreach ( array_map( 'sanitize_text_field', $params['exclude'] ) as $key ) {
@@ -81,6 +105,9 @@ class Get_Post_Ability extends Ability {
                     unset( $data[ $key ] );
                 }
             }
+        }
+        if ( null !== $fields_note ) {
+            $data['fields_note'] = $fields_note;
         }
 
         return $this->json_result( $data );
