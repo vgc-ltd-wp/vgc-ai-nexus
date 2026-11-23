@@ -39,14 +39,19 @@ class Create_User_Ability extends Ability {
             return $this->error( $role_error );
         }
 
+        // Names and password slashed (2.51.0): wp_insert_user() unslashes the display
+        // name and the names it saves as user meta, so every backslash was lost; and
+        // WordPress's login form checks the password slashed, so a password with a
+        // quote or backslash set here never let the person log in. Login and e-mail
+        // stay as they were: WordPress checks those unslashed for duplicates.
         $user_id = wp_insert_user( [
             'user_login'   => sanitize_user( $params['username'] ),
             'user_email'   => sanitize_email( $params['email'] ),
-            'user_pass'    => ! empty( $params['password'] ) ? $params['password'] : wp_generate_password( 16 ),
+            'user_pass'    => wp_slash( ! empty( $params['password'] ) ? (string) $params['password'] : wp_generate_password( 16 ) ),
             'role'         => $role,
-            'first_name'   => sanitize_text_field( $params['first_name'] ?? '' ),
-            'last_name'    => sanitize_text_field( $params['last_name'] ?? '' ),
-            'display_name' => sanitize_text_field( $params['display_name'] ?? '' ),
+            'first_name'   => wp_slash( sanitize_text_field( $params['first_name'] ?? '' ) ),
+            'last_name'    => wp_slash( sanitize_text_field( $params['last_name'] ?? '' ) ),
+            'display_name' => wp_slash( sanitize_text_field( $params['display_name'] ?? '' ) ),
         ] );
 
         if ( is_wp_error( $user_id ) ) {

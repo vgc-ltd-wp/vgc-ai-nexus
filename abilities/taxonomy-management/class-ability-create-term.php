@@ -33,12 +33,14 @@ class Create_Term_Ability extends Ability {
             return $this->error( $denied );
         }
 
+        // Name and description slashed: wp_insert_term() unslashes them, so every
+        // backslash was lost ("C:\Temp" became "C:Temp"; 2.51.0).
         $args = [];
         if ( ! empty( $params['slug'] ) )        $args['slug']        = sanitize_title( $params['slug'] );
-        if ( ! empty( $params['description'] ) )  $args['description'] = sanitize_textarea_field( $params['description'] );
+        if ( ! empty( $params['description'] ) )  $args['description'] = wp_slash( sanitize_textarea_field( $params['description'] ) );
         if ( ! empty( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
-        $result = wp_insert_term( sanitize_text_field( $params['name'] ), $taxonomy, $args );
+        $result = wp_insert_term( wp_slash( sanitize_text_field( $params['name'] ) ), $taxonomy, $args );
         if ( is_wp_error( $result ) ) {
             return $this->error( $result->get_error_message() );
         }

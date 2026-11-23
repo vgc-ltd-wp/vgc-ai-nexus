@@ -37,10 +37,12 @@ class Update_Term_Ability extends Ability {
             return $this->error( $denied );
         }
 
+        // Name and description slashed: wp_update_term() unslashes them, so every
+        // backslash was lost (2.51.0).
         $args = [];
-        if ( isset( $params['name'] ) )        $args['name']        = sanitize_text_field( $params['name'] );
+        if ( isset( $params['name'] ) )        $args['name']        = wp_slash( sanitize_text_field( $params['name'] ) );
         if ( isset( $params['slug'] ) )         $args['slug']        = sanitize_title( $params['slug'] );
-        if ( isset( $params['description'] ) )  $args['description'] = sanitize_textarea_field( $params['description'] );
+        if ( isset( $params['description'] ) )  $args['description'] = wp_slash( sanitize_textarea_field( $params['description'] ) );
         if ( isset( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
         if ( ! $args ) {

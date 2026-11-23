@@ -50,7 +50,9 @@ class Reply_To_Comment_Ability extends Ability {
             'comment_approved'     => 1,
         ];
 
-        $id = wp_insert_comment( $data );
+        // Slashed: wp_insert_comment() unslashes all of it, so every backslash in the
+        // reply (and in the author's name) was lost (2.51.0).
+        $id = wp_insert_comment( wp_slash( $data ) );
         if ( ! $id ) {
             return $this->error( 'Failed to post reply.' );
         }

@@ -72,14 +72,16 @@ class Update_User_Ability extends Ability {
             }
         }
 
+        // Names, bio and password slashed (2.51.0), as in create_user: wp_update_user()
+        // unslashes them, and the login form checks the password slashed.
         $data = [ 'ID' => $user_id ];
         if ( isset( $params['email'] ) )        $data['user_email']   = sanitize_email( $params['email'] );
         if ( isset( $params['role'] ) )          $data['role']          = $new_role;
-        if ( isset( $params['first_name'] ) )    $data['first_name']    = sanitize_text_field( $params['first_name'] );
-        if ( isset( $params['last_name'] ) )     $data['last_name']     = sanitize_text_field( $params['last_name'] );
-        if ( isset( $params['display_name'] ) )  $data['display_name']  = sanitize_text_field( $params['display_name'] );
-        if ( isset( $params['bio'] ) )           $data['description']   = sanitize_textarea_field( $params['bio'] );
-        if ( isset( $params['password'] ) )      $data['user_pass']     = $params['password'];
+        if ( isset( $params['first_name'] ) )    $data['first_name']    = wp_slash( sanitize_text_field( $params['first_name'] ) );
+        if ( isset( $params['last_name'] ) )     $data['last_name']     = wp_slash( sanitize_text_field( $params['last_name'] ) );
+        if ( isset( $params['display_name'] ) )  $data['display_name']  = wp_slash( sanitize_text_field( $params['display_name'] ) );
+        if ( isset( $params['bio'] ) )           $data['description']   = wp_slash( sanitize_textarea_field( $params['bio'] ) );
+        if ( isset( $params['password'] ) )      $data['user_pass']     = wp_slash( (string) $params['password'] );
 
         $result = wp_update_user( $data );
         if ( is_wp_error( $result ) ) {

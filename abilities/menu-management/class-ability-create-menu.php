@@ -27,7 +27,8 @@ class Create_Menu_Ability extends Ability {
             return $this->error( 'Menu name cannot be empty.' );
         }
 
-        $menu_id = wp_create_nav_menu( $name );
+        // Slashed: the name is saved as a term, which unslashes it (2.51.0).
+        $menu_id = wp_create_nav_menu( wp_slash( $name ) );
 
         if ( is_wp_error( $menu_id ) ) {
             return $this->error( $menu_id->get_error_message() );

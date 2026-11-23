@@ -44,7 +44,8 @@ class Update_Menu_Item_Ability extends Ability {
         $item_args = [];
 
         if ( isset( $params['title'] ) ) {
-            $item_args['menu-item-title'] = sanitize_text_field( $params['title'] );
+            // Slashed: saved with wp_update_post(), which unslashes (2.51.0).
+            $item_args['menu-item-title'] = wp_slash( sanitize_text_field( $params['title'] ) );
         }
         if ( isset( $params['url'] ) ) {
             $item_args['menu-item-url'] = esc_url_raw( $params['url'] );

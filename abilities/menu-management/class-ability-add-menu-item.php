@@ -48,8 +48,10 @@ class Add_Menu_Item_Ability extends Ability {
             return $this->error( 'Menu item title cannot be empty.' );
         }
 
+        // Title slashed: wp_update_nav_menu_item() saves it with wp_insert_post(), which
+        // unslashes, and compares it unslashed with the linked page's title (2.51.0).
         $item_args = [
-            'menu-item-title'     => $title,
+            'menu-item-title'     => wp_slash( $title ),
             'menu-item-type'      => $type,
             'menu-item-status'    => 'publish',
             'menu-item-parent-id' => absint( $params['parent_id'] ?? 0 ),

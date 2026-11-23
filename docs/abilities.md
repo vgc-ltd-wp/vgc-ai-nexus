@@ -263,6 +263,8 @@ Download a document or media file from a URL and import it into the Media Librar
 | `comment_id` | integer | **Yes** | Parent comment ID |
 | `content` | string | **Yes** | Reply text (must not be empty) |
 
+Backslashes in the reply (and in the replying account's name) are kept since 2.51.0; before, every one was lost.
+
 ---
 
 ### `moderate_comment`
@@ -307,6 +309,8 @@ Download a document or media file from a URL and import it into the Media Librar
 | `slug` | string | No | New slug |
 | `description` | string | No | New description |
 
+Backslashes in a term's name and description are kept since 2.51.0 (`create_term` and `update_term`); before, every one was lost (`C:\Temp` became `C:Temp`).
+
 ---
 
 ### `delete_term`
@@ -331,6 +335,8 @@ No parameters. Returns all registered nav menus with their assigned locations.
 | `slug` | string | One of the two | Menu slug |
 
 **Returns:** Flat list of menu items with ID, title, URL, type, order, and parent ID.
+
+Backslashes in a menu's name (`create_menu`) and an item's title (`add_menu_item`, `update_menu_item`) are kept since 2.51.0; before, every one was lost. An item title equal to the linked page's or term's own title is stored empty, as in Appearance → Menus, so the item follows that title when it changes (with a backslash in the title too since 2.51.0).
 
 ---
 
@@ -426,6 +432,8 @@ Assigning `administrator` requires `manage_options` capability.
 | `password` | string | No | New password |
 
 Needs `edit_user` on that account, and `promote_user` for a role change. Cannot modify an account that holds `manage_options` unless you hold it too.
+
+Since 2.51.0 (`create_user` and `update_user`) backslashes in the display name, first and last name and bio are kept (before, every one was lost), and a password with a quote or backslash works on the login form (before, WordPress's login form never accepted it: the form checks the password as WordPress stores it, slashed).
 
 ---
 
