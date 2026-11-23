@@ -122,4 +122,36 @@ final class User_Access {
         }
         return null;
     }
+
+    /** A user's bio (the "description" user meta) as stored, fresh from the database (2.53.0). */
+    public static function stored_bio( int $user_id ): string {
+        clean_user_cache( $user_id );
+        wp_cache_delete( $user_id, 'user_meta' );
+        return (string) get_user_meta( $user_id, 'description', true );
+    }
+
+    /**
+     * What an account owns, counted the way WordPress's Users → Delete screen
+     * decides whether to ask what happens to it (2.53.0): every item in the
+     * posts table it is the author of (any type and status, media and
+     * revisions included), the links it owns, and what plugins add through
+     * `users_have_additional_content`.
+     *
+     * @return array{by_type:array<string,int>,links:int,total:int,other:bool}
+     */
+    public static function owned_content( int $user_id ): array {
+        global $wpdb;
+        $by_type = [];
+        $rows    = $wpdb->get_results( $wpdb->prepare( "SELECT post_type, COUNT(*) AS n FROM {$wpdb->posts} WHERE post_author = %d GROUP BY post_type ORDER BY n DESC, post_type ASC", $user_id ) );
+        foreach ( (array) $rows as $row ) {
+            $by_type[ (string) $row->post_type ] = (int) $row->n;
+        }
+        $links = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->links} WHERE link_owner = %d", $user_id ) );
+        return [
+            'by_type' => $by_type,
+            'links'   => $links,
+            'total'   => array_sum( $by_type ) + $links,
+            'other'   => (bool) apply_filters( 'users_have_additional_content', false, [ $user_id ] ),
+        ];
+    }
 }

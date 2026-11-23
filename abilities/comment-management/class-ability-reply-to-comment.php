@@ -17,7 +17,7 @@ class Reply_To_Comment_Ability extends Ability {
             'type'       => 'object',
             'properties' => [
                 'id'      => [ 'type' => 'integer', 'description' => 'ID of the comment to reply to.' ],
-                'content' => [ 'type' => 'string',  'description' => 'Reply text.' ],
+                'content' => [ 'type' => 'string',  'description' => 'Reply text. ' . self::TEXT_RULE_DESCRIPTIONS['comment'] ],
             ],
             'required' => [ 'id', 'content' ],
         ];
@@ -34,8 +34,11 @@ class Reply_To_Comment_Ability extends Ability {
             return $this->error( $refused );
         }
 
-        // Plain text as before; a note when markup was taken out (2.52.0).
-        [ $content, $content_note ] = self::plain_text_with_note( $params['content'] ?? '', 'reply' );
+        // WordPress's rule for comments (2.53.0; it was plain text): as sent for an
+        // account with unfiltered_html, basic markup only otherwise. What was
+        // removed is said from what was stored.
+        $sent    = is_scalar( $params['content'] ?? '' ) ? (string) ( $params['content'] ?? '' ) : '';
+        $content = self::rich_text( $sent, self::TEXT_RULE_COMMENT );
         if ( '' === trim( $content ) ) {
             return $this->error( 'Reply content cannot be empty.' );
         }
@@ -58,6 +61,8 @@ class Reply_To_Comment_Ability extends Ability {
             return $this->error( 'Failed to post reply.' );
         }
 
-        return $this->json_result( self::with_note( [ 'id' => (int) $id, 'reply_id' => $id ], $content_note ) );
+        clean_comment_cache( $id );
+        $stored = get_comment( $id );
+        return $this->json_result( self::with_text_note( [ 'id' => (int) $id, 'reply_id' => $id ], $sent, $stored ? (string) $stored->comment_content : null, self::TEXT_RULE_COMMENT, 'reply', 'content' ) );
     }
 }

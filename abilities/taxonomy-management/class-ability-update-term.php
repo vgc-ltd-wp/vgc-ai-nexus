@@ -21,7 +21,7 @@ class Update_Term_Ability extends Ability {
                 'taxonomy'    => [ 'type' => 'string', 'default' => 'category' ],
                 'name'        => [ 'type' => 'string' ],
                 'slug'        => [ 'type' => 'string' ],
-                'description' => [ 'type' => 'string' ],
+                'description' => [ 'type' => 'string', 'description' => self::TEXT_RULE_DESCRIPTIONS['term'] ],
                 'parent'      => [ 'type' => 'integer' ],
                 'language'    => [ 'type' => 'string', 'description' => 'WPML only, optional: language code of the term (e.g. "de"). Normally auto-detected from the term itself — pass only to override.' ],
             ],
@@ -42,11 +42,12 @@ class Update_Term_Ability extends Ability {
         $args = [];
         if ( isset( $params['name'] ) )        $args['name']        = wp_slash( sanitize_text_field( $params['name'] ) );
         if ( isset( $params['slug'] ) )         $args['slug']        = sanitize_title( $params['slug'] );
-        $desc_note = null;
+        $desc_sent = null;
         if ( isset( $params['description'] ) ) {
-            // Plain text as before; a note when markup was taken out (2.52.0).
-            [ $desc, $desc_note ] = self::plain_text_with_note( $params['description'], 'description' );
-            $args['description']  = wp_slash( $desc );
+            // WordPress's own rule for term descriptions: basic markup kept (2.53.0;
+            // it was plain text). What it removed is said from what was stored.
+            $desc_sent           = is_scalar( $params['description'] ) ? (string) $params['description'] : '';
+            $args['description'] = wp_slash( self::rich_text( $desc_sent, self::TEXT_RULE_TERM ) );
         }
         if ( isset( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
@@ -99,6 +100,9 @@ class Update_Term_Ability extends Ability {
                 }
             }
         }
-        return $this->success( "Term {$term_id} updated.", self::with_note( $extra, $desc_note ) );
+        if ( null !== $desc_sent ) {
+            $extra = self::with_text_note( $extra, $desc_sent, Term_Access::stored_description( $term_id, $taxonomy ), self::TEXT_RULE_TERM, 'term description', 'description' );
+        }
+        return $this->success( "Term {$term_id} updated.", $extra );
     }
 }

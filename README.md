@@ -60,8 +60,8 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `create_post` | Create a new post of any registered post type (use `post_type` param; defaults to `post`). Supports `slug` and `parent_id` for hierarchical types. |
 | `update_post` | Update title, content, status, categories or tags |
 | `delete_post` | Trash or permanently delete a post |
-| `list_revisions` | List all saved revisions for a post |
-| `get_revision` | Retrieve the full content of a specific revision |
+| `list_revisions` | List the saved revisions and autosaves of a post you may edit |
+| `get_revision` | Retrieve the full content of a specific revision or autosave |
 
 ### Page Management
 | Tool | Description |
@@ -169,7 +169,7 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `get_user` | Retrieve a user's profile information |
 | `create_user` | Create a new user account |
 | `update_user` | Update user profile, email or role |
-| `delete_user` | Delete a user account |
+| `delete_user` | Delete a user account; one who owns content needs `reassign_to` or `delete_content: true` |
 
 > ⚠️ **Security warning:** User tools expose all accounts and allow creating administrators, changing passwords and deleting users. Only enable if you understand the implications.
 
@@ -196,7 +196,7 @@ Key protections:
 - **SSRF protection** on upload tools — public addresses only (A and AAAA, every redirect), the connection pinned to the checked address, the size limit enforced during the download
 - **Only what concerns them** — `tools/list` shows a user the tools they could call; versions, the theme and the security setup are for administrators only
 - **Credentials inside options** — `get_option` hides password, token, secret and key fields inside a setting's value; `update_option` cannot change or remove them, and refuses mail, payment, security and backup plugins' settings outright
-- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`; posts, pages, templates, template parts and navigation keep script only for an account with `unfiltered_html` (as WordPress's own editor does), and global styles keep custom CSS only with `edit_css`, and neither while raw code is locked; the answer says when something was removed
+- **Raw code** — `inject_js` needs `unfiltered_html` and `inject_css` needs `edit_css`, on top of `manage_options`; posts, pages, excerpts, media captions and descriptions, comment replies, templates, template parts and navigation keep script only for an account with `unfiltered_html` (as WordPress's own editor does; term descriptions and bios keep only basic markup, for everyone), and global styles keep custom CSS only with `edit_css`, and neither while raw code is locked; the answer says when something was removed
 - **MIME verification** on uploads — file type is checked after download, not from HTTP headers
 - **Privilege escalation prevention** — user tools enforce role hierarchy and ask about the account itself (`edit_user`, `promote_user`, `delete_user`, so WooCommerce's and multisite's rules apply); non-admins cannot create or modify accounts that hold `manage_options` or give a role with more permissions than their own; term tools check each taxonomy's own capabilities
 - **Errors without server paths** — when a tool throws, the details go to the PHP error log and the client gets a fixed line; a tool's own error messages are passed on as they are
@@ -212,6 +212,14 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.53.0
+
+Three decisions that follow the audit of 2026-11-23:
+
+- **`delete_user` asks what happens to the user's content.** Without `reassign_to`, WordPress removed everything the user had made with the account (posts and pages to the trash, media files and other types for good), so one missing parameter could take a site's media with it. Now a user who owns anything (posts of any type and status, media, revisions, Links Manager links, or content a plugin reports, counted the way WordPress's own Users → Delete screen counts it) is deleted only when the call says what to do: `reassign_to` gives it to another user, the new `delete_content: true` removes it with the account. Without either the call is refused, and the error says how many items the user owns, by type, and how to choose; nothing is deleted. A user with no content is deleted as before. Every earlier check stays (yourself, administrators, the last administrator, the account's own permission rules) and comes first. The answer lists what was reassigned (`content_reassigned`) or what went to the trash, was deleted and was kept by WordPress (`content_trashed`, `content_deleted`, `content_kept`).
+- **Rich text keeps WordPress's own rule instead of becoming plain text.** Until now a term description, an excerpt, a media caption and description, a comment reply and a user bio lost every tag, links and bold included (2.52.0 only said so). Each now follows the rule WordPress itself applies to that field for that account: a term description (`create_term`, `update_term`) and a bio (`update_user`, and `create_user`, which now takes a `bio`) keep basic markup (links, bold, italic, code, quotes) for everyone, as on WordPress's own screens; an excerpt (`create_post`, `update_post`, pages too) and a media caption and description (`update_media`) follow post content: stored as sent for an account that may post unfiltered HTML, filtered as WordPress filters a post otherwise; a comment reply (`reply_to_comment`) is stored as sent for such an account and keeps basic markup for others. While raw code is locked, everyone is filtered. When WordPress removed something, the answer has a `note` and the stored value; rewrites that lose nothing ("&" stored as "&amp;") get none. Backslashes are kept as in 2.51.0. Titles and names stay plain text.
+- **`list_revisions` and `get_revision` are available.** Both were in the plugin but never registered, so no AI could use them. They are now tools of Post Management (in its group tool, or tools of their own), and they work in read-only mode. Before enabling them their permissions were checked as an attacker would: an account reads a post's revisions and autosaves only when it may edit that post, as WordPress's REST API asks (and may read it, as the revisions screen asks), so not another author's draft, private or password-protected post, not a contributor's own post once it is published. Fixed on the way: a negative ID acted on another post, a revision whose post was gone could be read while some other post was the current one, and a type without an admin screen was not refused. Each item now says whether it is an `autosave`. As in WordPress, whoever may edit a post sees every autosave of it, also other users'.
 
 ### 2.52.0
 

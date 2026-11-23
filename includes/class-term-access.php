@@ -84,4 +84,15 @@ final class Term_Access {
         }
         return null;
     }
+
+    /**
+     * A term's description as stored in the database, or null when there is no
+     * such term (2.53.0). Read past get_term(): WPML can hand back the term's
+     * translation in the current language instead.
+     */
+    public static function stored_description( int $term_id, string $taxonomy ): ?string {
+        global $wpdb;
+        $value = $wpdb->get_var( $wpdb->prepare( "SELECT description FROM {$wpdb->term_taxonomy} WHERE term_id = %d AND taxonomy = %s", $term_id, $taxonomy ) );
+        return null === $value ? null : (string) $value;
+    }
 }

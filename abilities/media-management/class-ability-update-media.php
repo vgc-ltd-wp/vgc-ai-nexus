@@ -18,8 +18,8 @@ class Update_Media_Ability extends Ability {
                 'id'            => [ 'type' => 'integer' ],
                 'title'         => [ 'type' => 'string' ],
                 'alt'           => [ 'type' => 'string' ],
-                'caption'       => [ 'type' => 'string' ],
-                'description'   => [ 'type' => 'string' ],
+                'caption'       => [ 'type' => 'string', 'description' => self::TEXT_RULE_DESCRIPTIONS['post'] ],
+                'description'   => [ 'type' => 'string', 'description' => self::TEXT_RULE_DESCRIPTIONS['post'] ],
             ],
             'required' => [ 'id' ],
         ];
@@ -39,13 +39,15 @@ class Update_Media_Ability extends Ability {
 
         $update = [ 'ID' => $id ];
         if ( isset( $params['title'] ) )       $update['post_title']   = sanitize_text_field( $params['title'] );
-        // Plain text as before; a note when markup was taken out (2.52.0).
-        $notes = [];
-        if ( isset( $params['caption'] ) ) {
-            [ $update['post_excerpt'], $notes[] ] = self::plain_text_with_note( $params['caption'], 'caption' );
-        }
-        if ( isset( $params['description'] ) ) {
-            [ $update['post_content'], $notes[] ] = self::plain_text_with_note( $params['description'], 'description' );
+        // Caption and description follow WordPress's rule for posts (2.53.0; they
+        // were plain text): they are the attachment's excerpt and content. What was
+        // removed is said from what was stored.
+        $sent = [];
+        foreach ( [ 'caption' => 'post_excerpt', 'description' => 'post_content' ] as $param => $column ) {
+            if ( isset( $params[ $param ] ) ) {
+                $sent[ $param ]    = is_scalar( $params[ $param ] ) ? (string) $params[ $param ] : '';
+                $update[ $column ] = self::rich_text( $sent[ $param ], self::TEXT_RULE_POST );
+            }
         }
 
         // wp_update_post() and update_post_meta() take slashed data: unslashed, every
@@ -62,7 +64,16 @@ class Update_Media_Ability extends Ability {
             update_post_meta( $id, '_wp_attachment_image_alt', wp_slash( sanitize_text_field( $params['alt'] ) ) );
         }
 
-        $notes = array_filter( $notes );
-        return $this->success( "Attachment {$id} updated.", $notes ? [ 'note' => implode( ' ', $notes ) ] : [] );
+        $extra = [];
+        if ( $sent ) {
+            clean_post_cache( $id );
+            $stored = get_post( $id );
+            foreach ( [ 'caption' => 'post_excerpt', 'description' => 'post_content' ] as $param => $column ) {
+                if ( isset( $sent[ $param ] ) && $stored ) {
+                    $extra = self::with_text_note( $extra, $sent[ $param ], (string) $stored->{$column}, self::TEXT_RULE_POST, $param, $param );
+                }
+            }
+        }
+        return $this->success( "Attachment {$id} updated.", $extra );
     }
 }

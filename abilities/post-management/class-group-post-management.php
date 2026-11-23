@@ -19,4 +19,24 @@ class Post_Management_Group extends Ability_Group {
             __( "Update the excerpt on my Welcome post", 'mcp-abilities' ),
         ];
     }
+
+    /**
+     * class-ability-revisions.php holds two tools, list_revisions and
+     * get_revision. Discovery looks for one class named after each file
+     * (Revisions_Ability), so neither was ever registered (2.53.0). They are
+     * added after the discovered tools, so the group's other actions keep
+     * their order and their "id" parameter text in the group tool.
+     */
+    public function __construct() {
+        parent::__construct();
+        require_once __DIR__ . '/class-ability-revisions.php';
+        foreach ( [
+            'MCP_Abilities\\Abilities\\List_Revisions_Ability',
+            'MCP_Abilities\\Abilities\\Get_Revision_Ability',
+        ] as $class ) {
+            if ( class_exists( $class ) ) {
+                $this->register_ability( new $class() );
+            }
+        }
+    }
 }

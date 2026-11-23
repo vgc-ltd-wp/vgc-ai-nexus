@@ -80,6 +80,8 @@ Update an existing post.
 
 > **Meta (since 2.50.0).** `meta` values of `create_post` and `update_post` keep their backslashes, in text, lists and objects at any depth. Before 2.50.0 every one was lost, so JSON kept in meta (page-builder data) lost the `\` of each `\"` and `<`.
 
+> **Excerpt and other rich text (since 2.53.0).** These fields were plain text (every tag removed); each now follows the rule WordPress applies to it on save, for the calling account. `excerpt` (`create_post`, `update_post`) and the `caption` and `description` of `update_media` follow `content` above. A term `description` (`create_term`, `update_term`) and a user `bio` (`create_user`, `update_user`) keep basic markup (links, bold, italic, code, quotes) for every account, as WordPress's `pre_term_description` / `pre_user_description` filters do; for an account without `unfiltered_html` the same rule is applied by the tool too, in case a plugin lifted those filters. A `reply_to_comment` reply is stored as sent for an account with `unfiltered_html` and keeps basic markup otherwise (WordPress's comment rule). While raw code is locked, everyone is filtered. When WordPress removed a tag, attribute or comment, the answer has a `note` and the stored value under the field's name. Titles and names stay plain text.
+
 ---
 
 ### `delete_post`
@@ -95,24 +97,26 @@ Trash or permanently delete a post.
 ---
 
 ### `list_revisions`
-List saved revisions for a post.
+List the saved revisions and autosaves of a post (since 2.53.0; before, the tool was never registered).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `post_id` | integer | **Yes** | Parent post ID |
 
-**Returns:** `{ post_id: N, total: N, revisions: [{ id, date, title, author_id, author_name }] }`
+**Returns:** `{ post_id: N, total: N, revisions: [{ id, date, title, author_id, author_name, autosave }] }`, newest first; a `note` when revisions are switched off for the type.
 
 ---
 
 ### `get_revision`
-Retrieve the full content of a specific revision.
+Retrieve the full content of a specific revision or autosave.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `id` | integer | **Yes** | Revision post ID |
 
-**Returns:** `{ id, post_id, date, title, content, excerpt, author_id, author_name }`
+**Returns:** `{ id, post_id, date, title, content, excerpt, author_id, author_name, autosave }`
+
+> **Who may read a post's history.** As WordPress's REST API: the account must be able to edit the post (`edit_post`), and, as WordPress's revisions screen, to read it (`read_post`). So an Author reads only the history of posts they may edit, a Contributor only of their own unpublished posts; another author's draft, private or password-protected post needs the permission to edit others' posts. Whoever may edit a post sees every autosave of it, other users' too, as in WordPress. A revision whose post is gone, an ID that is not a revision or is not positive, and a post type without an admin screen are refused. Both tools are reads: they work in read-only mode.
 
 ---
 
@@ -445,6 +449,9 @@ Since 2.51.0 (`create_user` and `update_user`) backslashes in the display name, 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `id` | integer | **Yes** | User ID |
-| `reassign_id` | integer | No | Transfer content to this user ID before deletion |
+| `reassign_to` | integer | No | Give the user's content to this (other, existing) user |
+| `delete_content` | boolean | No | `true`: remove the user's content with the account |
 
 Needs `delete_user` on that account. Cannot delete an account that holds `manage_options` unless you hold it too. Cannot delete the last administrator account, nor the last account that holds `manage_options`.
+
+> **Content (since 2.53.0).** A user who owns anything (any item in the posts table: posts of any type and status, media, revisions; Links Manager links; content a plugin reports through `users_have_additional_content`, the count WordPress's Users → Delete screen makes) is deleted only with `reassign_to` or `delete_content: true`, not both. Without either the call is refused with the number of items by type; nothing is deleted. `delete_content: true` lets WordPress remove the content (posts and pages to the trash, other types for good; all for good when `EMPTY_TRASH_DAYS` is 0) and the answer lists `content_trashed`, `content_deleted` and `content_kept` (types WordPress keeps, such as reusable blocks); `reassign_to` lists `content_reassigned`. A user with no content is deleted without either.

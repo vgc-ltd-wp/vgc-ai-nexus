@@ -23,6 +23,7 @@ class Create_User_Ability extends Ability {
                 'first_name'   => [ 'type' => 'string' ],
                 'last_name'    => [ 'type' => 'string' ],
                 'display_name' => [ 'type' => 'string' ],
+                'bio'          => [ 'type' => 'string', 'description' => 'Biographical info (the profile\'s description). ' . self::TEXT_RULE_DESCRIPTIONS['user'] ],
                 'send_email'   => [ 'type' => 'boolean', 'default' => false, 'description' => 'Send new-user notification email.' ],
             ],
             'required' => [ 'username', 'email' ],
@@ -51,7 +52,7 @@ class Create_User_Ability extends Ability {
         // WordPress's login form checks the password slashed, so a password with a
         // quote or backslash set here never let the person log in. Login and e-mail
         // stay as they were: WordPress checks those unslashed for duplicates.
-        $user_id = wp_insert_user( [
+        $userdata = [
             'user_login'   => sanitize_user( $params['username'] ),
             'user_email'   => trim( (string) $params['email'] ),
             'user_pass'    => wp_slash( ! empty( $params['password'] ) ? (string) $params['password'] : wp_generate_password( 16 ) ),
@@ -59,7 +60,15 @@ class Create_User_Ability extends Ability {
             'first_name'   => wp_slash( sanitize_text_field( $params['first_name'] ?? '' ) ),
             'last_name'    => wp_slash( sanitize_text_field( $params['last_name'] ?? '' ) ),
             'display_name' => wp_slash( sanitize_text_field( $params['display_name'] ?? '' ) ),
-        ] );
+        ];
+        // The bio (2.53.0), with WordPress's own rule for it, as update_user: basic
+        // markup kept, slashed (the user meta it becomes is unslashed on save).
+        $bio_sent = null;
+        if ( isset( $params['bio'] ) ) {
+            $bio_sent                = is_scalar( $params['bio'] ) ? (string) $params['bio'] : '';
+            $userdata['description'] = wp_slash( self::rich_text( $bio_sent, self::TEXT_RULE_USER ) );
+        }
+        $user_id = wp_insert_user( $userdata );
 
         if ( is_wp_error( $user_id ) ) {
             return $this->error( $user_id->get_error_message() );
@@ -69,9 +78,9 @@ class Create_User_Ability extends Ability {
             wp_new_user_notification( $user_id, null, 'user' );
         }
 
-        return $this->json_result( [
+        return $this->json_result( self::with_text_note( [
             'id'    => $user_id,
             'login' => get_user_by( 'id', $user_id )->user_login,
-        ] );
+        ], $bio_sent, null !== $bio_sent ? User_Access::stored_bio( (int) $user_id ) : null, self::TEXT_RULE_USER, 'bio', 'bio' ) );
     }
 }

@@ -19,7 +19,7 @@ class Create_Term_Ability extends Ability {
                 'name'        => [ 'type' => 'string' ],
                 'taxonomy'    => [ 'type' => 'string', 'default' => 'category' ],
                 'slug'        => [ 'type' => 'string' ],
-                'description' => [ 'type' => 'string' ],
+                'description' => [ 'type' => 'string', 'description' => self::TEXT_RULE_DESCRIPTIONS['term'] ],
                 'parent'      => [ 'type' => 'integer', 'description' => 'Parent term ID.' ],
             ],
             'required' => [ 'name' ],
@@ -36,12 +36,13 @@ class Create_Term_Ability extends Ability {
         // Name and description slashed: wp_insert_term() unslashes them, so every
         // backslash was lost ("C:\Temp" became "C:Temp"; 2.51.0).
         $args = [];
-        $desc_note = null;
+        $desc_sent = null;
         if ( ! empty( $params['slug'] ) )        $args['slug']        = sanitize_title( $params['slug'] );
         if ( ! empty( $params['description'] ) ) {
-            // Plain text as before; a note when markup was taken out (2.52.0).
-            [ $desc, $desc_note ] = self::plain_text_with_note( $params['description'], 'description' );
-            $args['description']  = wp_slash( $desc );
+            // WordPress's own rule for term descriptions: basic markup kept (2.53.0;
+            // it was plain text). What it removed is said from what was stored.
+            $desc_sent           = is_scalar( $params['description'] ) ? (string) $params['description'] : '';
+            $args['description'] = wp_slash( self::rich_text( $desc_sent, self::TEXT_RULE_TERM ) );
         }
         if ( ! empty( $params['parent'] ) )       $args['parent']      = absint( $params['parent'] );
 
@@ -57,6 +58,7 @@ class Create_Term_Ability extends Ability {
             'term_id'          => $result['term_id'],
             'term_taxonomy_id' => $result['term_taxonomy_id'],
         ];
+        $out  = self::with_text_note( $out, $desc_sent, Term_Access::stored_description( (int) $result['term_id'], $taxonomy ), self::TEXT_RULE_TERM, 'term description', 'description' );
         $term = get_term( (int) $result['term_id'], $taxonomy );
         if ( $term instanceof \WP_Term ) {
             $out['slug'] = $term->slug;
@@ -67,6 +69,6 @@ class Create_Term_Ability extends Ability {
                     : sprintf( 'WordPress stores slugs in lowercase, without spaces or most punctuation: "%s".', urldecode( $term->slug ) );
             }
         }
-        return $this->json_result( self::with_note( $out, $desc_note ) );
+        return $this->json_result( $out );
     }
 }

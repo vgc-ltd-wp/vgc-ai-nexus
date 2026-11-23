@@ -122,12 +122,120 @@ abstract class Ability {
         return $out;
     }
 
+    // ── Text fields with WordPress's own markup rule (2.53.0) ────────────────
+
+    /** Rule names for rich_text(): the rule WordPress applies to the field on save. */
+    public const TEXT_RULE_POST    = 'post';    // excerpt, media caption and description
+    public const TEXT_RULE_TERM    = 'term';    // term description (pre_term_description)
+    public const TEXT_RULE_USER    = 'user';    // user bio (pre_user_description)
+    public const TEXT_RULE_COMMENT = 'comment'; // comment reply (pre_comment_content)
+
+    /** The basic markup wp_filter_kses() keeps, in words. */
+    private const BASIC_MARKUP = 'links, bold, italic, code, quotes';
+
+    /** How each rule stores markup; appended to the fields' descriptions. */
+    public const TEXT_RULE_DESCRIPTIONS = [
+        'post'    => 'HTML is stored as sent for an account that may post unfiltered HTML, such as an administrator (as WordPress\'s editor stores it); otherwise, or while raw code is locked on the site, script and other markup WordPress does not allow in posts is removed, and the result has a "note" saying so.',
+        'term'    => 'WordPress keeps basic markup in a term description (links, bold, italic, code, quotes) and removes the rest, such as <p> or script, for every account; when it removed something, the result has a "note" and the stored "description".',
+        'user'    => 'WordPress keeps basic markup in a bio (links, bold, italic, code, quotes) and removes the rest, such as <p> or script, for every account; when it removed something, the result has a "note" and the stored "bio".',
+        'comment' => 'HTML is stored as sent for an account that may post unfiltered HTML, such as an administrator (as WordPress stores its replies); otherwise, or while raw code is locked on the site, only basic markup (links, bold, italic, code, quotes) is kept, and the result has a "note" and the stored "content" when something was removed.',
+    ];
+
     /**
-     * A text field stored as plain text (sanitize_textarea_field(), as before),
-     * and a note naming it when that took something out (2.52.0): HTML tags,
-     * or percent-encoded characters such as %20. Until then a term
-     * description, an excerpt, a caption, a reply or a bio lost its markup
-     * without a word.
+     * A text field as it is handed to WordPress (2.53.0): WordPress's own rule
+     * for that field and that caller, instead of plain text. Until 2.52.0 a
+     * term description, an excerpt, a caption, a reply and a bio lost every
+     * tag (sanitize_textarea_field()), links and bold included.
+     *
+     * - post: the excerpt and an attachment's caption and description follow
+     *   post content (2.49.0): as sent for an account with unfiltered_html
+     *   while raw code is not locked, wp_kses_post() otherwise
+     *   (Custom_Code::filter_markup(); WordPress's excerpt_save_pre and
+     *   content_save_pre filters do the same).
+     * - term, user: WordPress keeps basic markup for every account
+     *   (wp_filter_kses on pre_term_description / pre_user_description, which
+     *   it applies on save). For an account that may not post unfiltered HTML,
+     *   or while raw code is locked, the same rule is applied here first, in
+     *   case a plugin lifted WordPress's filter (as the WooCommerce and WPML
+     *   extensions do for term descriptions).
+     * - comment: as sent for an account with unfiltered_html (as WordPress
+     *   stores an administrator's reply), basic markup only otherwise
+     *   (wp_filter_kses). wp_insert_comment() runs no filter, so the rule is
+     *   applied here.
+     *
+     * Not slashed: the caller slashes for the WordPress function it calls.
+     *
+     * @param mixed $value
+     */
+    public static function rich_text( $value, string $rule ): string {
+        $sent = is_scalar( $value ) ? (string) $value : '';
+        if ( self::TEXT_RULE_POST === $rule ) {
+            return Custom_Code::filter_markup( $sent );
+        }
+        if ( Custom_Code::raw_allowed() ) {
+            return $sent;
+        }
+        $context = [
+            self::TEXT_RULE_TERM    => 'pre_term_description',
+            self::TEXT_RULE_USER    => 'pre_user_description',
+            self::TEXT_RULE_COMMENT => 'pre_comment_content',
+        ][ $rule ] ?? 'strip';
+        return wp_kses( $sent, $context );
+    }
+
+    /**
+     * The note for a text field WordPress did not store as sent, decided from
+     * what was stored (2.53.0), or null: a tag, an attribute or a comment was
+     * taken out. Rewrites that lose nothing ("&" stored as "&amp;") get none.
+     *
+     * @param string $field      The field in words ("excerpt", "term description").
+     * @param string $result_key The key the stored value has in the answer.
+     */
+    public static function rich_text_note( string $sent, string $stored, string $rule, string $field, string $result_key ): ?string {
+        if ( $stored === $sent || ! Custom_Code::filtered_away( $sent, $stored ) ) {
+            return null;
+        }
+        $shown = sprintf( '"%s" in the answer is what was stored.', $result_key );
+        if ( self::TEXT_RULE_TERM === $rule || self::TEXT_RULE_USER === $rule ) {
+            return sprintf( 'WordPress keeps only basic markup in a %s (%s), so the rest was removed before saving: %s', $field, self::BASIC_MARKUP, $shown );
+        }
+        if ( Custom_Code::raw_allowed() ) {
+            // The account may store anything: another plugin's filter changed it.
+            return sprintf( 'WordPress or a plugin on this site removed markup from the %s before saving: %s', $field, $shown );
+        }
+        $why = Custom_Code::locked()
+            ? 'Raw code is locked on this site (MCP_ABILITIES_DISABLE_CUSTOM_CODE or the mcp_abilities_custom_code_enabled filter)'
+            : 'This account does not have the "unfiltered_html" capability';
+        if ( self::TEXT_RULE_COMMENT === $rule ) {
+            return sprintf( '%s, so WordPress\'s rule for comments applies: a %s keeps only basic markup (%s), and the rest was removed before saving: %s', $why, $field, self::BASIC_MARKUP, $shown );
+        }
+        return sprintf( '%s, so script and other markup WordPress does not allow in posts was removed from the %s before saving: %s', $why, $field, $shown );
+    }
+
+    /**
+     * $out with the note for a text field and, when there is one, the stored
+     * value under $result_key (2.53.0).
+     *
+     * @param array<string,mixed> $out
+     * @return array<string,mixed>
+     */
+    public static function with_text_note( array $out, ?string $sent, ?string $stored, string $rule, string $field, string $result_key ): array {
+        if ( null === $sent || null === $stored ) {
+            return $out;
+        }
+        $note = self::rich_text_note( $sent, $stored, $rule, $field, $result_key );
+        if ( null === $note ) {
+            return $out;
+        }
+        $out[ $result_key ] = $stored;
+        return self::with_note( $out, $note );
+    }
+
+    /**
+     * A text field stored as plain text (sanitize_textarea_field()), and a note
+     * naming it when that took something out (2.52.0): HTML tags, or
+     * percent-encoded characters such as %20. Core's own tools use rich_text()
+     * since 2.53.0; kept for code that calls it.
      *
      * @param mixed $value
      * @return array{0:string,1:?string} [ text to store, note or null ]

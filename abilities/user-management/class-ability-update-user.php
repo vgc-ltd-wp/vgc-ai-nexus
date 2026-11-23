@@ -22,7 +22,7 @@ class Update_User_Ability extends Ability {
                 'first_name'   => [ 'type' => 'string' ],
                 'last_name'    => [ 'type' => 'string' ],
                 'display_name' => [ 'type' => 'string' ],
-                'bio'          => [ 'type' => 'string' ],
+                'bio'          => [ 'type' => 'string', 'description' => 'Biographical info (the profile\'s description). ' . self::TEXT_RULE_DESCRIPTIONS['user'] ],
                 'password'     => [ 'type' => 'string' ],
             ],
             'required' => [ 'id' ],
@@ -89,11 +89,12 @@ class Update_User_Ability extends Ability {
         if ( isset( $params['first_name'] ) )    $data['first_name']    = wp_slash( sanitize_text_field( $params['first_name'] ) );
         if ( isset( $params['last_name'] ) )     $data['last_name']     = wp_slash( sanitize_text_field( $params['last_name'] ) );
         if ( isset( $params['display_name'] ) )  $data['display_name']  = wp_slash( sanitize_text_field( $params['display_name'] ) );
-        $bio_note = null;
+        $bio_sent = null;
         if ( isset( $params['bio'] ) ) {
-            // Plain text as before; a note when markup was taken out (2.52.0).
-            [ $bio, $bio_note ]  = self::plain_text_with_note( $params['bio'], 'bio' );
-            $data['description'] = wp_slash( $bio );
+            // WordPress's own rule for a bio: basic markup kept (2.53.0; it was plain
+            // text). What it removed is said from what was stored.
+            $bio_sent            = is_scalar( $params['bio'] ) ? (string) $params['bio'] : '';
+            $data['description'] = wp_slash( self::rich_text( $bio_sent, self::TEXT_RULE_USER ) );
         }
         if ( isset( $params['password'] ) )      $data['user_pass']     = wp_slash( (string) $params['password'] );
 
@@ -102,6 +103,6 @@ class Update_User_Ability extends Ability {
             return $this->error( $result->get_error_message() );
         }
 
-        return $this->success( "User {$user_id} updated.", null !== $bio_note ? [ 'note' => $bio_note ] : [] );
+        return $this->success( "User {$user_id} updated.", self::with_text_note( [], $bio_sent, null !== $bio_sent ? User_Access::stored_bio( $user_id ) : null, self::TEXT_RULE_USER, 'bio', 'bio' ) );
     }
 }

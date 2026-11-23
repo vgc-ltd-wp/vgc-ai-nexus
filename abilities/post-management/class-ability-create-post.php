@@ -19,7 +19,7 @@ class Create_Post_Ability extends Ability {
             'properties' => [
                 'title'      => [ 'type' => 'string', 'description' => 'Post title.' ],
                 'content'    => [ 'type' => 'string', 'description' => 'Post content (HTML or blocks). ' . self::CONTENT_FILTER_DESCRIPTION ],
-                'excerpt'    => [ 'type' => 'string', 'description' => 'Post excerpt.' ],
+                'excerpt'    => [ 'type' => 'string', 'description' => 'Post excerpt. ' . self::TEXT_RULE_DESCRIPTIONS['post'] ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private' ], 'default' => 'draft', 'description' => '"publish" and "private" need the permission to publish this post type; without it the post is created as "pending" (see status_note).' ],
                 'post_type'  => [ 'type' => 'string', 'description' => 'Post type slug. Defaults to "post". Use list_post_types to see all available types.' ],
                 'author_id'  => [ 'type' => 'integer','description' => 'Author user ID. Defaults to current user.' ],
@@ -76,8 +76,10 @@ class Create_Post_Ability extends Ability {
         // As sent for an account that may post unfiltered HTML, unless raw code is
         // locked; otherwise filtered as WordPress filters posts, with a note (2.49.0).
         [ $content, $content_note ] = Custom_Code::filter_with_note( (string) ( $params['content'] ?? '' ) );
-        // The excerpt stays plain text; a note when markup was taken out (2.52.0).
-        [ $excerpt, $excerpt_note ] = self::plain_text_with_note( $params['excerpt'] ?? '', 'excerpt' );
+        // The excerpt follows the same rule (2.53.0; it was plain text). What was
+        // removed is said from what was stored.
+        $excerpt_sent = isset( $params['excerpt'] ) && is_scalar( $params['excerpt'] ) ? (string) $params['excerpt'] : null;
+        $excerpt      = self::rich_text( $excerpt_sent ?? '', self::TEXT_RULE_POST );
 
         $post_data = [
             'post_title'   => sanitize_text_field( $params['title'] ),
@@ -151,7 +153,7 @@ class Create_Post_Ability extends Ability {
             $result = self::with_note( $result, sprintf( 'The date is in the future, so WordPress scheduled the post instead of publishing it: it is off the site until %s (site time), when WordPress publishes it.', $result['date'] ) );
         }
         $result = self::with_note( $result, $terms_done['note'] );
-        $result = self::with_note( $result, $excerpt_note );
+        $result = self::with_text_note( $result, $excerpt_sent, null !== $excerpt_sent ? (string) get_post_field( 'post_excerpt', $post_id, 'raw' ) : null, self::TEXT_RULE_POST, 'excerpt', 'excerpt' );
         if ( $meta_skipped ) {
             $result['meta_skipped'] = $meta_skipped;
         }

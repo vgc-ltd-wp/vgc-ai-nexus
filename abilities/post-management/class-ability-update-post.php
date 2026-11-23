@@ -20,7 +20,7 @@ class Update_Post_Ability extends Ability {
                 'id'         => [ 'type' => 'integer', 'description' => 'ID of the post to update.' ],
                 'title'      => [ 'type' => 'string' ],
                 'content'    => [ 'type' => 'string', 'description' => 'New content (HTML or blocks). ' . self::CONTENT_FILTER_DESCRIPTION ],
-                'excerpt'    => [ 'type' => 'string' ],
+                'excerpt'    => [ 'type' => 'string', 'description' => self::TEXT_RULE_DESCRIPTIONS['post'] ],
                 'status'     => [ 'type' => 'string', 'enum' => [ 'publish', 'draft', 'pending', 'private', 'future', 'trash' ], 'description' => '"future" schedules the post; it needs a future date. "publish", "future" and "private" need the permission to publish this post; without it the post is saved as "pending" (see status_note in the result).' ],
                 'date'       => [ 'type' => 'string', 'description' => self::POST_DATE_DESCRIPTION ],
                 'categories' => [ 'type' => 'array', 'items' => [ 'type' => 'integer' ], 'description' => 'Category IDs: replaces the item\'s categories ([] leaves a post only the default category). An unknown ID, or categories for a type without them, is refused. The result echoes the stored categories.' ],
@@ -83,10 +83,12 @@ class Update_Post_Ability extends Ability {
         if ( isset( $params['content'] ) ) {
             [ $update['post_content'], $content_note ] = Custom_Code::filter_with_note( (string) $params['content'] );
         }
-        // The excerpt stays plain text; a note when markup was taken out (2.52.0).
-        $excerpt_note = null;
+        // The excerpt follows the same rule (2.53.0; it was plain text). What was
+        // removed is said from what was stored.
+        $excerpt_sent = null;
         if ( isset( $params['excerpt'] ) ) {
-            [ $update['post_excerpt'], $excerpt_note ] = self::plain_text_with_note( $params['excerpt'], 'excerpt' );
+            $excerpt_sent           = is_scalar( $params['excerpt'] ) ? (string) $params['excerpt'] : '';
+            $update['post_excerpt'] = self::rich_text( $excerpt_sent, self::TEXT_RULE_POST );
         }
         if ( null !== $status['status'] )  $update['post_status']   = $status['status'];
 
@@ -111,7 +113,8 @@ class Update_Post_Ability extends Ability {
         }
         $extra = self::with_note( $extra, $content_note );
         $extra = self::with_note( $extra, $terms_done['note'] );
-        $extra = self::with_note( $extra, $excerpt_note );
+        // post_date_readback() above cleaned the post cache.
+        $extra = self::with_text_note( $extra, $excerpt_sent, null !== $excerpt_sent ? (string) get_post_field( 'post_excerpt', $post_id, 'raw' ) : null, self::TEXT_RULE_POST, 'excerpt', 'excerpt' );
         if ( $meta_skipped ) {
             $extra['meta_skipped'] = $meta_skipped;
         }
