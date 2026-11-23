@@ -105,7 +105,7 @@ Each group can be enabled or disabled independently from **AI Nexus → Abilitie
 | `create_menu` | Create a new navigation menu |
 | `delete_menu` | Delete a navigation menu and all its items |
 | `add_menu_item` | Add a custom URL, post/page, or taxonomy term item to a menu |
-| `update_menu_item` | Update an existing menu item's title, URL, order or parent |
+| `update_menu_item` | Update an existing menu item's title, URL, order, parent, target or classes; the rest stays as it is |
 | `delete_menu_item` | Remove an item from a menu |
 | `assign_menu_location` | Assign or unassign a menu to a theme location |
 | `list_navigations` | List all block-based `wp_navigation` menus (FSE / block themes) |
@@ -212,6 +212,10 @@ See [docs/security.md](docs/security.md) for a full breakdown.
 ---
 
 ## Changelog
+
+### 2.51.1
+
+- **`update_menu_item` changes only the fields sent.** It promised to, but WordPress fills every field it is not given with a default instead of reading the item, so renaming a menu item broke it: a custom link lost its URL, its target, its CSS classes, its description and title attribute and its place under its parent, and moved to the end of the menu; a page, post or category item became a custom link with no URL (the link to the page was gone); an item not yet published was published. The tool now starts from the item as it is stored and changes only what was sent, as WordPress's own menu screen does. A page or category item that shows its page's or term's title keeps following it. Every field sent keeps the cleaning it had, and read-only mode still refuses the tool.
 
 ### 2.51.0
 

@@ -338,6 +338,8 @@ No parameters. Returns all registered nav menus with their assigned locations.
 
 Backslashes in a menu's name (`create_menu`) and an item's title (`add_menu_item`, `update_menu_item`) are kept since 2.51.0; before, every one was lost. An item title equal to the linked page's or term's own title is stored empty, as in Appearance → Menus, so the item follows that title when it changes (with a backslash in the title too since 2.51.0).
 
+`update_menu_item` changes only the fields sent (`title`, `url`, `parent_id`, `position`, `target`, `classes`) since 2.51.1: it reads the item first and hands WordPress every field, as Appearance → Menus does. Before, WordPress filled each field not sent with its default: a title-only change dropped a custom link's URL, target, classes, description, title attribute and parent and moved it to the end of the menu, turned a page or term item into a custom link with no URL, and published an item that was still a draft. A page or term item that follows its object's title keeps following it. `url` applies to custom links only; a page, post or term item keeps linking to its object.
+
 ---
 
 ## Options Management
