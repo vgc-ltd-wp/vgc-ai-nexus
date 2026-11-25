@@ -1116,10 +1116,8 @@ final class Server {
 		// again unless they did so a few minutes ago, so a stolen cookie cannot be
 		// turned into a connection that outlives it.
 		if ( ! self::login_is_fresh() ) {
-			self::log( sprintf( 'consent page: the sign-in of user_id=%d is older than %ds, asking to sign in again', get_current_user_id(), self::reauth_after() ) );
-			Login_Return::remember( $current_url );
-			wp_safe_redirect( wp_login_url( $current_url, true ) );
-			exit;
+			self::log( sprintf( 'consent page: the sign-in of user_id=%d is older than %ds, signed out in this browser and asked to sign in again', get_current_user_id(), self::reauth_after() ) );
+			self::send_to_sign_in_again( $current_url );
 		}
 
 		// The page shows: the sign-in found its way back.
@@ -1235,10 +1233,8 @@ final class Server {
 			return;
 		}
 		if ( ! self::login_is_fresh( self::TTL_CODE ) ) {
-			self::log( sprintf( 'consent POST: the sign-in of user_id=%d is too old — asking to sign in again, no code issued', get_current_user_id() ) );
-			Login_Return::remember( $current_url );
-			wp_safe_redirect( wp_login_url( $current_url, true ) );
-			exit;
+			self::log( sprintf( 'consent POST: the sign-in of user_id=%d is too old — signed out in this browser and asked to sign in again, no code issued', get_current_user_id() ) );
+			self::send_to_sign_in_again( $current_url );
 		}
 
 		$client_id             = isset( $_POST['vgc_cc_client_id'] )             ? sanitize_text_field( wp_unslash( $_POST['vgc_cc_client_id'] ) )             : '';
@@ -1517,6 +1513,26 @@ final class Server {
 			return null;
 		}
 		return max( 0, time() - (int) $session['login'] );
+	}
+
+	/**
+	 * The sign-in is too old for the consent page: sign this browser out, then
+	 * send it to the login and back here (2.53.2). WordPress's own
+	 * wp-login.php?reauth=1 clears the login cookies the same way, but only
+	 * when that page runs: some login pages send a visitor who is still signed
+	 * in straight to the dashboard and ignore reauth and redirect_to (WPS
+	 * Hide Login's hidden login address, seen 2026-11-25). The person then never got
+	 * a fresh sign-in, so the way back (Login_Return) rightly did not fire, and
+	 * Approve never showed. Only the cookies go, as with reauth=1: the next
+	 * sign-in starts a session of its own.
+	 */
+	private static function send_to_sign_in_again( string $current_url ): void {
+		Login_Return::remember( $current_url );
+		if ( ! headers_sent() ) {
+			wp_clear_auth_cookie();
+		}
+		wp_safe_redirect( wp_login_url( $current_url, true ) );
+		exit;
 	}
 
 	/** @param int $slack Seconds more than reauth_after() that are still accepted. */

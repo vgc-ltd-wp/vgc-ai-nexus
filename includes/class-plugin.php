@@ -160,6 +160,9 @@ final class Plugin {
         // tools/list shows a user the tools they could call; the discovery tools need more than `read`.
         Tool_Visibility::init();
 
+        // 2.53.2: every listed tool's input schema in a shape clients accept, extensions' included.
+        Schema_Shape::init();
+
         // Make a foreign or failed adapter visible to administrators.
         add_action( 'admin_notices', [ Adapter_Status::class, 'maybe_admin_notice' ] );
 
@@ -234,7 +237,11 @@ final class Plugin {
                 // The old type-strip (a WP REST empty-{} validation workaround) is
                 // replaced by guaranteeing non-empty properties instead — verified
                 // live: no-param and param'd executions both validate (WP 6.9).
-                $wp_schema         = $ability->get_input_schema();
+                // 2.53.2: no empty-array subschema at any depth either. JSON `[]`
+                // where a schema belongs makes the Claude API drop the whole tool
+                // (the Avada extension's theme options since 1.2.0). Clients see
+                // the repaired copy; the ability validates with its own schema.
+                $wp_schema         = Schema_Shape::repair( $ability->get_input_schema() );
                 $wp_schema['type'] = 'object';
                 if ( empty( $wp_schema['properties'] ) || ! is_array( $wp_schema['properties'] ) ) {
                     $wp_schema['properties'] = [
