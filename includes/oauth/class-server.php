@@ -76,6 +76,9 @@ final class Server {
 		add_action( 'parse_request',     array( self::class, 'maybe_handle_oauth_request' ), 1 );
 		add_action( 'template_redirect', array( self::class, 'handle_template_redirect' ) );
 		add_action( 'rest_api_init',     array( self::class, 'register_rest_routes' ) );
+		// 2.53.1: back to the consent page after signing in, also where the login
+		// loses its redirect_to (a security plugin, a two-factor step).
+		Login_Return::init();
 
 		// Attach the RFC 9728 WWW-Authenticate challenge to unauthenticated MCP
 		// responses so claude.ai can discover the OAuth server from the MCP URL
@@ -162,11 +165,7 @@ final class Server {
 		// Strip a trailing slash for exact matching.
 		$clean = '/' . trim( $path, '/' );
 
-		// Authorize is served at the root AND under the /wp-json issuer base
-		// (…/wp-json/vgc-cc/v1/authorize), so every advertised endpoint shares
-		// the issuer's base — required for the client's RFC 9207 / metadata
-		// consistency checks.  Match any path ending in /authorize.
-		if ( '/authorize' === $clean || '/oauth/authorize' === $clean || str_ends_with( $clean, '/' . self::REST_NAMESPACE . '/authorize' ) ) {
+		if ( self::is_authorize_clean_path( $clean ) ) {
 			if ( 'POST' === ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) {
 				self::handle_consent_post();
 			} else {
@@ -184,6 +183,45 @@ final class Server {
 			self::dispatch_register_at_root();
 			exit;
 		}
+	}
+
+	/**
+	 * The consent page's paths, relative to the home path with one leading slash
+	 * and no trailing one. Authorize is served at the root AND under the
+	 * /wp-json issuer base (…/wp-json/vgc-cc/v1/authorize), so every advertised
+	 * endpoint shares the issuer's base — required for the client's RFC 9207 /
+	 * metadata consistency checks.  Any path ending in /vgc-cc/v1/authorize.
+	 */
+	private static function is_authorize_clean_path( string $clean ): bool {
+		return '/authorize' === $clean || '/oauth/authorize' === $clean || str_ends_with( $clean, '/' . self::REST_NAMESPACE . '/authorize' );
+	}
+
+	/**
+	 * True for an absolute address of this site's consent page (the same host,
+	 * port and scheme family as home_url(), no user info), whatever its query.
+	 * Login_Return accepts nothing else (2.53.1).
+	 */
+	public static function is_consent_url( string $url ): bool {
+		$parts = wp_parse_url( $url );
+		$home  = wp_parse_url( home_url() );
+		if ( ! is_array( $parts ) || ! is_array( $home ) || empty( $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return false;
+		}
+		if ( ! in_array( strtolower( (string) ( $parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) ) {
+			return false;
+		}
+		if ( strtolower( (string) $parts['host'] ) !== strtolower( (string) ( $home['host'] ?? '' ) ) || ( $parts['port'] ?? null ) !== ( $home['port'] ?? null ) ) {
+			return false;
+		}
+		$path      = '/' . ltrim( (string) ( $parts['path'] ?? '' ), '/' );
+		$home_path = '/' . trim( (string) ( $home['path'] ?? '' ), '/' );
+		if ( '/' !== $home_path ) {
+			if ( $path !== $home_path && ! str_starts_with( $path, $home_path . '/' ) ) {
+				return false;
+			}
+			$path = '/' . ltrim( substr( $path, strlen( $home_path ) ), '/' );
+		}
+		return self::is_authorize_clean_path( '/' . trim( $path, '/' ) );
 	}
 
 	/**
@@ -1055,17 +1093,20 @@ final class Server {
 			return;
 		}
 
+		// The exact URL claude.ai sent the user to (which may be /authorize or
+		// /oauth/authorize), with all query params, so the flow resumes after login.
+		$current_url = home_url( add_query_arg( null, null ) );
+
 		if ( ! is_user_logged_in() ) {
-			// Redirect back to the exact URL claude.ai sent the user to (which may
-			// be /authorize or /oauth/authorize), preserving all query params, so
-			// the flow resumes correctly after login.
-			$current_url = home_url( add_query_arg( null, null ) );
+			// 2.53.1: also remembered in a cookie, for logins that lose redirect_to.
+			Login_Return::remember( $current_url );
 			wp_safe_redirect( wp_login_url( $current_url ) );
 			exit;
 		}
 
 		// 2.39.0 (audit L1): only an account that can use the tools may connect.
 		if ( ! self::may_consent() ) {
+			Login_Return::forget();
 			self::log( sprintf( 'consent page: user_id=%d lacks %s, cannot connect an AI app', get_current_user_id(), self::consent_capability() ) );
 			self::render_cannot_connect_page();
 			return;
@@ -1076,9 +1117,13 @@ final class Server {
 		// turned into a connection that outlives it.
 		if ( ! self::login_is_fresh() ) {
 			self::log( sprintf( 'consent page: the sign-in of user_id=%d is older than %ds, asking to sign in again', get_current_user_id(), self::reauth_after() ) );
-			wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ), true ) );
+			Login_Return::remember( $current_url );
+			wp_safe_redirect( wp_login_url( $current_url, true ) );
 			exit;
 		}
+
+		// The page shows: the sign-in found its way back.
+		Login_Return::forget();
 
 		// 2.42.0: a person is about to approve this app; registrations from a
 		// flood must not push it out meanwhile (Client_Manager::make_room()).
@@ -1170,9 +1215,15 @@ final class Server {
 	}
 
 	private static function handle_consent_post(): void {
+		// The consent form posts to the page's own address, query included.
+		$current_url = home_url( add_query_arg( null, null ) );
+
 		if ( ! is_user_logged_in() ) {
-			self::log( 'consent POST: user NOT logged in — redirecting to wp-login (consent cannot complete)' );
-			wp_safe_redirect( wp_login_url() );
+			// 2.53.1: back to the consent page afterwards (it was the dashboard), so
+			// the person can Approve again; no code is issued from this POST.
+			self::log( 'consent POST: user NOT logged in — sent to sign in, then back to the consent page (no code issued)' );
+			Login_Return::remember( $current_url );
+			wp_safe_redirect( wp_login_url( $current_url ) );
 			exit;
 		}
 
@@ -1185,7 +1236,8 @@ final class Server {
 		}
 		if ( ! self::login_is_fresh( self::TTL_CODE ) ) {
 			self::log( sprintf( 'consent POST: the sign-in of user_id=%d is too old — asking to sign in again, no code issued', get_current_user_id() ) );
-			wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ), true ) );
+			Login_Return::remember( $current_url );
+			wp_safe_redirect( wp_login_url( $current_url, true ) );
 			exit;
 		}
 
@@ -1468,7 +1520,7 @@ final class Server {
 	}
 
 	/** @param int $slack Seconds more than reauth_after() that are still accepted. */
-	private static function login_is_fresh( int $slack = 0 ): bool {
+	public static function login_is_fresh( int $slack = 0 ): bool {
 		$max = self::reauth_after();
 		if ( $max <= 0 ) {
 			return true;
